@@ -58,6 +58,7 @@ static int gfx_none_clear(gfx_t *gfx, u32 buffers)
 
 static gfx_driver_t gfx_none = {
 	.name	     = "none",
+	.api	     = GFX_API_NONE,
 	.init	     = gfx_none_init,
 	.free	     = gfx_none_free,
 	.set_target  = gfx_none_set_target,

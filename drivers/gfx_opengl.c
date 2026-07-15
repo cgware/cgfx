@@ -222,6 +222,7 @@ static int gfx_opengl_clear(gfx_t *gfx, u32 buffers)
 
 static gfx_driver_t gfx_opengl = {
 	.name	     = "opengl",
+	.api	     = GFX_API_OPENGL,
 	.init	     = gfx_opengl_init,
 	.free	     = gfx_opengl_free,
 	.proc	     = gfx_opengl_proc,

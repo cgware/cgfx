@@ -77,6 +77,7 @@ static int t_gfx_clear(gfx_t *gfx, u32 buffers)
 
 static gfx_driver_t t_gfx_driver = {
 	.name	     = "test",
+	.api	     = GFX_API_OPENGL,
 	.init	     = t_gfx_init,
 	.free	     = t_gfx_free,
 	.proc	     = t_gfx_proc,
@@ -282,6 +283,57 @@ TEST(gfx_proc_null_gfx)
 	void *proc = NULL;
 
 	EXPECT_EQ(gfx_proc(NULL, STRV("test"), &proc), 1);
+
+	END;
+}
+
+TEST(gfx_api_null_gfx)
+{
+	START;
+
+	gfx_api_t api = GFX_API_NONE;
+
+	EXPECT_EQ(gfx_api(NULL, &api), 1);
+
+	END;
+}
+
+TEST(gfx_api_null_api)
+{
+	START;
+
+	gfx_t gfx = {.drv = &t_gfx_driver};
+
+	EXPECT_EQ(gfx_api(&gfx, NULL), 1);
+
+	END;
+}
+
+TEST(gfx_api_sets_api)
+{
+	START;
+
+	gfx_t gfx     = {.drv = &t_gfx_driver};
+	gfx_api_t api = GFX_API_NONE;
+
+	EXPECT_EQ(gfx_api(&gfx, &api), 0);
+	EXPECT_EQ(api, GFX_API_OPENGL);
+
+	END;
+}
+
+TEST(gfx_api_returns_driver_api)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.api		 = -1;
+	gfx_t gfx	 = {.drv = &drv};
+	gfx_api_t api	 = GFX_API_NONE;
+
+	gfx_api(&gfx, &api);
+
+	EXPECT_EQ(api, (gfx_api_t)-1);
 
 	END;
 }
@@ -540,6 +592,10 @@ STEST(gfx)
 	RUN(gfx_free_without_driver);
 	RUN(gfx_free_calls_driver);
 	RUN(gfx_free_clears_fields);
+	RUN(gfx_api_null_gfx);
+	RUN(gfx_api_null_api);
+	RUN(gfx_api_sets_api);
+	RUN(gfx_api_returns_driver_api);
 	RUN(gfx_proc_null_gfx);
 	RUN(gfx_proc_null_proc);
 	RUN(gfx_proc_calls_driver);

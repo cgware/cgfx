@@ -19,6 +19,12 @@ typedef enum gfx_target_type_e {
 	GFX_TARGET_MEMORY,
 } gfx_target_type_t;
 
+typedef enum gfx_api_e {
+	GFX_API_NONE,
+	GFX_API_SOFTWARE,
+	GFX_API_OPENGL,
+} gfx_api_t;
+
 typedef struct gfx_target_s {
 	gfx_target_type_t type;
 	gfx_format_t format;
@@ -40,6 +46,7 @@ typedef struct gfx_s {
 
 gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config);
 void gfx_free(gfx_t *gfx);
+int gfx_api(gfx_t *gfx, gfx_api_t *api);
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc);
 int gfx_set_target(gfx_t *gfx, const gfx_target_t *target);
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a);

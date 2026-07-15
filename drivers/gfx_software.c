@@ -115,6 +115,7 @@ static int gfx_software_clear(gfx_t *gfx, u32 buffers)
 
 static gfx_driver_t gfx_software = {
 	.name	     = "software",
+	.api	     = GFX_API_SOFTWARE,
 	.init	     = gfx_software_init,
 	.free	     = gfx_software_free,
 	.set_target  = gfx_software_set_target,

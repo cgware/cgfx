@@ -6,6 +6,7 @@
 
 typedef struct gfx_driver_s {
 	const char *name;
+	gfx_api_t api;
 	int (*init)(gfx_t *gfx, const gfx_config_t *config);
 	int (*free)(gfx_t *gfx);
 	int (*proc)(gfx_t *gfx, strv_t name, void **proc);

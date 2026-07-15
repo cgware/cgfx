@@ -33,6 +33,16 @@ void gfx_free(gfx_t *gfx)
 	gfx->data = NULL;
 }
 
+int gfx_api(gfx_t *gfx, gfx_api_t *api)
+{
+	if (gfx == NULL || gfx->drv == NULL || api == NULL) {
+		return 1;
+	}
+
+	*api = gfx->drv->api;
+	return 0;
+}
+
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->proc == NULL || proc == NULL) {
