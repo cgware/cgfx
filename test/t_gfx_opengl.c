@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "gfx_driver.h"
+#include "log.h"
 
 typedef void (*t_gfx_opengl_symbol_t)(void);
 
@@ -348,7 +349,9 @@ TEST(gfx_opengl_init_missing_library)
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NE(drv, NULL);
 
+	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	log_set_quiet(0, 0);
 
 	proc_free(&proc);
 	END;
@@ -383,7 +386,9 @@ TEST(gfx_opengl_init_missing_clear)
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NE(drv, NULL);
 
+	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	log_set_quiet(0, 0);
 
 	proc_free(&proc);
 	END;
@@ -677,6 +682,7 @@ TEST(gfx_opengl_set_target_incomplete_framebuffer)
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4] = {0};
 
+	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx_set_target(&gfx,
 				 &(gfx_target_t){
 					 .type	 = GFX_TARGET_MEMORY,
@@ -687,6 +693,7 @@ TEST(gfx_opengl_set_target_incomplete_framebuffer)
 					 .stride = 4,
 				 }),
 		  1);
+	log_set_quiet(0, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
