@@ -6,6 +6,7 @@ STEST(gfx);
 STEST(gfx_none);
 STEST(gfx_opengl);
 STEST(gfx_software);
+STEST(gfx_vulkan);
 
 TEST(cgfx)
 {
@@ -14,6 +15,7 @@ TEST(cgfx)
 	RUN(gfx_none);
 	RUN(gfx_opengl);
 	RUN(gfx_software);
+	RUN(gfx_vulkan);
 	SEND;
 }
 

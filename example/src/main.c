@@ -4,20 +4,6 @@
 #include "gfx_driver.h"
 #include "log.h"
 
-static gfx_driver_t *find_gfx_driver(strv_t name)
-{
-	for (driver_t *i = DRIVER_START; i < DRIVER_END; i++) {
-		if (i->type == GFX_DRIVER_TYPE) {
-			gfx_driver_t *drv = i->data;
-			if (strv_eq(strv_cstr(drv->name), name)) {
-				return drv;
-			}
-		}
-	}
-
-	return NULL;
-}
-
 static int write_bmp(fs_t *fs, strv_t path, const u8 *pixels, u16 width, u16 height, size_t stride)
 {
 	enum {
@@ -91,7 +77,7 @@ int main(void)
 	strv_t driver_name = STRV("software");
 
 	fs_init(&fs, 0, 0, ALLOC_STD);
-	gfx_driver_t *driver = find_gfx_driver(driver_name);
+	gfx_driver_t *driver = gfx_driver_find(driver_name);
 	if (driver == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to find gfx driver: %.*s", driver_name.len, driver_name.data);
 		ret = 1;

@@ -1,7 +1,5 @@
 #include "gfx_driver.h"
 
-#include <stddef.h>
-
 static int gfx_none_init(gfx_t *gfx, const gfx_config_t *config)
 {
 	(void)config;

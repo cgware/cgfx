@@ -1,6 +1,6 @@
-#include "test.h"
-
 #include "gfx_driver.h"
+
+#include "test.h"
 
 static void *t_gfx_software_alloc_fail(alloc_t *alloc, size_t size)
 {
@@ -11,16 +11,7 @@ static void *t_gfx_software_alloc_fail(alloc_t *alloc, size_t size)
 
 static gfx_driver_t *t_gfx_software_driver(void)
 {
-	for (driver_t *i = DRIVER_START; i < DRIVER_END; i++) {
-		if (i->type == GFX_DRIVER_TYPE) {
-			gfx_driver_t *drv = i->data;
-			if (strv_eq(strv_cstr(drv->name), STRV("software"))) {
-				return drv;
-			}
-		}
-	}
-
-	return NULL;
+	return gfx_driver_find(STRV("software"));
 }
 
 TEST(gfx_software_driver_is_registered)
@@ -124,26 +115,27 @@ TEST(gfx_software_set_target_null_data)
 	END;
 }
 
-TEST(gfx_software_set_target_invalid_type)
+TEST(gfx_software_set_target_none_clears_target)
 {
 	START;
 
-	u8 pixels[4]	  = {0};
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NE(drv, NULL);
 	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	u8 pixels[4] = {0};
+	gfx_set_target(&gfx,
+		       &(gfx_target_t){
+			       .type   = GFX_TARGET_MEMORY,
+			       .format = GFX_FORMAT_RGBA8,
+			       .data   = pixels,
+			       .width  = 1,
+			       .height = 1,
+			       .stride = 4,
+		       });
 
-	EXPECT_EQ(gfx_set_target(&gfx,
-				 &(gfx_target_t){
-					 .type	 = GFX_TARGET_NONE,
-					 .format = GFX_FORMAT_RGBA8,
-					 .data	 = pixels,
-					 .width	 = 1,
-					 .height = 1,
-					 .stride = 4,
-				 }),
-		  1);
+	EXPECT_EQ(gfx_set_target(&gfx, &(gfx_target_t){.type = GFX_TARGET_NONE}), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 
 	gfx_free(&gfx);
 	END;
@@ -387,7 +379,7 @@ STEST(gfx_software)
 	RUN(gfx_software_free_null_gfx);
 	RUN(gfx_software_free_null_data);
 	RUN(gfx_software_set_target_null_data);
-	RUN(gfx_software_set_target_invalid_type);
+	RUN(gfx_software_set_target_none_clears_target);
 	RUN(gfx_software_set_target_invalid_format);
 	RUN(gfx_software_set_target_invalid_stride);
 	RUN(gfx_software_set_target_success);

@@ -1,22 +1,27 @@
-#include "test.h"
-
 #include "gfx_driver.h"
+
+#include "test.h"
 
 static int t_gfx_init_calls;
 static int t_gfx_free_calls;
+static int t_gfx_native_calls;
 static int t_gfx_proc_calls;
 static int t_gfx_set_target_calls;
 static int t_gfx_clear_color_calls;
 static int t_gfx_clear_calls;
+static int t_gfx_present_calls;
 static int t_gfx_init_ret;
 static int t_gfx_free_ret;
+static int t_gfx_native_ret;
 static int t_gfx_proc_ret;
 static int t_gfx_set_target_ret;
 static int t_gfx_clear_color_ret;
 static int t_gfx_clear_ret;
+static int t_gfx_present_ret;
 static const gfx_config_t *t_gfx_config;
 static strv_t t_gfx_proc_name;
 static void *t_gfx_proc_sym;
+static gfx_native_t t_gfx_native_value;
 static const gfx_target_t *t_gfx_target;
 static float t_gfx_r;
 static float t_gfx_g;
@@ -48,6 +53,14 @@ static int t_gfx_proc(gfx_t *gfx, strv_t name, void **proc)
 	return t_gfx_proc_ret;
 }
 
+static int t_gfx_native(gfx_t *gfx, gfx_native_t *native)
+{
+	(void)gfx;
+	t_gfx_native_calls++;
+	*native = t_gfx_native_value;
+	return t_gfx_native_ret;
+}
+
 static int t_gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
 {
 	(void)gfx;
@@ -75,34 +88,50 @@ static int t_gfx_clear(gfx_t *gfx, u32 buffers)
 	return t_gfx_clear_ret;
 }
 
+static int t_gfx_present(gfx_t *gfx)
+{
+	(void)gfx;
+	t_gfx_present_calls++;
+	return t_gfx_present_ret;
+}
+
 static gfx_driver_t t_gfx_driver = {
 	.name	     = "test",
 	.api	     = GFX_API_OPENGL,
 	.init	     = t_gfx_init,
 	.free	     = t_gfx_free,
+	.native	     = t_gfx_native,
 	.proc	     = t_gfx_proc,
 	.set_target  = t_gfx_set_target,
 	.clear_color = t_gfx_clear_color,
 	.clear	     = t_gfx_clear,
+	.present     = t_gfx_present,
 };
+
+DRIVER(t_gfx_non_gfx_driver, 1, NULL);
 
 static void t_gfx_reset(void)
 {
 	t_gfx_init_calls	= 0;
 	t_gfx_free_calls	= 0;
+	t_gfx_native_calls	= 0;
 	t_gfx_proc_calls	= 0;
 	t_gfx_set_target_calls	= 0;
 	t_gfx_clear_color_calls = 0;
 	t_gfx_clear_calls	= 0;
+	t_gfx_present_calls	= 0;
 	t_gfx_init_ret		= 0;
 	t_gfx_free_ret		= 0;
+	t_gfx_native_ret	= 0;
 	t_gfx_proc_ret		= 0;
 	t_gfx_set_target_ret	= 0;
 	t_gfx_clear_color_ret	= 0;
 	t_gfx_clear_ret		= 0;
+	t_gfx_present_ret	= 0;
 	t_gfx_config		= NULL;
 	t_gfx_proc_name		= STRV_NULL;
 	t_gfx_proc_sym		= NULL;
+	t_gfx_native_value	= (gfx_native_t){0};
 	t_gfx_target		= NULL;
 	t_gfx_r			= 0.0f;
 	t_gfx_g			= 0.0f;
@@ -287,53 +316,85 @@ TEST(gfx_proc_null_gfx)
 	END;
 }
 
-TEST(gfx_api_null_gfx)
+TEST(gfx_native_null_gfx)
 {
 	START;
 
-	gfx_api_t api = GFX_API_NONE;
+	gfx_native_t native = {0};
 
-	EXPECT_EQ(gfx_api(NULL, &api), 1);
+	EXPECT_EQ(gfx_native(NULL, &native), 1);
 
 	END;
 }
 
-TEST(gfx_api_null_api)
+TEST(gfx_native_null_native)
 {
 	START;
 
 	gfx_t gfx = {.drv = &t_gfx_driver};
 
-	EXPECT_EQ(gfx_api(&gfx, NULL), 1);
+	EXPECT_EQ(gfx_native(&gfx, NULL), 1);
 
 	END;
 }
 
-TEST(gfx_api_sets_api)
+TEST(gfx_native_without_driver_callback_sets_api)
 {
 	START;
 
-	gfx_t gfx     = {.drv = &t_gfx_driver};
-	gfx_api_t api = GFX_API_NONE;
+	gfx_driver_t drv    = t_gfx_driver;
+	drv.native	    = NULL;
+	drv.api		    = GFX_API_SOFTWARE;
+	gfx_t gfx	    = {.drv = &drv};
+	gfx_native_t native = {0};
 
-	EXPECT_EQ(gfx_api(&gfx, &api), 0);
-	EXPECT_EQ(api, GFX_API_OPENGL);
+	EXPECT_EQ(gfx_native(&gfx, &native), 0);
+	EXPECT_EQ(native.api, GFX_API_SOFTWARE);
 
 	END;
 }
 
-TEST(gfx_api_returns_driver_api)
+TEST(gfx_native_calls_driver)
 {
 	START;
 
-	gfx_driver_t drv = t_gfx_driver;
-	drv.api		 = -1;
-	gfx_t gfx	 = {.drv = &drv};
-	gfx_api_t api	 = GFX_API_NONE;
+	t_gfx_reset();
+	gfx_t gfx	    = {.drv = &t_gfx_driver};
+	gfx_native_t native = {0};
 
-	gfx_api(&gfx, &api);
+	gfx_native(&gfx, &native);
 
-	EXPECT_EQ(api, (gfx_api_t)-1);
+	EXPECT_EQ(t_gfx_native_calls, 1);
+
+	END;
+}
+
+TEST(gfx_native_sets_native)
+{
+	START;
+
+	t_gfx_reset();
+	t_gfx_native_value  = (gfx_native_t){.api = GFX_API_VULKAN, .instance = 0x1234};
+	gfx_t gfx	    = {.drv = &t_gfx_driver};
+	gfx_native_t native = {0};
+
+	gfx_native(&gfx, &native);
+
+	EXPECT_EQ(native.instance, 0x1234);
+
+	END;
+}
+
+TEST(gfx_native_returns_driver_result)
+{
+	START;
+
+	t_gfx_reset();
+	t_gfx_native_ret    = 1;
+	gfx_t gfx	    = {.drv = &t_gfx_driver};
+	gfx_native_t native = {0};
+
+	EXPECT_EQ(gfx_native(&gfx, &native), 1);
 
 	END;
 }
@@ -576,6 +637,76 @@ TEST(gfx_clear_returns_driver_result)
 	END;
 }
 
+TEST(gfx_present_null_gfx)
+{
+	START;
+
+	EXPECT_EQ(gfx_present(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_present_calls_driver)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	EXPECT_EQ(gfx_present(&gfx), 0);
+	EXPECT_EQ(t_gfx_present_calls, 1);
+
+	END;
+}
+
+TEST(gfx_present_returns_driver_result)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+	t_gfx_present_ret = 1;
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
+
+	END;
+}
+
+TEST(gfx_driver_list_counts_all_without_plan)
+{
+	START;
+
+	EXPECT_NE(gfx_driver_list(NULL, 0), 0u);
+
+	END;
+}
+
+TEST(gfx_driver_find_returns_null_for_missing_driver)
+{
+	START;
+
+	EXPECT_EQ(gfx_driver_find(STRV("missing")), NULL);
+
+	END;
+}
+
+TEST(gfx_driver_list_limits_output)
+{
+	START;
+
+	gfx_driver_t *drivers[1] = {0};
+	u32 count		 = gfx_driver_list(drivers, sizeof(drivers) / sizeof(drivers[0]));
+
+	EXPECT_NE(count, 0u);
+	EXPECT_NE(drivers[0], NULL);
+
+	END;
+}
+
 STEST(gfx)
 {
 	SSTART;
@@ -592,10 +723,12 @@ STEST(gfx)
 	RUN(gfx_free_without_driver);
 	RUN(gfx_free_calls_driver);
 	RUN(gfx_free_clears_fields);
-	RUN(gfx_api_null_gfx);
-	RUN(gfx_api_null_api);
-	RUN(gfx_api_sets_api);
-	RUN(gfx_api_returns_driver_api);
+	RUN(gfx_native_null_gfx);
+	RUN(gfx_native_null_native);
+	RUN(gfx_native_without_driver_callback_sets_api);
+	RUN(gfx_native_calls_driver);
+	RUN(gfx_native_sets_native);
+	RUN(gfx_native_returns_driver_result);
 	RUN(gfx_proc_null_gfx);
 	RUN(gfx_proc_null_proc);
 	RUN(gfx_proc_calls_driver);
@@ -613,6 +746,12 @@ STEST(gfx)
 	RUN(gfx_clear_null_gfx);
 	RUN(gfx_clear_calls_driver);
 	RUN(gfx_clear_returns_driver_result);
+	RUN(gfx_present_null_gfx);
+	RUN(gfx_present_calls_driver);
+	RUN(gfx_present_returns_driver_result);
+	RUN(gfx_driver_list_counts_all_without_plan);
+	RUN(gfx_driver_find_returns_null_for_missing_driver);
+	RUN(gfx_driver_list_limits_output);
 
 	SEND;
 }

@@ -1,7 +1,5 @@
 #include "gfx_driver.h"
 
-#include <stddef.h>
-
 typedef struct gfx_software_s {
 	gfx_target_t target;
 	alloc_t alloc;
@@ -62,12 +60,19 @@ static int gfx_software_free(gfx_t *gfx)
 
 static int gfx_software_set_target(gfx_t *gfx, const gfx_target_t *target)
 {
-	if (gfx == NULL || gfx->data == NULL || !target_valid(target)) {
+	if (gfx == NULL || gfx->data == NULL || target == NULL) {
 		return 1;
 	}
 
 	gfx_software_t *render = gfx->data;
-	render->target	       = *target;
+	if (target->type == GFX_TARGET_NONE) {
+		render->target = (gfx_target_t){0};
+		return 0;
+	}
+	if (!target_valid(target)) {
+		return 1;
+	}
+	render->target = *target;
 	return 0;
 }
 

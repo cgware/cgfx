@@ -2,8 +2,6 @@
 
 #include "gfx_driver.h"
 
-#include <stddef.h>
-
 gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config)
 {
 	if (gfx == NULL || drv == NULL || config == NULL || drv->init == NULL) {
@@ -33,16 +31,6 @@ void gfx_free(gfx_t *gfx)
 	gfx->data = NULL;
 }
 
-int gfx_api(gfx_t *gfx, gfx_api_t *api)
-{
-	if (gfx == NULL || gfx->drv == NULL || api == NULL) {
-		return 1;
-	}
-
-	*api = gfx->drv->api;
-	return 0;
-}
-
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->proc == NULL || proc == NULL) {
@@ -50,6 +38,22 @@ int gfx_proc(gfx_t *gfx, strv_t name, void **proc)
 	}
 
 	return gfx->drv->proc(gfx, name, proc);
+}
+
+int gfx_native(gfx_t *gfx, gfx_native_t *native)
+{
+	if (gfx == NULL || gfx->drv == NULL || native == NULL) {
+		return 1;
+	}
+
+	*native = (gfx_native_t){
+		.api = gfx->drv->api,
+	};
+	if (gfx->drv->native != NULL) {
+		return gfx->drv->native(gfx, native);
+	}
+
+	return 0;
 }
 
 int gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
@@ -77,4 +81,13 @@ int gfx_clear(gfx_t *gfx, u32 buffers)
 	}
 
 	return gfx->drv->clear(gfx, buffers);
+}
+
+int gfx_present(gfx_t *gfx)
+{
+	if (gfx == NULL || gfx->drv == NULL || gfx->drv->present == NULL) {
+		return 1;
+	}
+
+	return gfx->drv->present(gfx);
 }

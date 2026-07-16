@@ -1,19 +1,10 @@
-#include "test.h"
-
 #include "gfx_driver.h"
+
+#include "test.h"
 
 static gfx_driver_t *t_gfx_none_driver(void)
 {
-	for (driver_t *i = DRIVER_START; i < DRIVER_END; i++) {
-		if (i->type == GFX_DRIVER_TYPE) {
-			gfx_driver_t *drv = i->data;
-			if (strv_eq(strv_cstr(drv->name), STRV("none"))) {
-				return drv;
-			}
-		}
-	}
-
-	return NULL;
+	return gfx_driver_find(STRV("none"));
 }
 
 TEST(gfx_none_driver_is_registered)
