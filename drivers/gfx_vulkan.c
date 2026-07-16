@@ -21,7 +21,8 @@ typedef u32 VkColorSpaceKHR;
 typedef u32 VkPresentModeKHR;
 
 typedef enum VkResult_e {
-	VK_SUCCESS = 0,
+	VK_SUCCESS	  = 0,
+	VK_SUBOPTIMAL_KHR = 1000001003,
 } VkResult;
 
 enum {
@@ -508,6 +509,11 @@ static void *symbol_ptr(PFN_vkVoidFunction fn)
 static int vk_ok(VkResult result)
 {
 	return result == VK_SUCCESS;
+}
+
+static int vk_swapchain_ok(VkResult result)
+{
+	return result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR;
 }
 
 static int extension_enabled(const char *const *extensions, u32 count, const char *name)
@@ -1320,7 +1326,7 @@ static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 	}
 
 	if (!vk_ok(vulkan->ResetFences(vulkan->device, 1, &vulkan->fence)) ||
-	    !vk_ok(vulkan->AcquireNextImageKHR(
+	    !vk_swapchain_ok(vulkan->AcquireNextImageKHR(
 		    vulkan->device, vulkan->swapchain, ~0ull, 0, vulkan->fence, &vulkan->swapchain_image_index)) ||
 	    !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull))) {
 		return 1;
@@ -1456,7 +1462,7 @@ static int gfx_vulkan_present(gfx_t *gfx)
 		.pSwapchains	= &vulkan->swapchain,
 		.pImageIndices	= &vulkan->swapchain_image_index,
 	};
-	if (!vk_ok(vulkan->QueuePresentKHR(vulkan->queue, &present))) {
+	if (!vk_swapchain_ok(vulkan->QueuePresentKHR(vulkan->queue, &present))) {
 		return 1;
 	}
 

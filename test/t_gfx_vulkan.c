@@ -22,6 +22,7 @@ typedef u32 VkColorSpaceKHR;
 
 enum {
 	VK_SUCCESS			       = 0,
+	VK_SUBOPTIMAL_KHR		       = 1000001003,
 	VK_QUEUE_GRAPHICS_BIT		       = 0x00000001,
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT    = 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT   = 0x00000004,
@@ -2830,6 +2831,23 @@ TEST(gfx_vulkan_clear_surface_acquire_failure)
 	END;
 }
 
+TEST(gfx_vulkan_clear_surface_accepts_suboptimal_acquire)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_acquire_next_image_ret = VK_SUBOPTIMAL_KHR;
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_clear_surface_acquire_index_out_of_range)
 {
 	START;
@@ -3446,6 +3464,24 @@ TEST(gfx_vulkan_present_failure)
 	END;
 }
 
+TEST(gfx_vulkan_present_accepts_suboptimal_present)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	t_vk_queue_present_ret = VK_SUBOPTIMAL_KHR;
+
+	EXPECT_EQ(gfx_present(&gfx), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 STEST(gfx_vulkan)
 {
 	SSTART;
@@ -3539,6 +3575,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_set_surface_target_swapchain_image_list_failure);
 	RUN(gfx_vulkan_clear_surface_reuses_acquired_image);
 	RUN(gfx_vulkan_clear_surface_acquire_failure);
+	RUN(gfx_vulkan_clear_surface_accepts_suboptimal_acquire);
 	RUN(gfx_vulkan_clear_surface_acquire_index_out_of_range);
 	RUN(gfx_vulkan_clear_surface_begin_failure);
 	RUN(gfx_vulkan_clear_surface_end_failure);
@@ -3571,6 +3608,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_present_null_data);
 	RUN(gfx_vulkan_present_without_acquired_image);
 	RUN(gfx_vulkan_present_failure);
+	RUN(gfx_vulkan_present_accepts_suboptimal_present);
 
 	SEND;
 }
