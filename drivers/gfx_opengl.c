@@ -73,12 +73,12 @@ static int symbol_missing(strv_t name)
 	return 1;
 }
 
-#define LOAD_GL(_opengl, _name)	 load_symbol((_opengl), (_opengl)->gl_lib, (void **)&(_opengl)->_name, STRV("gl" #_name))
-#define LOAD_GL_PROC(_opengl, _name)                                                                                   \
-	do {                                                                                                           \
-		if (find_gl_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))) {                       \
-			return symbol_missing(STRV("gl" #_name));                                                       \
-		}                                                                                                      \
+#define LOAD_GL(_opengl, _name) load_symbol((_opengl), (_opengl)->gl_lib, (void **)&(_opengl)->_name, STRV("gl" #_name))
+#define LOAD_GL_PROC(_opengl, _name)                                                                                                       \
+	do {                                                                                                                               \
+		if (find_gl_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))) {                                            \
+			return symbol_missing(STRV("gl" #_name));                                                                          \
+		}                                                                                                                          \
 	} while (0)
 
 static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl)

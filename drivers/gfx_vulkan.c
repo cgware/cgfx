@@ -884,7 +884,8 @@ static int gfx_vulkan_native(gfx_t *gfx, gfx_native_t *native)
 	}
 
 	gfx_vulkan_t *vulkan = gfx->data;
-	*native		     = (gfx_native_t){
+
+	*native = (gfx_native_t){
 		.api		 = GFX_API_VULKAN,
 		.instance	 = vulkan->instance,
 		.physical_device = vulkan->physical_device,
@@ -987,7 +988,8 @@ static int gfx_vulkan_surface_format_choose(const VkSurfaceFormatKHR *formats, u
 {
 	if (count == 1 && formats[0].format == 0) {
 		u32 vk_format = gfx_vulkan_format(requested);
-		*format	      = (VkSurfaceFormatKHR){
+
+		*format = (VkSurfaceFormatKHR){
 			.format	    = vk_format != 0 ? vk_format : VK_FORMAT_B8G8R8A8_UNORM,
 			.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
 		};

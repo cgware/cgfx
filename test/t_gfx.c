@@ -453,8 +453,8 @@ TEST(gfx_proc_sets_proc)
 	t_gfx_reset();
 	t_gfx_proc_sym = (void *)0x1234;
 	gfx_t gfx      = {
-		.drv = &t_gfx_driver,
-	};
+		     .drv = &t_gfx_driver,
+	     };
 	void *proc = NULL;
 
 	gfx_proc(&gfx, STRV("test"), &proc);
@@ -471,8 +471,8 @@ TEST(gfx_proc_returns_driver_result)
 	t_gfx_reset();
 	t_gfx_proc_ret = 1;
 	gfx_t gfx      = {
-		.drv = &t_gfx_driver,
-	};
+		     .drv = &t_gfx_driver,
+	     };
 	void *proc = NULL;
 
 	EXPECT_EQ(gfx_proc(&gfx, STRV("test"), &proc), 1);
@@ -545,8 +545,8 @@ TEST(gfx_set_target_returns_driver_result)
 	t_gfx_reset();
 	t_gfx_set_target_ret = 1;
 	gfx_t gfx	     = {
-		.drv = &t_gfx_driver,
-	};
+			   .drv = &t_gfx_driver,
+	   };
 	gfx_target_t target = {0};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);

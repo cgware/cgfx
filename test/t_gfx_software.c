@@ -14,6 +14,26 @@ static gfx_driver_t *t_gfx_software_driver(void)
 	return gfx_driver_find(STRV("software"));
 }
 
+static int t_gfx_software_init(gfx_t *gfx)
+{
+	gfx_driver_t *drv = t_gfx_software_driver();
+	return drv == NULL || gfx_init(gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD}) != gfx;
+}
+
+static int t_gfx_software_set_target(gfx_t *gfx, u8 *pixels, u16 width, u16 height, size_t stride)
+{
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= width,
+		.height = height,
+		.stride = stride,
+	};
+
+	return gfx_set_target(gfx, &target);
+}
+
 TEST(gfx_software_driver_is_registered)
 {
 	START;
@@ -109,8 +129,9 @@ TEST(gfx_software_set_target_null_data)
 		.drv = t_gfx_software_driver(),
 	};
 	EXPECT_NE(gfx.drv, NULL);
+	gfx_target_t target = {0};
 
-	EXPECT_EQ(gfx.drv->set_target(&gfx, &(gfx_target_t){0}), 1);
+	EXPECT_EQ(gfx.drv->set_target(&gfx, &target), 1);
 
 	END;
 }
@@ -119,22 +140,15 @@ TEST(gfx_software_set_target_none_clears_target)
 {
 	START;
 
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	u8 pixels[4] = {0};
-	gfx_set_target(&gfx,
-		       &(gfx_target_t){
-			       .type   = GFX_TARGET_MEMORY,
-			       .format = GFX_FORMAT_RGBA8,
-			       .data   = pixels,
-			       .width  = 1,
-			       .height = 1,
-			       .stride = 4,
-		       });
+	t_gfx_software_set_target(&gfx, pixels, 1, 1, 4);
+	gfx_target_t target = {
+		.type = GFX_TARGET_NONE,
+	};
 
-	EXPECT_EQ(gfx_set_target(&gfx, &(gfx_target_t){.type = GFX_TARGET_NONE}), 0);
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 
 	gfx_free(&gfx);
@@ -150,17 +164,16 @@ TEST(gfx_software_set_target_invalid_format)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NE(drv, NULL);
 	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_NONE,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
 
-	EXPECT_EQ(gfx_set_target(&gfx,
-				 &(gfx_target_t){
-					 .type	 = GFX_TARGET_MEMORY,
-					 .format = GFX_FORMAT_NONE,
-					 .data	 = pixels,
-					 .width	 = 1,
-					 .height = 1,
-					 .stride = 4,
-				 }),
-		  1);
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
 
 	gfx_free(&gfx);
 	END;
@@ -175,17 +188,16 @@ TEST(gfx_software_set_target_invalid_stride)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NE(drv, NULL);
 	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 3,
+	};
 
-	EXPECT_EQ(gfx_set_target(&gfx,
-				 &(gfx_target_t){
-					 .type	 = GFX_TARGET_MEMORY,
-					 .format = GFX_FORMAT_RGBA8,
-					 .data	 = pixels,
-					 .width	 = 1,
-					 .height = 1,
-					 .stride = 3,
-				 }),
-		  1);
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
 
 	gfx_free(&gfx);
 	END;
@@ -195,22 +207,11 @@ TEST(gfx_software_set_target_success)
 {
 	START;
 
-	u8 pixels[4]	  = {0};
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 
-	EXPECT_EQ(gfx_set_target(&gfx,
-				 &(gfx_target_t){
-					 .type	 = GFX_TARGET_MEMORY,
-					 .format = GFX_FORMAT_RGBA8,
-					 .data	 = pixels,
-					 .width	 = 1,
-					 .height = 1,
-					 .stride = 4,
-				 }),
-		  0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 1, 1, 4), 0);
 
 	gfx_free(&gfx);
 	END;
@@ -248,10 +249,8 @@ TEST(gfx_software_clear_without_target)
 {
 	START;
 
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 
@@ -263,10 +262,8 @@ TEST(gfx_software_clear_zero_buffers)
 {
 	START;
 
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 
 	EXPECT_EQ(gfx_clear(&gfx, 0), 0);
 
@@ -278,20 +275,10 @@ TEST(gfx_software_clear_writes_first_pixel)
 {
 	START;
 
-	u8 pixels[8]	  = {0};
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
-	gfx_set_target(&gfx,
-		       &(gfx_target_t){
-			       .type   = GFX_TARGET_MEMORY,
-			       .format = GFX_FORMAT_RGBA8,
-			       .data   = pixels,
-			       .width  = 2,
-			       .height = 1,
-			       .stride = 8,
-		       });
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 2, 1, 8);
 	gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 1.0f);
 
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
@@ -309,20 +296,10 @@ TEST(gfx_software_clear_writes_second_pixel)
 {
 	START;
 
-	u8 pixels[8]	  = {0};
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
-	gfx_set_target(&gfx,
-		       &(gfx_target_t){
-			       .type   = GFX_TARGET_MEMORY,
-			       .format = GFX_FORMAT_RGBA8,
-			       .data   = pixels,
-			       .width  = 2,
-			       .height = 1,
-			       .stride = 8,
-		       });
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 2, 1, 8);
 	gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 1.0f);
 
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
@@ -340,20 +317,10 @@ TEST(gfx_software_clear_uses_stride)
 {
 	START;
 
-	u8 pixels[16]	  = {0};
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
-	gfx_set_target(&gfx,
-		       &(gfx_target_t){
-			       .type   = GFX_TARGET_MEMORY,
-			       .format = GFX_FORMAT_RGBA8,
-			       .data   = pixels,
-			       .width  = 1,
-			       .height = 2,
-			       .stride = 8,
-		       });
+	u8 pixels[16] = {0};
+	gfx_t gfx     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 1, 2, 8);
 	gfx_clear_color(&gfx, 1.0f, 0.0f, 0.0f, 1.0f);
 
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
