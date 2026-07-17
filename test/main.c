@@ -3,6 +3,7 @@
 #include "test.h"
 
 STEST(gfx);
+STEST(gfx_d3d11);
 STEST(gfx_none);
 STEST(gfx_opengl);
 STEST(gfx_software);
@@ -12,6 +13,7 @@ TEST(cgfx)
 {
 	SSTART;
 	RUN(gfx);
+	RUN(gfx_d3d11);
 	RUN(gfx_none);
 	RUN(gfx_opengl);
 	RUN(gfx_software);

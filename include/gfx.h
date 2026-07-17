@@ -27,6 +27,7 @@ typedef enum gfx_api_e {
 	GFX_API_SOFTWARE,
 	GFX_API_OPENGL,
 	GFX_API_VULKAN,
+	GFX_API_D3D11,
 } gfx_api_t;
 
 typedef struct gfx_native_s {
