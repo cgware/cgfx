@@ -300,6 +300,7 @@ static u32 t_vk_device_extension_count;
 static const char *const *t_vk_device_extensions;
 static const char *t_vk_device_extension_storage[8];
 static VkSurfaceKHR t_vk_surface;
+static gfx_surface_t t_gfx_vulkan_surface;
 static VkSwapchainKHR t_vk_swapchain;
 static VkSwapchainCreateInfoKHR t_vk_swapchain_create;
 static VkSurfaceFormatKHR t_vk_surface_formats[20];
@@ -894,6 +895,10 @@ static void t_vkReset(void)
 		t_vk_device_extension_storage[i] = NULL;
 	}
 	t_vk_surface		  = 0;
+	t_gfx_vulkan_surface	  = (gfx_surface_t){
+		  .api	  = GFX_API_VULKAN,
+		  .handle = 0x44,
+	};
 	t_vk_swapchain		  = 9;
 	t_vk_swapchain_create	  = (VkSwapchainCreateInfoKHR){0};
 	t_vk_surface_format_count = 1;
@@ -1177,7 +1182,7 @@ static int t_gfx_vulkan_set_surface_target(gfx_t *gfx)
 			      &(gfx_target_t){
 				      .type    = GFX_TARGET_SURFACE,
 				      .format  = GFX_FORMAT_RGBA8,
-				      .surface = 0x44,
+				      .surface = &t_gfx_vulkan_surface,
 				      .width   = 640,
 				      .height  = 480,
 			      });
@@ -2162,7 +2167,7 @@ TEST(gfx_vulkan_set_surface_target_invalid_format)
 				 &(gfx_target_t){
 					 .type	  = GFX_TARGET_SURFACE,
 					 .format  = GFX_FORMAT_NONE,
-					 .surface = 0x44,
+					 .surface = &t_gfx_vulkan_surface,
 					 .width	  = 640,
 					 .height  = 480,
 				 }),
@@ -2303,7 +2308,7 @@ TEST(gfx_vulkan_set_surface_target_checks_support)
 	EXPECT_EQ(gfx_set_target(
 			  &gfx,
 			  &(gfx_target_t){
-				  .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480}),
+				  .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480}),
 		  0);
 	EXPECT_EQ(t_vk_get_surface_support_calls, 1);
 
@@ -2322,7 +2327,7 @@ TEST(gfx_vulkan_set_surface_target_creates_swapchain)
 
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	EXPECT_EQ(t_vk_create_swapchain_calls, 1);
 
@@ -2341,7 +2346,7 @@ TEST(gfx_vulkan_set_surface_target_passes_extent)
 
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 640);
 
@@ -2363,7 +2368,7 @@ TEST(gfx_vulkan_set_surface_target_uses_requested_format)
 
 	gfx_set_target(&gfx,
 		       &(gfx_target_t){
-			       .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8_UNORM, .surface = 0x44, .width = 640, .height = 480});
+			       .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8_UNORM, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_R8G8B8A8_UNORM);
 
@@ -2385,7 +2390,7 @@ TEST(gfx_vulkan_set_surface_target_prefers_unorm_fallback)
 
 	gfx_set_target(&gfx,
 		       &(gfx_target_t){
-			       .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8_UNORM, .surface = 0x44, .width = 640, .height = 480});
+			       .type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8_UNORM, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_B8G8R8A8_UNORM);
 
@@ -2552,7 +2557,7 @@ TEST(gfx_vulkan_set_surface_target_uses_srgb_format)
 				 &(gfx_target_t){
 					 .type	  = GFX_TARGET_SURFACE,
 					 .format  = GFX_FORMAT_RGBA8_SRGB,
-					 .surface = 0x44,
+					 .surface = &t_gfx_vulkan_surface,
 					 .width	  = 640,
 					 .height  = 480,
 				 }),
@@ -2577,7 +2582,7 @@ TEST(gfx_vulkan_set_surface_target_uses_bgra_srgb_format)
 				 &(gfx_target_t){
 					 .type	  = GFX_TARGET_SURFACE,
 					 .format  = GFX_FORMAT_BGRA8_SRGB,
-					 .surface = 0x44,
+					 .surface = &t_gfx_vulkan_surface,
 					 .width	  = 640,
 					 .height  = 480,
 				 }),
@@ -2602,7 +2607,7 @@ TEST(gfx_vulkan_set_surface_target_clamps_extent_min)
 				 &(gfx_target_t){
 					 .type	  = GFX_TARGET_SURFACE,
 					 .format  = GFX_FORMAT_RGBA8,
-					 .surface = 0x44,
+					 .surface = &t_gfx_vulkan_surface,
 					 .width	  = 1,
 					 .height  = 1,
 				 }),
@@ -2626,7 +2631,7 @@ TEST(gfx_vulkan_set_surface_target_clamps_extent_max)
 				 &(gfx_target_t){
 					 .type	  = GFX_TARGET_SURFACE,
 					 .format  = GFX_FORMAT_RGBA8,
-					 .surface = 0x44,
+					 .surface = &t_gfx_vulkan_surface,
 					 .width	  = 5000,
 					 .height  = 5000,
 				 }),
@@ -2928,7 +2933,7 @@ TEST(gfx_vulkan_clear_surface_acquires_image)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
 	EXPECT_EQ(t_vk_acquire_next_image_calls, 1);
@@ -2947,7 +2952,7 @@ TEST(gfx_vulkan_clear_surface_clears_swapchain_image)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
 
@@ -2967,7 +2972,7 @@ TEST(gfx_vulkan_present_queues_image)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
 
 	EXPECT_EQ(gfx_present(&gfx), 0);
@@ -2987,7 +2992,7 @@ TEST(gfx_vulkan_present_passes_image_index)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
 	gfx_present(&gfx);
 
@@ -3007,7 +3012,7 @@ TEST(gfx_vulkan_free_destroys_swapchain)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 
 	gfx_free(&gfx);
 
@@ -3026,7 +3031,7 @@ TEST(gfx_vulkan_set_target_none_destroys_swapchain)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_set_target(
 		&gfx,
-		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = 0x44, .width = 640, .height = 480});
+		&(gfx_target_t){.type = GFX_TARGET_SURFACE, .format = GFX_FORMAT_RGBA8, .surface = &t_gfx_vulkan_surface, .width = 640, .height = 480});
 	t_vk_destroy_swapchain_calls = 0;
 
 	EXPECT_EQ(gfx_set_target(&gfx, &(gfx_target_t){.type = GFX_TARGET_NONE}), 0);

@@ -2,28 +2,6 @@
 
 #include "log.h"
 
-typedef void Display;
-typedef void Visual;
-typedef unsigned long XID;
-typedef unsigned long Window;
-typedef int Bool;
-
-typedef struct XVisualInfo_s {
-	Visual *visual;
-	unsigned long visualid;
-	int screen;
-	int depth;
-	int class;
-	unsigned long red_mask;
-	unsigned long green_mask;
-	unsigned long blue_mask;
-	int colormap_size;
-	int bits_per_rgb;
-} XVisualInfo;
-
-typedef XID GLXDrawable;
-typedef void *GLXContext;
-
 enum {
 	GL_TRUE			= 1,
 	GL_TEXTURE_2D		= 0x0DE1,
@@ -44,14 +22,12 @@ enum {
 
 typedef struct gfx_opengl_s {
 	proc_t *proc;
-	void *lib;
+	void *gl_lib;
 	alloc_t alloc;
 	gfx_target_t target;
 	unsigned int framebuffer;
 	unsigned int texture;
-	void *display;
-	u64 window;
-	GLXContext context;
+	gfx_surface_t *surface;
 	void (*ClearColor)(float, float, float, float);
 	void (*Clear)(unsigned int);
 	void (*GenFramebuffers)(int, unsigned int *);
@@ -66,32 +42,71 @@ typedef struct gfx_opengl_s {
 	void (*TexImage2D)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void *);
 	void (*Viewport)(int, int, int, int);
 	void (*ReadPixels)(int, int, int, int, unsigned int, unsigned int, void *);
-	GLXContext (*XCreateContext)(Display *, XVisualInfo *, GLXContext, Bool);
-	void (*XDestroyContext)(Display *, GLXContext);
-	Bool (*XMakeCurrent)(Display *, GLXDrawable, GLXContext);
-	void (*XSwapBuffers)(Display *, GLXDrawable);
 } gfx_opengl_t;
 
-static int load_symbol(gfx_opengl_t *opengl, void **sym, strv_t name)
+static int load_symbol(gfx_opengl_t *opengl, void *lib, void **sym, strv_t name)
 {
-	if (proc_dlsym(opengl->proc, opengl->lib, name, sym)) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
-		return 1;
+	if (proc_dlsym(opengl->proc, lib, name, sym) == 0) {
+		return 0;
 	}
 
-	return 0;
+	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
+	return 1;
 }
 
-#define LOAD_GL(_opengl, _name)	 load_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))
-#define LOAD_GLX(_opengl, _name) load_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))
+static int find_gl_symbol(gfx_opengl_t *opengl, void **sym, strv_t name)
+{
+	if (opengl->gl_lib != NULL && proc_dlsym(opengl->proc, opengl->gl_lib, name, sym) == 0) {
+		return 0;
+	}
+	if (opengl->surface != NULL && opengl->surface->ops != NULL && opengl->surface->ops->proc != NULL) {
+		if (opengl->surface->ops->proc(opengl->surface, name, sym) == 0) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int symbol_missing(strv_t name)
+{
+	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
+	return 1;
+}
+
+#define LOAD_GL(_opengl, _name)	 load_symbol((_opengl), (_opengl)->gl_lib, (void **)&(_opengl)->_name, STRV("gl" #_name))
+#define LOAD_GL_PROC(_opengl, _name)                                                                                   \
+	do {                                                                                                           \
+		if (find_gl_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))) {                       \
+			return symbol_missing(STRV("gl" #_name));                                                       \
+		}                                                                                                      \
+	} while (0)
 
 static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl)
 {
-	if (opengl->lib != NULL) {
-		proc_dlclose(opengl->proc, opengl->lib);
+	if (opengl->gl_lib != NULL) {
+		proc_dlclose(opengl->proc, opengl->gl_lib);
 	}
 	alloc_free(&opengl->alloc, opengl, sizeof(*opengl));
 	gfx->data = NULL;
+	return 1;
+}
+
+static int gfx_opengl_load_gl(gfx_opengl_t *opengl)
+{
+	if (proc_dlopen(opengl->proc, STRV("opengl32.dll"), &opengl->gl_lib) == 0) {
+		return 0;
+	}
+	if (proc_dlopen(opengl->proc, STRV("libOpenGL.so.0"), &opengl->gl_lib) == 0) {
+		return 0;
+	}
+	if (proc_dlopen(opengl->proc, STRV("libGL.so.1"), &opengl->gl_lib) == 0) {
+		return 0;
+	}
+	if (proc_dlopen(opengl->proc, STRV("libGL.so"), &opengl->gl_lib) == 0) {
+		return 0;
+	}
+
+	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL library");
 	return 1;
 }
 
@@ -112,14 +127,11 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 	};
 	gfx->data = opengl;
 
-	if (proc_dlopen(opengl->proc, STRV("libGL.so.1"), &opengl->lib) && proc_dlopen(opengl->proc, STRV("libGL.so"), &opengl->lib)) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to load libGL.so");
+	if (gfx_opengl_load_gl(opengl)) {
 		return gfx_opengl_init_free(gfx, opengl);
 	}
 
-	if (LOAD_GL(opengl, ClearColor) || LOAD_GL(opengl, Clear) || LOAD_GL(opengl, GenFramebuffers) ||
-	    LOAD_GL(opengl, DeleteFramebuffers) || LOAD_GL(opengl, BindFramebuffer) || LOAD_GL(opengl, CheckFramebufferStatus) ||
-	    LOAD_GL(opengl, FramebufferTexture2D) || LOAD_GL(opengl, GenTextures) || LOAD_GL(opengl, DeleteTextures) ||
+	if (LOAD_GL(opengl, ClearColor) || LOAD_GL(opengl, Clear) || LOAD_GL(opengl, GenTextures) || LOAD_GL(opengl, DeleteTextures) ||
 	    LOAD_GL(opengl, BindTexture) || LOAD_GL(opengl, TexParameteri) || LOAD_GL(opengl, TexImage2D) || LOAD_GL(opengl, Viewport) ||
 	    LOAD_GL(opengl, ReadPixels)) {
 		return gfx_opengl_init_free(gfx, opengl);
@@ -130,10 +142,8 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 
 static void gfx_opengl_target_free(gfx_opengl_t *opengl)
 {
-	if (opengl->context != NULL) {
-		opengl->XMakeCurrent(opengl->display, 0, NULL);
-		opengl->XDestroyContext(opengl->display, opengl->context);
-		opengl->context = NULL;
+	if (opengl->surface != NULL && opengl->surface->ops != NULL && opengl->surface->ops->clear_current != NULL) {
+		opengl->surface->ops->clear_current(opengl->surface);
 	}
 	if (opengl->framebuffer != 0) {
 		opengl->DeleteFramebuffers(1, &opengl->framebuffer);
@@ -143,8 +153,7 @@ static void gfx_opengl_target_free(gfx_opengl_t *opengl)
 		opengl->DeleteTextures(1, &opengl->texture);
 		opengl->texture = 0;
 	}
-	opengl->display = NULL;
-	opengl->window	= 0;
+	opengl->surface = NULL;
 	opengl->target	= (gfx_target_t){0};
 }
 
@@ -156,8 +165,8 @@ static int gfx_opengl_free(gfx_t *gfx)
 
 	gfx_opengl_t *opengl = gfx->data;
 	gfx_opengl_target_free(opengl);
-	if (opengl->lib != NULL) {
-		proc_dlclose(opengl->proc, opengl->lib);
+	if (opengl->gl_lib != NULL) {
+		proc_dlclose(opengl->proc, opengl->gl_lib);
 	}
 	alloc_free(&opengl->alloc, opengl, sizeof(*opengl));
 	gfx->data = NULL;
@@ -171,7 +180,10 @@ static int gfx_opengl_proc(gfx_t *gfx, strv_t name, void **proc)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	return load_symbol(opengl, proc, name);
+	if (find_gl_symbol(opengl, proc, name) == 0) {
+		return 0;
+	}
+	return symbol_missing(name);
 }
 
 static int memory_target_valid(const gfx_target_t *target)
@@ -182,39 +194,38 @@ static int memory_target_valid(const gfx_target_t *target)
 
 static int surface_target_valid(const gfx_target_t *target)
 {
-	return target != NULL && target->type == GFX_TARGET_SURFACE && target->format == GFX_FORMAT_RGBA8 && target->display != NULL &&
-	       target->visual != NULL && target->surface != 0 && target->width != 0 && target->height != 0;
+	return target != NULL && target->type == GFX_TARGET_SURFACE && target->format == GFX_FORMAT_RGBA8 && target->surface != NULL &&
+	       target->surface->api == GFX_API_OPENGL && target->surface->ops != NULL && target->surface->ops->make_current != NULL &&
+	       target->surface->ops->present != NULL && target->width != 0 && target->height != 0;
 }
 
 static int surface_target_same(const gfx_opengl_t *opengl, const gfx_target_t *target)
 {
-	return opengl->target.type == GFX_TARGET_SURFACE && opengl->context != NULL && opengl->target.format == target->format &&
-	       opengl->target.display == target->display && opengl->target.visual == target->visual &&
+	return opengl->target.type == GFX_TARGET_SURFACE && opengl->surface != NULL && opengl->target.format == target->format &&
 	       opengl->target.surface == target->surface;
 }
 
-static int gfx_opengl_load_glx(gfx_opengl_t *opengl)
+static int gfx_opengl_load_framebuffer(gfx_opengl_t *opengl)
 {
-	if (opengl->XCreateContext != NULL && opengl->XDestroyContext != NULL && opengl->XMakeCurrent != NULL &&
-	    opengl->XSwapBuffers != NULL) {
+	if (opengl->GenFramebuffers != NULL && opengl->DeleteFramebuffers != NULL && opengl->BindFramebuffer != NULL &&
+	    opengl->CheckFramebufferStatus != NULL && opengl->FramebufferTexture2D != NULL) {
 		return 0;
 	}
 
-	if (LOAD_GLX(opengl, XCreateContext) || LOAD_GLX(opengl, XDestroyContext) || LOAD_GLX(opengl, XMakeCurrent) ||
-	    LOAD_GLX(opengl, XSwapBuffers)) {
-		opengl->XCreateContext	= NULL;
-		opengl->XDestroyContext = NULL;
-		opengl->XMakeCurrent	= NULL;
-		opengl->XSwapBuffers	= NULL;
-		return 1;
-	}
-
+	LOAD_GL_PROC(opengl, GenFramebuffers);
+	LOAD_GL_PROC(opengl, DeleteFramebuffers);
+	LOAD_GL_PROC(opengl, BindFramebuffer);
+	LOAD_GL_PROC(opengl, CheckFramebufferStatus);
+	LOAD_GL_PROC(opengl, FramebufferTexture2D);
 	return 0;
 }
 
 static int gfx_opengl_set_memory_target(gfx_opengl_t *opengl, const gfx_target_t *target)
 {
 	if (!memory_target_valid(target)) {
+		return 1;
+	}
+	if (gfx_opengl_load_framebuffer(opengl)) {
 		return 1;
 	}
 
@@ -243,7 +254,7 @@ static int gfx_opengl_set_memory_target(gfx_opengl_t *opengl, const gfx_target_t
 
 static int gfx_opengl_set_surface_target(gfx_opengl_t *opengl, const gfx_target_t *target)
 {
-	if (!surface_target_valid(target) || gfx_opengl_load_glx(opengl)) {
+	if (!surface_target_valid(target)) {
 		return 1;
 	}
 
@@ -253,17 +264,14 @@ static int gfx_opengl_set_surface_target(gfx_opengl_t *opengl, const gfx_target_
 	}
 
 	gfx_opengl_target_free(opengl);
-	opengl->display = target->display;
-	opengl->window	= target->surface;
-	opengl->context = opengl->XCreateContext(opengl->display, target->visual, NULL, GL_TRUE);
-	if (opengl->context == NULL) {
+	opengl->surface = target->surface;
+	if (opengl->surface->ops->make_current(opengl->surface)) {
 		gfx_opengl_target_free(opengl);
-		log_error("cgfx", "gfx_opengl", NULL, "failed to create GLX context");
+		log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
 		return 1;
 	}
-	if (!opengl->XMakeCurrent(opengl->display, (GLXDrawable)opengl->window, opengl->context)) {
+	if (gfx_opengl_load_framebuffer(opengl)) {
 		gfx_opengl_target_free(opengl);
-		log_error("cgfx", "gfx_opengl", NULL, "failed to make the GLX context current");
 		return 1;
 	}
 
@@ -347,12 +355,12 @@ static int gfx_opengl_present(gfx_t *gfx)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	if (opengl->target.type != GFX_TARGET_SURFACE || opengl->display == NULL || opengl->context == NULL || opengl->window == 0) {
+	if (opengl->target.type != GFX_TARGET_SURFACE || opengl->surface == NULL || opengl->surface->ops == NULL ||
+	    opengl->surface->ops->present == NULL) {
 		return 1;
 	}
 
-	opengl->XSwapBuffers(opengl->display, (GLXDrawable)opengl->window);
-	return 0;
+	return opengl->surface->ops->present(opengl->surface);
 }
 
 static gfx_driver_t gfx_opengl = {

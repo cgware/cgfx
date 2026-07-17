@@ -36,6 +36,22 @@ typedef struct gfx_native_s {
 	u64 device;
 } gfx_native_t;
 
+typedef struct gfx_surface_s gfx_surface_t;
+
+typedef struct gfx_surface_ops_s {
+	int (*proc)(gfx_surface_t *surface, strv_t name, void **proc);
+	int (*make_current)(gfx_surface_t *surface);
+	int (*clear_current)(gfx_surface_t *surface);
+	int (*present)(gfx_surface_t *surface);
+} gfx_surface_ops_t;
+
+struct gfx_surface_s {
+	gfx_api_t api;
+	u64 handle;
+	void *data;
+	const gfx_surface_ops_t *ops;
+};
+
 typedef struct gfx_plan_s {
 	const char *const *instance_extensions;
 	u32 instance_extension_count;
@@ -47,9 +63,7 @@ typedef struct gfx_target_s {
 	gfx_target_type_t type;
 	gfx_format_t format;
 	void *data;
-	void *display;
-	void *visual;
-	u64 surface;
+	gfx_surface_t *surface;
 	u16 width;
 	u16 height;
 	size_t stride;

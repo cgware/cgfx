@@ -904,7 +904,8 @@ static int target_valid(const gfx_target_t *target)
 		return target->format == GFX_FORMAT_RGBA8_UNORM && target->data != NULL && target->stride >= (size_t)target->width * 4;
 	}
 	if (target->type == GFX_TARGET_SURFACE) {
-		return gfx_vulkan_format(target->format) != 0 && target->surface != 0;
+		return gfx_vulkan_format(target->format) != 0 && target->surface != NULL && target->surface->api == GFX_API_VULKAN &&
+		       target->surface->handle != 0;
 	}
 
 	return 0;
@@ -1046,7 +1047,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		return 1;
 	}
 
-	VkSurfaceKHR surface = (VkSurfaceKHR)target->surface;
+	VkSurfaceKHR surface = (VkSurfaceKHR)target->surface->handle;
 	VkBool32 supported   = 0;
 	if (!vk_ok(vulkan->GetPhysicalDeviceSurfaceSupportKHR(vulkan->physical_device, vulkan->queue_family, surface, &supported)) ||
 	    !supported) {
