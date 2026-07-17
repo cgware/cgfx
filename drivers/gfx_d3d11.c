@@ -14,10 +14,10 @@ typedef void *IDXGISwapChain;
 typedef int D3D_FEATURE_LEVEL;
 
 enum {
-	S_OK				= 0,
-	D3D_DRIVER_TYPE_HARDWARE		= 1,
-	D3D11_SDK_VERSION		= 7,
-	DXGI_FORMAT_UNKNOWN		= 0,
+	S_OK				 = 0,
+	D3D_DRIVER_TYPE_HARDWARE	 = 1,
+	D3D11_SDK_VERSION		 = 7,
+	DXGI_FORMAT_UNKNOWN		 = 0,
 	GFX_D3D11_SWAPCHAIN_BUFFER_COUNT = 0,
 };
 
@@ -128,16 +128,9 @@ typedef struct IDXGISwapChainVTable_s {
 	HRESULT (*ResizeBuffers)(IDXGISwapChain *self, UINT buffer_count, UINT width, UINT height, UINT format, UINT flags);
 } IDXGISwapChainVTable;
 
-typedef HRESULT (*PFN_D3D11CreateDevice)(void *adapter,
-					 UINT driver_type,
-					 HMODULE software,
-					 UINT flags,
-					 const D3D_FEATURE_LEVEL *feature_levels,
-					 UINT feature_level_count,
-					 UINT sdk_version,
-					 ID3D11Device **device,
-					 D3D_FEATURE_LEVEL *feature_level,
-					 ID3D11DeviceContext **context);
+typedef HRESULT (*PFN_D3D11CreateDevice)(void *adapter, UINT driver_type, HMODULE software, UINT flags,
+					 const D3D_FEATURE_LEVEL *feature_levels, UINT feature_level_count, UINT sdk_version,
+					 ID3D11Device **device, D3D_FEATURE_LEVEL *feature_level, ID3D11DeviceContext **context);
 
 typedef struct gfx_d3d11_s {
 	proc_t *proc;
@@ -159,12 +152,8 @@ static int hresult_ok(HRESULT hr)
 
 static ULONG d3d11_release(void *object)
 {
-	if (object == NULL) {
-		return 0;
-	}
-
-	void ***iface = object;
-	ULONG (**vtable)(void *) = (ULONG (**)(void *))*iface;
+	void ***iface		 = object;
+	ULONG (**vtable)(void *) = (ULONG(**)(void *)) * iface;
 	return vtable[2](object);
 }
 
@@ -204,7 +193,7 @@ static int gfx_d3d11_init(gfx_t *gfx, const gfx_config_t *config)
 		return 1;
 	}
 
-	alloc_t alloc	     = config->alloc;
+	alloc_t alloc	   = config->alloc;
 	gfx_d3d11_t *d3d11 = alloc_alloc(&alloc, sizeof(*d3d11));
 	if (d3d11 == NULL) {
 		return 1;
@@ -219,16 +208,8 @@ static int gfx_d3d11_init(gfx_t *gfx, const gfx_config_t *config)
 	if (gfx_d3d11_load(d3d11)) {
 		return gfx_d3d11_init_free(gfx, d3d11);
 	}
-	if (!hresult_ok(d3d11->D3D11CreateDevice(NULL,
-						 D3D_DRIVER_TYPE_HARDWARE,
-						 NULL,
-						 0,
-						 NULL,
-						 0,
-						 D3D11_SDK_VERSION,
-						 &d3d11->device,
-						 NULL,
-						 &d3d11->context)) ||
+	if (!hresult_ok(d3d11->D3D11CreateDevice(
+		    NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d3d11->device, NULL, &d3d11->context)) ||
 	    d3d11->device == NULL || d3d11->context == NULL) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to create D3D11 device");
 		return gfx_d3d11_init_free(gfx, d3d11);
@@ -243,8 +224,8 @@ static void gfx_d3d11_target_free(gfx_d3d11_t *d3d11)
 		d3d11_release(d3d11->render_target);
 	}
 	d3d11->render_target = NULL;
-	d3d11->swapchain	    = NULL;
-	d3d11->target	    = (gfx_target_t){0};
+	d3d11->swapchain     = NULL;
+	d3d11->target	     = (gfx_target_t){0};
 }
 
 static int gfx_d3d11_free(gfx_t *gfx)
@@ -272,9 +253,10 @@ static int gfx_d3d11_native(gfx_t *gfx, gfx_native_t *native)
 	}
 
 	gfx_d3d11_t *d3d11 = gfx->data;
-	*native	       = (gfx_native_t){
-		     .api    = GFX_API_D3D11,
-		     .device = (u64)(uintptr_t)d3d11->device,
+
+	*native = (gfx_native_t){
+		.api	= GFX_API_D3D11,
+		.device = (u64)(uintptr_t)d3d11->device,
 	};
 	return 0;
 }
@@ -288,7 +270,7 @@ static int surface_target_valid(const gfx_target_t *target)
 
 static int gfx_d3d11_create_render_target(gfx_d3d11_t *d3d11)
 {
-	ID3D11Texture2D *buffer     = NULL;
+	ID3D11Texture2D *buffer	   = NULL;
 	IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)d3d11->swapchain;
 	if (!hresult_ok(swap->GetBuffer(d3d11->swapchain, 0, &IID_ID3D11Texture2D, (void **)&buffer)) || buffer == NULL) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to get D3D11 swapchain buffer");
@@ -296,7 +278,7 @@ static int gfx_d3d11_create_render_target(gfx_d3d11_t *d3d11)
 	}
 
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
-	HRESULT hr		  = device->CreateRenderTargetView(d3d11->device, buffer, NULL, &d3d11->render_target);
+	HRESULT hr		   = device->CreateRenderTargetView(d3d11->device, buffer, NULL, &d3d11->render_target);
 	d3d11_release(buffer);
 	if (!hresult_ok(hr) || d3d11->render_target == NULL) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to create D3D11 render target");
@@ -325,14 +307,10 @@ static int gfx_d3d11_set_surface_target(gfx_d3d11_t *d3d11, const gfx_target_t *
 	}
 	if (d3d11->target.type == GFX_TARGET_SURFACE && d3d11->swapchain == swapchain) {
 		IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)swapchain;
-		if (!hresult_ok(swap->ResizeBuffers(swapchain,
-						    GFX_D3D11_SWAPCHAIN_BUFFER_COUNT,
-						    target->width,
-						    target->height,
-						    DXGI_FORMAT_UNKNOWN,
-						    0))) {
+		if (!hresult_ok(swap->ResizeBuffers(
+			    swapchain, GFX_D3D11_SWAPCHAIN_BUFFER_COUNT, target->width, target->height, DXGI_FORMAT_UNKNOWN, 0))) {
 			log_error("cgfx", "gfx_d3d11", NULL, "failed to resize D3D11 swapchain");
-			d3d11->target = (gfx_target_t){0};
+			d3d11->target	 = (gfx_target_t){0};
 			d3d11->swapchain = NULL;
 			return 1;
 		}
@@ -372,10 +350,10 @@ static int gfx_d3d11_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 	}
 
 	gfx_d3d11_t *d3d11 = gfx->data;
-	d3d11->color[0]   = r;
-	d3d11->color[1]   = g;
-	d3d11->color[2]   = b;
-	d3d11->color[3]   = a;
+	d3d11->color[0]	   = r;
+	d3d11->color[1]	   = g;
+	d3d11->color[2]	   = b;
+	d3d11->color[3]	   = a;
 	return 0;
 }
 

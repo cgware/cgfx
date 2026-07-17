@@ -285,6 +285,7 @@ static int t_vk_queue_submit_ret;
 static int t_vk_surface_support_ret;
 static int t_vk_surface_supported;
 static int t_vk_surface_capabilities_ret;
+static int t_vk_surface_capabilities_fail_at;
 static VkSurfaceCapabilitiesKHR t_vk_surface_capabilities;
 static int t_vk_surface_formats_count_ret;
 static int t_vk_surface_formats_ret;
@@ -712,6 +713,9 @@ static int t_vkGetPhysicalDeviceSurfaceCapabilitiesKHR(VkPhysicalDevice device, 
 	t_vk_get_surface_capabilities_calls++;
 	t_vk_surface = surface;
 	*caps	     = t_vk_surface_capabilities;
+	if (t_vk_surface_capabilities_fail_at == t_vk_get_surface_capabilities_calls) {
+		return 1;
+	}
 	return t_vk_surface_capabilities_ret;
 }
 
@@ -867,6 +871,7 @@ static void t_vkReset(void)
 	t_vk_surface_support_ret		   = VK_SUCCESS;
 	t_vk_surface_supported			   = 1;
 	t_vk_surface_capabilities_ret		   = VK_SUCCESS;
+	t_vk_surface_capabilities_fail_at	   = 0;
 	t_vk_surface_capabilities		   = (VkSurfaceCapabilitiesKHR){
 				 .minImageCount		  = 1,
 				 .maxImageCount		  = 3,
@@ -2394,7 +2399,7 @@ TEST(gfx_vulkan_set_surface_target_recreates_swapchain_on_resize)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
 
-	t_vk_swapchain = 12;
+	t_vk_swapchain	    = 12;
 	gfx_target_t target = {
 		.type	 = GFX_TARGET_SURFACE,
 		.format	 = GFX_FORMAT_RGBA8,
@@ -2898,7 +2903,7 @@ TEST(gfx_vulkan_clear_surface_refreshes_current_extent)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
 
-	t_vk_swapchain = 12;
+	t_vk_swapchain				= 12;
 	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 800, .height = 600};
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
 
@@ -2923,6 +2928,97 @@ TEST(gfx_vulkan_clear_surface_acquire_failure)
 	t_vk_acquire_next_image_ret = 1;
 
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_reset_fences_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_reset_fences_ret = 1;
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_refresh_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_surface_capabilities_ret = 1;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_invalid_current_extent)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 0, .height = 600};
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_repeated_out_of_date)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_acquire_next_image_ret = VK_ERROR_OUT_OF_DATE_KHR;
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+	EXPECT_EQ(t_vk_acquire_next_image_calls, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_out_of_date_refresh_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	t_vk_acquire_next_image_ret	  = VK_ERROR_OUT_OF_DATE_KHR;
+	t_vk_surface_capabilities_fail_at = t_vk_get_surface_capabilities_calls + 2;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+	log_set_quiet(0, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3662,6 +3758,11 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_clear_surface_reuses_acquired_image);
 	RUN(gfx_vulkan_clear_surface_refreshes_current_extent);
 	RUN(gfx_vulkan_clear_surface_acquire_failure);
+	RUN(gfx_vulkan_clear_surface_reset_fences_failure);
+	RUN(gfx_vulkan_clear_surface_refresh_failure);
+	RUN(gfx_vulkan_clear_surface_invalid_current_extent);
+	RUN(gfx_vulkan_clear_surface_repeated_out_of_date);
+	RUN(gfx_vulkan_clear_surface_out_of_date_refresh_failure);
 	RUN(gfx_vulkan_clear_surface_accepts_suboptimal_acquire);
 	RUN(gfx_vulkan_clear_surface_acquire_index_out_of_range);
 	RUN(gfx_vulkan_clear_surface_begin_failure);

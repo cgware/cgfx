@@ -174,6 +174,20 @@ TEST(gfx_init_null_config)
 	END;
 }
 
+TEST(gfx_init_null_driver_callback)
+{
+	START;
+
+	gfx_t gfx	    = {0};
+	gfx_driver_t drv    = t_gfx_driver;
+	gfx_config_t config = {0};
+	drv.init	    = NULL;
+
+	EXPECT_EQ(gfx_init(&gfx, &drv, &config), NULL);
+
+	END;
+}
+
 TEST(gfx_init_calls_driver)
 {
 	START;
@@ -316,6 +330,35 @@ TEST(gfx_proc_null_gfx)
 	END;
 }
 
+TEST(gfx_proc_null_driver)
+{
+	START;
+
+	gfx_t gfx  = {0};
+	void *proc = NULL;
+
+	EXPECT_EQ(gfx_proc(&gfx, STRV("test"), &proc), 1);
+
+	END;
+}
+
+TEST(gfx_proc_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.proc	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+	void *proc = NULL;
+
+	EXPECT_EQ(gfx_proc(&gfx, STRV("test"), &proc), 1);
+
+	END;
+}
+
 TEST(gfx_native_null_gfx)
 {
 	START;
@@ -323,6 +366,18 @@ TEST(gfx_native_null_gfx)
 	gfx_native_t native = {0};
 
 	EXPECT_EQ(gfx_native(NULL, &native), 1);
+
+	END;
+}
+
+TEST(gfx_native_null_driver)
+{
+	START;
+
+	gfx_t gfx	    = {0};
+	gfx_native_t native = {0};
+
+	EXPECT_EQ(gfx_native(&gfx, &native), 1);
 
 	END;
 }
@@ -491,6 +546,35 @@ TEST(gfx_set_target_null_gfx)
 	END;
 }
 
+TEST(gfx_set_target_null_driver)
+{
+	START;
+
+	gfx_t gfx	    = {0};
+	gfx_target_t target = {0};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	END;
+}
+
+TEST(gfx_set_target_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.set_target	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+	gfx_target_t target = {0};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	END;
+}
+
 TEST(gfx_set_target_null_target)
 {
 	START;
@@ -563,6 +647,33 @@ TEST(gfx_clear_color_null_gfx)
 	END;
 }
 
+TEST(gfx_clear_color_null_driver)
+{
+	START;
+
+	gfx_t gfx = {0};
+
+	EXPECT_EQ(gfx_clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
+
+	END;
+}
+
+TEST(gfx_clear_color_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.clear_color	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+
+	EXPECT_EQ(gfx_clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
+
+	END;
+}
+
 TEST(gfx_clear_color_calls_driver)
 {
 	START;
@@ -606,6 +717,33 @@ TEST(gfx_clear_null_gfx)
 	END;
 }
 
+TEST(gfx_clear_null_driver)
+{
+	START;
+
+	gfx_t gfx = {0};
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	END;
+}
+
+TEST(gfx_clear_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.clear	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	END;
+}
+
 TEST(gfx_clear_calls_driver)
 {
 	START;
@@ -642,6 +780,33 @@ TEST(gfx_present_null_gfx)
 	START;
 
 	EXPECT_EQ(gfx_present(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_present_null_driver)
+{
+	START;
+
+	gfx_t gfx = {0};
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
+
+	END;
+}
+
+TEST(gfx_present_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.present	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
 
 	END;
 }
@@ -714,6 +879,7 @@ STEST(gfx)
 	RUN(gfx_init_null_gfx);
 	RUN(gfx_init_null_driver);
 	RUN(gfx_init_null_config);
+	RUN(gfx_init_null_driver_callback);
 	RUN(gfx_init_calls_driver);
 	RUN(gfx_init_passes_config);
 	RUN(gfx_init_sets_fields);
@@ -724,29 +890,40 @@ STEST(gfx)
 	RUN(gfx_free_calls_driver);
 	RUN(gfx_free_clears_fields);
 	RUN(gfx_native_null_gfx);
+	RUN(gfx_native_null_driver);
 	RUN(gfx_native_null_native);
 	RUN(gfx_native_without_driver_callback_sets_api);
 	RUN(gfx_native_calls_driver);
 	RUN(gfx_native_sets_native);
 	RUN(gfx_native_returns_driver_result);
 	RUN(gfx_proc_null_gfx);
+	RUN(gfx_proc_null_driver);
+	RUN(gfx_proc_null_driver_callback);
 	RUN(gfx_proc_null_proc);
 	RUN(gfx_proc_calls_driver);
 	RUN(gfx_proc_passes_name);
 	RUN(gfx_proc_sets_proc);
 	RUN(gfx_proc_returns_driver_result);
 	RUN(gfx_set_target_null_gfx);
+	RUN(gfx_set_target_null_driver);
+	RUN(gfx_set_target_null_driver_callback);
 	RUN(gfx_set_target_null_target);
 	RUN(gfx_set_target_calls_driver);
 	RUN(gfx_set_target_passes_target);
 	RUN(gfx_set_target_returns_driver_result);
 	RUN(gfx_clear_color_null_gfx);
+	RUN(gfx_clear_color_null_driver);
+	RUN(gfx_clear_color_null_driver_callback);
 	RUN(gfx_clear_color_calls_driver);
 	RUN(gfx_clear_color_returns_driver_result);
 	RUN(gfx_clear_null_gfx);
+	RUN(gfx_clear_null_driver);
+	RUN(gfx_clear_null_driver_callback);
 	RUN(gfx_clear_calls_driver);
 	RUN(gfx_clear_returns_driver_result);
 	RUN(gfx_present_null_gfx);
+	RUN(gfx_present_null_driver);
+	RUN(gfx_present_null_driver_callback);
 	RUN(gfx_present_calls_driver);
 	RUN(gfx_present_returns_driver_result);
 	RUN(gfx_driver_list_counts_all_without_plan);

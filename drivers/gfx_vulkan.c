@@ -21,8 +21,8 @@ typedef u32 VkColorSpaceKHR;
 typedef u32 VkPresentModeKHR;
 
 typedef enum VkResult_e {
-	VK_SUCCESS		    = 0,
-	VK_SUBOPTIMAL_KHR	    = 1000001003,
+	VK_SUCCESS		 = 0,
+	VK_SUBOPTIMAL_KHR	 = 1000001003,
 	VK_ERROR_OUT_OF_DATE_KHR = -1000001004,
 } VkResult;
 
@@ -1127,8 +1127,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 	}
 
 	u32 swapchain_image_count = 0;
-	if (!vk_ok(vulkan->GetSwapchainImagesKHR(vulkan->device, swapchain, &swapchain_image_count, NULL)) ||
-	    swapchain_image_count == 0) {
+	if (!vk_ok(vulkan->GetSwapchainImagesKHR(vulkan->device, swapchain, &swapchain_image_count, NULL)) || swapchain_image_count == 0) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to enumerate Vulkan swapchain images");
 		vulkan->DestroySwapchainKHR(vulkan->device, swapchain, NULL);
 		return 1;
@@ -1168,11 +1167,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 
 static int gfx_vulkan_surface_target_refresh(gfx_vulkan_t *vulkan)
 {
-	if (vulkan->target.type != GFX_TARGET_SURFACE || vulkan->target.surface == NULL) {
-		return 0;
-	}
-
-	VkSurfaceKHR surface = (VkSurfaceKHR)vulkan->target.surface->handle;
+	VkSurfaceKHR surface	      = (VkSurfaceKHR)vulkan->target.surface->handle;
 	VkSurfaceCapabilitiesKHR caps = {0};
 	if (!vk_ok(vulkan->GetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, surface, &caps))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to query Vulkan surface capabilities");
@@ -1183,8 +1178,8 @@ static int gfx_vulkan_surface_target_refresh(gfx_vulkan_t *vulkan)
 	    (caps.currentExtent.width == vulkan->target.width && caps.currentExtent.height == vulkan->target.height)) {
 		return 0;
 	}
-	if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0 ||
-	    caps.currentExtent.width > 0xffffu || caps.currentExtent.height > 0xffffu) {
+	if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0 || caps.currentExtent.width > 0xffffu ||
+	    caps.currentExtent.height > 0xffffu) {
 		return 1;
 	}
 
@@ -1396,8 +1391,8 @@ static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 		if (!vk_ok(vulkan->ResetFences(vulkan->device, 1, &vulkan->fence))) {
 			return 1;
 		}
-		VkResult result =
-			vulkan->AcquireNextImageKHR(vulkan->device, vulkan->swapchain, ~0ull, 0, vulkan->fence, &vulkan->swapchain_image_index);
+		VkResult result = vulkan->AcquireNextImageKHR(
+			vulkan->device, vulkan->swapchain, ~0ull, 0, vulkan->fence, &vulkan->swapchain_image_index);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			if (gfx_vulkan_surface_target_refresh(vulkan)) {
 				return 1;
@@ -1547,7 +1542,7 @@ static int gfx_vulkan_present(gfx_t *gfx)
 		.pSwapchains	= &vulkan->swapchain,
 		.pImageIndices	= &vulkan->swapchain_image_index,
 	};
-	VkResult result = vulkan->QueuePresentKHR(vulkan->queue, &present);
+	VkResult result		   = vulkan->QueuePresentKHR(vulkan->queue, &present);
 	vulkan->swapchain_acquired = 0;
 	if (vk_swapchain_needs_recreate(result)) {
 		return gfx_vulkan_surface_target_refresh(vulkan);

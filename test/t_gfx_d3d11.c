@@ -10,9 +10,9 @@ typedef void *HMODULE;
 typedef int D3D_FEATURE_LEVEL;
 
 enum {
-	S_OK			    = 0,
+	S_OK			   = 0,
 	T_D3D_DRIVER_TYPE_HARDWARE = 1,
-	T_D3D11_SDK_VERSION	    = 7,
+	T_D3D11_SDK_VERSION	   = 7,
 };
 
 typedef struct GUID_s {
@@ -173,6 +173,13 @@ static t_d3d11_texture_t t_texture;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
 
+static void *t_gfx_d3d11_alloc_fail(alloc_t *alloc, size_t size)
+{
+	(void)alloc;
+	(void)size;
+	return NULL;
+}
+
 static void *t_gfx_d3d11_symbol(t_gfx_d3d11_symbol_t fn)
 {
 	union {
@@ -261,15 +268,8 @@ static int t_surface_present(gfx_surface_t *surface)
 	return 0;
 }
 
-static HRESULT t_D3D11CreateDevice(void *adapter,
-				   UINT driver_type,
-				   HMODULE software,
-				   UINT flags,
-				   const D3D_FEATURE_LEVEL *feature_levels,
-				   UINT feature_level_count,
-				   UINT sdk_version,
-				   t_d3d11_device_t **device,
-				   D3D_FEATURE_LEVEL *feature_level,
+static HRESULT t_D3D11CreateDevice(void *adapter, UINT driver_type, HMODULE software, UINT flags, const D3D_FEATURE_LEVEL *feature_levels,
+				   UINT feature_level_count, UINT sdk_version, t_d3d11_device_t **device, D3D_FEATURE_LEVEL *feature_level,
 				   t_d3d11_context_t **context)
 {
 	(void)adapter;
@@ -287,7 +287,7 @@ static HRESULT t_D3D11CreateDevice(void *adapter,
 }
 
 static t_d3d11_device_vtbl_t t_device_vtbl = {
-	.Release		 = t_device_release,
+	.Release		= t_device_release,
 	.CreateRenderTargetView = t_CreateRenderTargetView,
 };
 
@@ -328,25 +328,26 @@ static void t_gfx_d3d11_reset(void)
 	t_create_driver_type		  = 0;
 	t_create_sdk_version		  = 0;
 	t_resize_width			  = 0;
-	t_resize_height		  = 0;
+	t_resize_height			  = 0;
 	t_clear_color[0]		  = 0.0f;
 	t_clear_color[1]		  = 0.0f;
 	t_clear_color[2]		  = 0.0f;
 	t_clear_color[3]		  = 0.0f;
 	t_create_device_ret		  = S_OK;
 	t_get_buffer_ret		  = S_OK;
-	t_create_render_target_view_ret  = S_OK;
+	t_create_render_target_view_ret	  = S_OK;
 	t_resize_buffers_ret		  = S_OK;
 	t_device.vtbl			  = &t_device_vtbl;
 	t_context.vtbl			  = &t_context_vtbl;
 	t_view.vtbl			  = &t_view_vtbl;
 	t_texture.vtbl			  = &t_texture_vtbl;
 	t_swapchain.vtbl		  = &t_swapchain_vtbl;
-	t_surface			  = (gfx_surface_t){
-				   .api	  = GFX_API_D3D11,
-				   .handle = (u64)(uintptr_t)&t_swapchain,
-				   .ops	  = &t_surface_ops,
-	  };
+
+	t_surface = (gfx_surface_t){
+		.api	= GFX_API_D3D11,
+		.handle = (u64)(uintptr_t)&t_swapchain,
+		.ops	= &t_surface_ops,
+	};
 }
 
 static gfx_driver_t *t_gfx_d3d11_driver(void)
@@ -397,6 +398,51 @@ TEST(gfx_d3d11_init_null_gfx)
 	END;
 }
 
+TEST(gfx_d3d11_init_null_config)
+{
+	START;
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_init_null_proc)
+{
+	START;
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_init_null_alloc)
+{
+	START;
+
+	proc_t proc = {0};
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){.proc = &proc}), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_init_alloc_failure)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_d3d11_symbols(&proc);
+	gfx_t gfx = {0};
+
+	EXPECT_EQ(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = {.alloc = t_gfx_d3d11_alloc_fail}}), NULL);
+
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_init_loads_library)
 {
 	START;
@@ -409,6 +455,83 @@ TEST(gfx_d3d11_init_loads_library)
 	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
 	log_set_quiet(0, 0);
+
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_init_missing_create_device_symbol)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	proc_setdlsym(&proc, STRV("d3d11.dll"), STRV("unused"), &t_device);
+	gfx_t gfx = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	log_set_quiet(0, 0);
+
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_init_create_device_failure)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	t_create_device_ret = -1;
+	proc_t proc	    = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_d3d11_symbols(&proc);
+	gfx_t gfx = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	log_set_quiet(0, 0);
+
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_init_failure_releases_context)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	t_create_device_ret = -1;
+	proc_t proc	    = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_d3d11_symbols(&proc);
+
+	log_set_quiet(0, 1);
+	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+	log_set_quiet(0, 0);
+
+	EXPECT_EQ(t_release_context_calls, 1);
+
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_init_failure_releases_device)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	t_create_device_ret = -1;
+	proc_t proc	    = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_d3d11_symbols(&proc);
+
+	log_set_quiet(0, 1);
+	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+	log_set_quiet(0, 0);
+
+	EXPECT_EQ(t_release_device_calls, 1);
 
 	proc_free(&proc);
 	END;
@@ -490,6 +613,20 @@ TEST(gfx_d3d11_native_sets_device)
 
 	gfx_free(&gfx);
 	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_native_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+	gfx_native_t native = {0};
+
+	EXPECT_EQ(gfx.drv->native(&gfx, &native), 1);
+
 	END;
 }
 
@@ -575,6 +712,152 @@ TEST(gfx_d3d11_set_surface_target_passes_resize_width)
 	END;
 }
 
+TEST(gfx_d3d11_set_target_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+	gfx_target_t target = {0};
+
+	EXPECT_EQ(gfx.drv->set_target(&gfx, &target), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_set_target_unknown_type)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {
+		.type = GFX_TARGET_MEMORY,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_target_none_clears_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+
+	EXPECT_EQ(gfx_set_target(&gfx, &(gfx_target_t){.type = GFX_TARGET_NONE}), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_surface_target_invalid_surface_api)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_surface_t surface = t_surface;
+	surface.api	      = GFX_API_OPENGL;
+
+	gfx_target_t target = {
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &surface,
+		.width	 = 640,
+		.height	 = 480,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_surface_target_get_buffer_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_get_buffer_ret = -1;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 640, 480), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_surface_target_render_target_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_create_render_target_view_ret = -1;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 640, 480), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_surface_target_reuses_existing_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+
+	EXPECT_EQ(t_get_buffer_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_set_surface_target_resize_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	t_resize_buffers_ret = -1;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 800, 600), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_clear_calls_context)
 {
 	START;
@@ -610,6 +893,62 @@ TEST(gfx_d3d11_clear_uses_red)
 	END;
 }
 
+TEST(gfx_d3d11_clear_color_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+
+	EXPECT_EQ(gfx.drv->clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_clear_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+
+	EXPECT_EQ(gfx.drv->clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_clear_zero_buffers)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx_clear(&gfx, 0), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_clear_without_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_present_calls_surface)
 {
 	START;
@@ -621,6 +960,34 @@ TEST(gfx_d3d11_present_calls_surface)
 	gfx_present(&gfx);
 
 	EXPECT_EQ(t_surface_present_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_present_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+
+	EXPECT_EQ(gfx.drv->present(&gfx), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_present_without_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -640,6 +1007,19 @@ TEST(gfx_d3d11_free_releases_context)
 	EXPECT_EQ(t_release_context_calls, 1);
 
 	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_free_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+
+	EXPECT_EQ(gfx.drv->free(&gfx), 1);
+
 	END;
 }
 
@@ -665,20 +1045,44 @@ STEST(gfx_d3d11)
 
 	RUN(gfx_d3d11_driver_is_registered);
 	RUN(gfx_d3d11_init_null_gfx);
+	RUN(gfx_d3d11_init_null_config);
+	RUN(gfx_d3d11_init_null_proc);
+	RUN(gfx_d3d11_init_null_alloc);
+	RUN(gfx_d3d11_init_alloc_failure);
 	RUN(gfx_d3d11_init_loads_library);
+	RUN(gfx_d3d11_init_missing_create_device_symbol);
+	RUN(gfx_d3d11_init_create_device_failure);
+	RUN(gfx_d3d11_init_failure_releases_context);
+	RUN(gfx_d3d11_init_failure_releases_device);
 	RUN(gfx_d3d11_init_creates_device);
 	RUN(gfx_d3d11_init_uses_hardware_driver);
 	RUN(gfx_d3d11_init_uses_sdk_version);
 	RUN(gfx_d3d11_native_sets_api);
 	RUN(gfx_d3d11_native_sets_device);
+	RUN(gfx_d3d11_native_null_data);
+	RUN(gfx_d3d11_set_target_null_data);
+	RUN(gfx_d3d11_set_target_unknown_type);
+	RUN(gfx_d3d11_set_target_none_clears_target);
+	RUN(gfx_d3d11_set_surface_target_invalid_surface_api);
+	RUN(gfx_d3d11_set_surface_target_get_buffer_failure);
+	RUN(gfx_d3d11_set_surface_target_render_target_failure);
 	RUN(gfx_d3d11_set_surface_target_gets_buffer);
 	RUN(gfx_d3d11_set_surface_target_creates_render_target);
 	RUN(gfx_d3d11_set_surface_target_releases_buffer);
+	RUN(gfx_d3d11_set_surface_target_reuses_existing_target);
 	RUN(gfx_d3d11_set_surface_target_resizes_swapchain);
 	RUN(gfx_d3d11_set_surface_target_passes_resize_width);
+	RUN(gfx_d3d11_set_surface_target_resize_failure);
+	RUN(gfx_d3d11_clear_color_null_data);
+	RUN(gfx_d3d11_clear_null_data);
+	RUN(gfx_d3d11_clear_zero_buffers);
+	RUN(gfx_d3d11_clear_without_target);
 	RUN(gfx_d3d11_clear_calls_context);
 	RUN(gfx_d3d11_clear_uses_red);
+	RUN(gfx_d3d11_present_null_data);
+	RUN(gfx_d3d11_present_without_target);
 	RUN(gfx_d3d11_present_calls_surface);
+	RUN(gfx_d3d11_free_null_data);
 	RUN(gfx_d3d11_free_releases_context);
 	RUN(gfx_d3d11_free_releases_device);
 

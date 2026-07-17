@@ -68,6 +68,19 @@ TEST(gfx_software_init_null_config)
 	END;
 }
 
+TEST(gfx_software_init_null_alloc)
+{
+	START;
+
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NE(drv, NULL);
+
+	EXPECT_EQ(drv->init(&gfx, &(gfx_config_t){0}), 1);
+
+	END;
+}
+
 TEST(gfx_software_init_success)
 {
 	START;
@@ -121,7 +134,7 @@ TEST(gfx_software_free_null_data)
 	END;
 }
 
-TEST(gfx_software_set_target_null_data)
+TEST(gfx_software_set_target_null_pixels)
 {
 	START;
 
@@ -179,6 +192,103 @@ TEST(gfx_software_set_target_invalid_format)
 	END;
 }
 
+TEST(gfx_software_set_target_null_target)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+
+	EXPECT_EQ(gfx_set_target(&gfx, NULL), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_target_invalid_type)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	= GFX_TARGET_SURFACE,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_target_null_data)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_target_zero_width)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_target_zero_height)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_set_target_invalid_stride)
 {
 	START;
@@ -212,6 +322,61 @@ TEST(gfx_software_set_target_success)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 1, 1, 4), 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_clear_color_clamps_low)
+{
+	START;
+
+	u8 pixels[4] = {255, 255, 255, 255};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 1, 1, 4);
+
+	EXPECT_EQ(gfx_clear_color(&gfx, -1.0f, -0.1f, 0.0f, 1.0f), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	EXPECT_EQ(pixels[0], 0);
+	EXPECT_EQ(pixels[1], 0);
+	EXPECT_EQ(pixels[2], 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_clear_color_clamps_high)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 1, 1, 4);
+
+	EXPECT_EQ(gfx_clear_color(&gfx, 1.0f, 1.1f, 2.0f, 1.0f), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	EXPECT_EQ(pixels[0], 255);
+	EXPECT_EQ(pixels[1], 255);
+	EXPECT_EQ(pixels[2], 255);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_clear_color_rounds)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	t_gfx_software_set_target(&gfx, pixels, 1, 1, 4);
+
+	EXPECT_EQ(gfx_clear_color(&gfx, 0.5f, 0.0f, 0.0f, 1.0f), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	EXPECT_EQ(pixels[0], 128);
 
 	gfx_free(&gfx);
 	END;
@@ -341,15 +506,24 @@ STEST(gfx_software)
 	RUN(gfx_software_driver_is_registered);
 	RUN(gfx_software_init_null_gfx);
 	RUN(gfx_software_init_null_config);
+	RUN(gfx_software_init_null_alloc);
 	RUN(gfx_software_init_success);
 	RUN(gfx_software_init_alloc_failure);
 	RUN(gfx_software_free_null_gfx);
 	RUN(gfx_software_free_null_data);
-	RUN(gfx_software_set_target_null_data);
+	RUN(gfx_software_set_target_null_pixels);
 	RUN(gfx_software_set_target_none_clears_target);
+	RUN(gfx_software_set_target_null_target);
+	RUN(gfx_software_set_target_invalid_type);
 	RUN(gfx_software_set_target_invalid_format);
+	RUN(gfx_software_set_target_null_data);
+	RUN(gfx_software_set_target_zero_width);
+	RUN(gfx_software_set_target_zero_height);
 	RUN(gfx_software_set_target_invalid_stride);
 	RUN(gfx_software_set_target_success);
+	RUN(gfx_software_clear_color_clamps_low);
+	RUN(gfx_software_clear_color_clamps_high);
+	RUN(gfx_software_clear_color_rounds);
 	RUN(gfx_software_clear_color_null_data);
 	RUN(gfx_software_clear_null_data);
 	RUN(gfx_software_clear_without_target);
