@@ -24,6 +24,7 @@ typedef u32 VkColorSpaceKHR;
 enum {
 	VK_SUCCESS			       = 0,
 	VK_SUBOPTIMAL_KHR		       = 1000001003,
+	VK_ERROR_OUT_OF_DATE_KHR	       = -1000001004,
 	VK_QUEUE_GRAPHICS_BIT		       = 0x00000001,
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT    = 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT   = 0x00000004,
@@ -1095,6 +1096,14 @@ static void t_gfx_vulkan_fallback_symbols(proc_t *proc)
 		      t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetInstanceProcAddr));
 }
 
+static void t_gfx_vulkan_windows_symbols(proc_t *proc)
+{
+	proc_setdlsym(proc,
+		      STRV("vulkan-1.dll"),
+		      STRV("vkGetInstanceProcAddr"),
+		      t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetInstanceProcAddr));
+}
+
 static gfx_driver_t *t_gfx_vulkan_driver(void)
 {
 	return gfx_driver_find(STRV("vulkan"));
@@ -1271,6 +1280,25 @@ TEST(gfx_vulkan_init_fallback_library)
 	proc_t proc = {0};
 	proc_init(&proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_fallback_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_vulkan_driver();
+	EXPECT_NE(drv, NULL);
+
+	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_init_windows_library)
+{
+	START;
+
+	t_vkReset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_vulkan_windows_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NE(drv, NULL);
@@ -2357,6 +2385,38 @@ TEST(gfx_vulkan_set_surface_target_passes_extent)
 	END;
 }
 
+TEST(gfx_vulkan_set_surface_target_recreates_swapchain_on_resize)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+
+	t_vk_swapchain = 12;
+	gfx_target_t target = {
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_vulkan_surface,
+		.width	 = 800,
+		.height	 = 600,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+
+	EXPECT_EQ(t_vk_create_swapchain_calls, 2);
+	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 800);
+	EXPECT_EQ(t_vk_swapchain_create.imageExtent.height, 600);
+	EXPECT_EQ(t_vk_swapchain_create.oldSwapchain, 9);
+	EXPECT_EQ(t_vk_device_wait_idle_calls, 1);
+	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
+	EXPECT_EQ(t_vk_swapchain, 9);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_set_surface_target_uses_requested_format)
 {
 	START;
@@ -2823,6 +2883,29 @@ TEST(gfx_vulkan_clear_surface_reuses_acquired_image)
 
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
 	EXPECT_EQ(t_vk_acquire_next_image_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_clear_surface_refreshes_current_extent)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+
+	t_vk_swapchain = 12;
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 800, .height = 600};
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+
+	EXPECT_EQ(t_vk_create_swapchain_calls, 2);
+	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 800);
+	EXPECT_EQ(t_vk_swapchain_create.imageExtent.height, 600);
+	EXPECT_EQ(t_vk_swapchain_create.oldSwapchain, 9);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3493,6 +3576,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_init_alloc_failure);
 	RUN(gfx_vulkan_init_missing_library);
 	RUN(gfx_vulkan_init_fallback_library);
+	RUN(gfx_vulkan_init_windows_library);
 	RUN(gfx_vulkan_init_missing_instance_symbol);
 	RUN(gfx_vulkan_init_missing_device_symbol);
 	RUN(gfx_vulkan_init_missing_lib_symbol);
@@ -3551,6 +3635,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_set_surface_target_checks_support);
 	RUN(gfx_vulkan_set_surface_target_creates_swapchain);
 	RUN(gfx_vulkan_set_surface_target_passes_extent);
+	RUN(gfx_vulkan_set_surface_target_recreates_swapchain_on_resize);
 	RUN(gfx_vulkan_set_surface_target_uses_requested_format);
 	RUN(gfx_vulkan_set_surface_target_prefers_unorm_fallback);
 	RUN(gfx_vulkan_set_surface_target_unsupported_queue);
@@ -3575,6 +3660,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_set_surface_target_swapchain_image_count_is_limited);
 	RUN(gfx_vulkan_set_surface_target_swapchain_image_list_failure);
 	RUN(gfx_vulkan_clear_surface_reuses_acquired_image);
+	RUN(gfx_vulkan_clear_surface_refreshes_current_extent);
 	RUN(gfx_vulkan_clear_surface_acquire_failure);
 	RUN(gfx_vulkan_clear_surface_accepts_suboptimal_acquire);
 	RUN(gfx_vulkan_clear_surface_acquire_index_out_of_range);
