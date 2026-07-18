@@ -17,7 +17,7 @@ TEST(gfx_none_driver_is_registered)
 {
 	START;
 
-	EXPECT_NE(t_gfx_none_driver(), NULL);
+	EXPECT_NOT_NULL(t_gfx_none_driver());
 
 	END;
 }
@@ -27,7 +27,7 @@ TEST(gfx_none_init_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){0}), 1);
 
@@ -40,9 +40,9 @@ TEST(gfx_none_init_success)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){0}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}), &gfx);
 
 	gfx_free(&gfx);
 	END;
@@ -53,7 +53,7 @@ TEST(gfx_none_free_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->free(NULL), 1);
 
@@ -78,7 +78,7 @@ TEST(gfx_none_clear_color_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->clear_color(NULL, 0.0f, 0.0f, 0.0f, 0.0f), 1);
 
@@ -112,7 +112,7 @@ TEST(gfx_none_set_target_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_target_t target = {0};
 
 	EXPECT_EQ(drv->set_target(NULL, &target), 1);
@@ -138,7 +138,7 @@ TEST(gfx_none_clear_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->clear(NULL, GFX_CLEAR_COLOR_BUFFER), 1);
 

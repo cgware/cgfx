@@ -360,7 +360,7 @@ TEST(gfx_opengl_driver_is_registered)
 {
 	START;
 
-	EXPECT_NE(t_gfx_opengl_driver(), NULL);
+	EXPECT_NOT_NULL(t_gfx_opengl_driver());
 
 	END;
 }
@@ -370,7 +370,7 @@ TEST(gfx_opengl_init_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){0}), 1);
 
@@ -383,7 +383,7 @@ TEST(gfx_opengl_init_null_config)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(&gfx, NULL), 1);
 
@@ -396,7 +396,7 @@ TEST(gfx_opengl_init_null_proc)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(&gfx, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
 
@@ -411,9 +411,9 @@ TEST(gfx_opengl_init_alloc_failure)
 	proc_init(&proc, 0, 1, ALLOC_STD);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = {.alloc = t_gfx_opengl_alloc_fail}}), NULL);
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = {.alloc = t_gfx_opengl_alloc_fail}}));
 
 	proc_free(&proc);
 	END;
@@ -427,10 +427,10 @@ TEST(gfx_opengl_init_missing_library)
 	proc_init(&proc, 0, 1, ALLOC_STD);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -446,9 +446,9 @@ TEST(gfx_opengl_init_fallback_library)
 	t_gfx_opengl_fallback_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -464,9 +464,9 @@ TEST(gfx_opengl_init_glvnd_libraries)
 	t_gfx_opengl_glvnd_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -482,9 +482,9 @@ TEST(gfx_opengl_init_windows_library_name)
 	t_gfx_opengl_gl_symbols(&proc, STRV("opengl32.dll"));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -500,10 +500,10 @@ TEST(gfx_opengl_init_missing_clear)
 	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glClearColor"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glClearColor));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), NULL);
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -519,9 +519,9 @@ TEST(gfx_opengl_init_success)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -535,7 +535,7 @@ TEST(gfx_opengl_free_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->free(&gfx), 1);
 
@@ -552,7 +552,7 @@ TEST(gfx_opengl_clear_color_calls_gl)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 
 	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 0);
@@ -574,7 +574,7 @@ TEST(gfx_opengl_clear_color_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
 
@@ -590,7 +590,7 @@ TEST(gfx_opengl_proc_loads_symbol)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	void *sym = NULL;
 
@@ -610,12 +610,12 @@ TEST(gfx_opengl_proc_sets_symbol)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	void *sym = NULL;
 
 	gfx_proc(&gfx, STRV("glClearColor"), &sym);
-	EXPECT_EQ(sym, t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glClearColor));
+	EXPECT_PTR(sym, t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glClearColor));
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -629,7 +629,7 @@ TEST(gfx_opengl_proc_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 	void *sym = NULL;
 
 	EXPECT_EQ(gfx.drv->proc(&gfx, STRV("glClearColor"), &sym), 1);
@@ -646,14 +646,14 @@ TEST(gfx_opengl_proc_uses_surface_proc)
 	t_gfx_opengl_core_symbols(&proc, STRV("libGL.so.1"));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
 	gfx_set_target(&gfx, &target);
 	void *sym = NULL;
 
 	EXPECT_EQ(gfx_proc(&gfx, STRV("glGenFramebuffers"), &sym), 0);
-	EXPECT_EQ(sym, t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenFramebuffers));
+	EXPECT_PTR(sym, t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenFramebuffers));
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -685,7 +685,7 @@ TEST(gfx_opengl_set_target_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 
@@ -703,7 +703,7 @@ TEST(gfx_opengl_set_target_invalid_format)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = {
@@ -732,7 +732,7 @@ TEST(gfx_opengl_set_memory_target_missing_framebuffer_symbol)
 	t_gfx_opengl_core_symbols(&proc, STRV("libGL.so.1"));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -756,7 +756,7 @@ TEST(gfx_opengl_set_target_success)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -778,7 +778,7 @@ TEST(gfx_opengl_set_target_reuses_framebuffer_symbols)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = {
@@ -808,7 +808,7 @@ TEST(gfx_opengl_set_target_creates_texture)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -832,7 +832,7 @@ TEST(gfx_opengl_set_target_creates_framebuffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -857,7 +857,7 @@ TEST(gfx_opengl_set_target_incomplete_framebuffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -881,7 +881,7 @@ TEST(gfx_opengl_free_deletes_framebuffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -906,7 +906,7 @@ TEST(gfx_opengl_free_deletes_texture)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -931,12 +931,12 @@ TEST(gfx_opengl_clear_maps_color_buffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 
 	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
 	EXPECT_EQ(t_gl_clear_calls, 1);
-	EXPECT_EQ(t_gl_mask, 0x00004000u);
+	EXPECT_EQ(t_gl_mask, 0x00004000);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -953,7 +953,7 @@ TEST(gfx_opengl_clear_memory_binds_framebuffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
@@ -979,7 +979,7 @@ TEST(gfx_opengl_clear_memory_sets_viewport)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[24]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 3, 2, 12);
@@ -1005,7 +1005,7 @@ TEST(gfx_opengl_clear_memory_reads_rows)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[16]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 2, 8);
@@ -1030,7 +1030,7 @@ TEST(gfx_opengl_clear_memory_flips_y)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	u8 pixels[16]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 2, 8);
@@ -1075,7 +1075,7 @@ TEST(gfx_opengl_set_surface_target_accepts_surface)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 
@@ -1095,7 +1095,7 @@ TEST(gfx_opengl_set_surface_target_missing_framebuffer_symbol)
 	t_gfx_opengl_core_symbols(&proc, STRV("libGL.so.1"));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_surface_t surface = {
 		.api = GFX_API_OPENGL,
@@ -1126,7 +1126,7 @@ TEST(gfx_opengl_set_surface_target_makes_current)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 
@@ -1149,7 +1149,7 @@ TEST(gfx_opengl_set_surface_target_uses_library_framebuffer_symbols)
 	t_gfx_opengl_fallback_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 
@@ -1170,7 +1170,7 @@ TEST(gfx_opengl_set_surface_target_uses_glvnd_library)
 	t_gfx_opengl_glvnd_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 
@@ -1192,7 +1192,7 @@ TEST(gfx_opengl_set_surface_target_uses_default_library)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 
@@ -1214,7 +1214,7 @@ TEST(gfx_opengl_present_calls_surface_present)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &target);
@@ -1256,7 +1256,7 @@ TEST(gfx_opengl_set_surface_target_reuses_surface_on_resize)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t first_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &first_target);
@@ -1283,7 +1283,7 @@ TEST(gfx_opengl_set_surface_target_updates_size_on_resize)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t first_target   = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_target_t resized_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 7, 5);
@@ -1310,7 +1310,7 @@ TEST(gfx_opengl_clear_surface_binds_default_framebuffer)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &target);
@@ -1319,7 +1319,7 @@ TEST(gfx_opengl_clear_surface_binds_default_framebuffer)
 	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
 
 	EXPECT_EQ(t_gl_bind_framebuffer_calls, 1);
-	EXPECT_EQ(t_gl_framebuffer, 0u);
+	EXPECT_EQ(t_gl_framebuffer, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1336,7 +1336,7 @@ TEST(gfx_opengl_clear_surface_sets_viewport)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &target);
@@ -1361,7 +1361,7 @@ TEST(gfx_opengl_present_swaps_buffers)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &target);
@@ -1384,7 +1384,7 @@ TEST(gfx_opengl_free_clears_surface_current)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &target);
@@ -1408,7 +1408,7 @@ TEST(gfx_opengl_set_target_none_clears_surface_current)
 	t_gfx_opengl_symbols(&proc);
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
 	gfx_target_t surface_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
 	gfx_set_target(&gfx, &surface_target);
@@ -1432,7 +1432,7 @@ TEST(gfx_opengl_clear_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 
@@ -1494,7 +1494,7 @@ TEST(gfx_opengl_present_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_opengl_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->present(&gfx), 1);
 

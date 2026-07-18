@@ -38,7 +38,7 @@ TEST(gfx_software_driver_is_registered)
 {
 	START;
 
-	EXPECT_NE(t_gfx_software_driver(), NULL);
+	EXPECT_NOT_NULL(t_gfx_software_driver());
 
 	END;
 }
@@ -48,7 +48,7 @@ TEST(gfx_software_init_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
 
@@ -61,7 +61,7 @@ TEST(gfx_software_init_null_config)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(&gfx, NULL), 1);
 
@@ -74,7 +74,7 @@ TEST(gfx_software_init_null_alloc)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->init(&gfx, &(gfx_config_t){0}), 1);
 
@@ -87,9 +87,9 @@ TEST(gfx_software_init_success)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
 	END;
@@ -101,9 +101,9 @@ TEST(gfx_software_init_alloc_failure)
 
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = {.alloc = t_gfx_software_alloc_fail}}), NULL);
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = {.alloc = t_gfx_software_alloc_fail}}));
 
 	END;
 }
@@ -113,7 +113,7 @@ TEST(gfx_software_free_null_gfx)
 	START;
 
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 
 	EXPECT_EQ(drv->free(NULL), 1);
 
@@ -127,7 +127,7 @@ TEST(gfx_software_free_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_software_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->free(&gfx), 1);
 
@@ -141,7 +141,7 @@ TEST(gfx_software_set_target_null_pixels)
 	gfx_t gfx = {
 		.drv = t_gfx_software_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 	gfx_target_t target = {0};
 
 	EXPECT_EQ(gfx.drv->set_target(&gfx, &target), 1);
@@ -175,7 +175,7 @@ TEST(gfx_software_set_target_invalid_format)
 	u8 pixels[4]	  = {0};
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
 	gfx_target_t target = {
 		.type	= GFX_TARGET_MEMORY,
@@ -296,7 +296,7 @@ TEST(gfx_software_set_target_invalid_stride)
 	u8 pixels[4]	  = {0};
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
-	EXPECT_NE(drv, NULL);
+	EXPECT_NOT_NULL(drv);
 	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
 	gfx_target_t target = {
 		.type	= GFX_TARGET_MEMORY,
@@ -389,7 +389,7 @@ TEST(gfx_software_clear_color_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_software_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
 
@@ -403,7 +403,7 @@ TEST(gfx_software_clear_null_data)
 	gfx_t gfx = {
 		.drv = t_gfx_software_driver(),
 	};
-	EXPECT_NE(gfx.drv, NULL);
+	EXPECT_NOT_NULL(gfx.drv);
 
 	EXPECT_EQ(gfx.drv->clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 

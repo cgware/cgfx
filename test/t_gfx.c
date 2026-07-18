@@ -146,7 +146,7 @@ TEST(gfx_init_null_gfx)
 
 	gfx_config_t config = {0};
 
-	EXPECT_EQ(gfx_init(NULL, &t_gfx_driver, &config), NULL);
+	EXPECT_NULL(gfx_init(NULL, &t_gfx_driver, &config));
 
 	END;
 }
@@ -158,7 +158,7 @@ TEST(gfx_init_null_driver)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	EXPECT_EQ(gfx_init(&gfx, NULL, &config), NULL);
+	EXPECT_NULL(gfx_init(&gfx, NULL, &config));
 
 	END;
 }
@@ -169,7 +169,7 @@ TEST(gfx_init_null_config)
 
 	gfx_t gfx = {0};
 
-	EXPECT_EQ(gfx_init(&gfx, &t_gfx_driver, NULL), NULL);
+	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, NULL));
 
 	END;
 }
@@ -183,7 +183,7 @@ TEST(gfx_init_null_driver_callback)
 	gfx_config_t config = {0};
 	drv.init	    = NULL;
 
-	EXPECT_EQ(gfx_init(&gfx, &drv, &config), NULL);
+	EXPECT_NULL(gfx_init(&gfx, &drv, &config));
 
 	END;
 }
@@ -196,7 +196,7 @@ TEST(gfx_init_calls_driver)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	EXPECT_EQ(gfx_init(&gfx, &t_gfx_driver, &config), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, &t_gfx_driver, &config), &gfx);
 	EXPECT_EQ(t_gfx_init_calls, 1);
 
 	END;
@@ -212,7 +212,7 @@ TEST(gfx_init_passes_config)
 
 	gfx_init(&gfx, &t_gfx_driver, &config);
 
-	EXPECT_EQ(t_gfx_config, &config);
+	EXPECT_PTR(t_gfx_config, &config);
 
 	END;
 }
@@ -227,8 +227,8 @@ TEST(gfx_init_sets_fields)
 
 	gfx_init(&gfx, &t_gfx_driver, &config);
 
-	EXPECT_EQ(gfx.drv, &t_gfx_driver);
-	EXPECT_EQ(gfx.data, (void *)0x1234);
+	EXPECT_PTR(gfx.drv, &t_gfx_driver);
+	EXPECT_PTR(gfx.data, (void *)0x1234);
 
 	END;
 }
@@ -242,7 +242,7 @@ TEST(gfx_init_failure_returns_null)
 	gfx_config_t config = {0};
 	t_gfx_init_ret	    = 1;
 
-	EXPECT_EQ(gfx_init(&gfx, &t_gfx_driver, &config), NULL);
+	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, &config));
 
 	END;
 }
@@ -258,8 +258,8 @@ TEST(gfx_init_failure_clears_fields)
 
 	gfx_init(&gfx, &t_gfx_driver, &config);
 
-	EXPECT_EQ(gfx.drv, NULL);
-	EXPECT_EQ(gfx.data, NULL);
+	EXPECT_NULL(gfx.drv);
+	EXPECT_NULL(gfx.data);
 
 	END;
 }
@@ -313,8 +313,8 @@ TEST(gfx_free_clears_fields)
 
 	gfx_free(&gfx);
 
-	EXPECT_EQ(gfx.drv, NULL);
-	EXPECT_EQ(gfx.data, NULL);
+	EXPECT_NULL(gfx.drv);
+	EXPECT_NULL(gfx.data);
 
 	END;
 }
@@ -617,7 +617,7 @@ TEST(gfx_set_target_passes_target)
 
 	gfx_set_target(&gfx, &target);
 
-	EXPECT_EQ(t_gfx_target, &target);
+	EXPECT_PTR(t_gfx_target, &target);
 
 	END;
 }
@@ -845,7 +845,7 @@ TEST(gfx_driver_list_counts_all_without_plan)
 {
 	START;
 
-	EXPECT_NE(gfx_driver_list(NULL, 0), 0u);
+	EXPECT_NE(gfx_driver_list(NULL, 0), 0);
 
 	END;
 }
@@ -854,7 +854,7 @@ TEST(gfx_driver_find_returns_null_for_missing_driver)
 {
 	START;
 
-	EXPECT_EQ(gfx_driver_find(STRV("missing")), NULL);
+	EXPECT_NULL(gfx_driver_find(STRV("missing")));
 
 	END;
 }
@@ -866,8 +866,8 @@ TEST(gfx_driver_list_limits_output)
 	gfx_driver_t *drivers[1] = {0};
 	u32 count		 = gfx_driver_list(drivers, sizeof(drivers) / sizeof(drivers[0]));
 
-	EXPECT_NE(count, 0u);
-	EXPECT_NE(drivers[0], NULL);
+	EXPECT_NE(count, 0);
+	EXPECT_NOT_NULL(drivers[0]);
 
 	END;
 }
