@@ -508,8 +508,8 @@ TEST(gfx_proc_sets_proc)
 	t_gfx_reset();
 	t_gfx_proc_sym = (void *)0x1234;
 	gfx_t gfx      = {
-		     .drv = &t_gfx_driver,
-	     };
+		.drv = &t_gfx_driver,
+	};
 	void *proc = NULL;
 
 	gfx_proc(&gfx, STRV("test"), &proc);
@@ -526,8 +526,8 @@ TEST(gfx_proc_returns_driver_result)
 	t_gfx_reset();
 	t_gfx_proc_ret = 1;
 	gfx_t gfx      = {
-		     .drv = &t_gfx_driver,
-	     };
+		.drv = &t_gfx_driver,
+	};
 	void *proc = NULL;
 
 	EXPECT_EQ(gfx_proc(&gfx, STRV("test"), &proc), 1);
@@ -629,8 +629,8 @@ TEST(gfx_set_target_returns_driver_result)
 	t_gfx_reset();
 	t_gfx_set_target_ret = 1;
 	gfx_t gfx	     = {
-			   .drv = &t_gfx_driver,
-	   };
+		.drv = &t_gfx_driver,
+	};
 	gfx_target_t target = {0};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
@@ -859,6 +859,67 @@ TEST(gfx_driver_find_returns_null_for_missing_driver)
 	END;
 }
 
+TEST(gfx_driver_next_null_returns_first_real_api)
+{
+	START;
+
+	gfx_driver_t *driver = gfx_driver_next(NULL);
+
+	EXPECT_NOT_NULL(driver);
+	EXPECT_NE(driver->api, GFX_API_NONE);
+
+	END;
+}
+
+TEST(gfx_driver_next_returns_different_driver)
+{
+	START;
+
+	gfx_driver_t *driver = gfx_driver_next(NULL);
+	EXPECT_NOT_NULL(driver);
+
+	gfx_driver_t *next = gfx_driver_next(driver);
+	EXPECT_NOT_NULL(next);
+	EXPECT_PTR_NE(next, driver);
+
+	END;
+}
+
+TEST(gfx_driver_next_wraps_to_first_real_api)
+{
+	START;
+
+	gfx_driver_t *first = gfx_driver_next(NULL);
+	EXPECT_NOT_NULL(first);
+
+	gfx_driver_t *driver = first;
+	gfx_driver_t *next   = NULL;
+	for (u32 i = 0; i < gfx_driver_list(NULL, 0); i++) {
+		next = gfx_driver_next(driver);
+		if (next == first || next == NULL) {
+			break;
+		}
+		driver = next;
+	}
+
+	EXPECT_PTR(next, first);
+
+	END;
+}
+
+TEST(gfx_driver_next_invalid_api_returns_first_real_api)
+{
+	START;
+
+	gfx_driver_t driver = {
+		.api = (gfx_api_t)(GFX_API_D3D11 + 1),
+	};
+
+	EXPECT_PTR(gfx_driver_next(&driver), gfx_driver_next(NULL));
+
+	END;
+}
+
 TEST(gfx_driver_list_limits_output)
 {
 	START;
@@ -928,6 +989,10 @@ STEST(gfx)
 	RUN(gfx_present_returns_driver_result);
 	RUN(gfx_driver_list_counts_all_without_plan);
 	RUN(gfx_driver_find_returns_null_for_missing_driver);
+	RUN(gfx_driver_next_null_returns_first_real_api);
+	RUN(gfx_driver_next_returns_different_driver);
+	RUN(gfx_driver_next_wraps_to_first_real_api);
+	RUN(gfx_driver_next_invalid_api_returns_first_real_api);
 	RUN(gfx_driver_list_limits_output);
 
 	SEND;

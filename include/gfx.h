@@ -83,6 +83,7 @@ typedef struct gfx_s {
 
 gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config);
 void gfx_free(gfx_t *gfx);
+
 int gfx_native(gfx_t *gfx, gfx_native_t *native);
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc);
 int gfx_set_target(gfx_t *gfx, const gfx_target_t *target);

@@ -18,6 +18,7 @@ typedef struct gfx_driver_s {
 } gfx_driver_t;
 
 gfx_driver_t *gfx_driver_find(strv_t name);
+gfx_driver_t *gfx_driver_next(const gfx_driver_t *driver);
 u32 gfx_driver_list(gfx_driver_t **drivers, u32 capacity);
 
 #define GFX_DRIVER_TYPE 0x474658
