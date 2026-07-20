@@ -65,6 +65,15 @@ int gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
 	return gfx->drv->set_target(gfx, target);
 }
 
+int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->drv == NULL || gfx->drv->viewport == NULL || width == 0 || height == 0) {
+		return 1;
+	}
+
+	return gfx->drv->viewport(gfx, x, y, width, height);
+}
+
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->clear_color == NULL) {

@@ -227,6 +227,33 @@ TEST(gfx_software_set_target_invalid_type)
 	END;
 }
 
+TEST(gfx_software_viewport_success)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_viewport_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_software_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+
+	EXPECT_EQ(gfx.drv->viewport(&gfx, 1, 2, 3, 4), 1);
+
+	END;
+}
+
 TEST(gfx_software_set_target_null_data)
 {
 	START;
@@ -515,6 +542,8 @@ STEST(gfx_software)
 	RUN(gfx_software_set_target_none_clears_target);
 	RUN(gfx_software_set_target_null_target);
 	RUN(gfx_software_set_target_invalid_type);
+	RUN(gfx_software_viewport_success);
+	RUN(gfx_software_viewport_null_data);
 	RUN(gfx_software_set_target_invalid_format);
 	RUN(gfx_software_set_target_null_data);
 	RUN(gfx_software_set_target_zero_width);

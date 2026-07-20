@@ -12,6 +12,7 @@ typedef struct gfx_driver_s {
 	int (*native)(gfx_t *gfx, gfx_native_t *native);
 	int (*proc)(gfx_t *gfx, strv_t name, void **proc);
 	int (*set_target)(gfx_t *gfx, const gfx_target_t *target);
+	int (*viewport)(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
 	int (*clear_color)(gfx_t *gfx, float r, float g, float b, float a);
 	int (*clear)(gfx_t *gfx, u32 buffers);
 	int (*present)(gfx_t *gfx);

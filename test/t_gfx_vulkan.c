@@ -3595,6 +3595,35 @@ TEST(gfx_vulkan_clear_color_null_data)
 	END;
 }
 
+TEST(gfx_vulkan_viewport_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_vulkan_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+
+	EXPECT_EQ(gfx.drv->viewport(&gfx, 1, 2, 3, 4), 1);
+
+	END;
+}
+
+TEST(gfx_vulkan_viewport_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_present_null_data)
 {
 	START;
@@ -3792,6 +3821,8 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_clear_null_data);
 	RUN(gfx_vulkan_clear_without_target);
 	RUN(gfx_vulkan_clear_color_null_data);
+	RUN(gfx_vulkan_viewport_null_data);
+	RUN(gfx_vulkan_viewport_success);
 	RUN(gfx_vulkan_present_null_data);
 	RUN(gfx_vulkan_present_without_acquired_image);
 	RUN(gfx_vulkan_present_failure);

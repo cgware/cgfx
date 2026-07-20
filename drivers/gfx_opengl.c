@@ -310,6 +310,17 @@ static int gfx_opengl_clear_color(gfx_t *gfx, float r, float g, float b, float a
 	return 0;
 }
 
+static int gfx_opengl_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = gfx->data;
+	opengl->Viewport(x, y, width, height);
+	return 0;
+}
+
 static int gfx_opengl_read_memory(gfx_opengl_t *opengl)
 {
 	for (u16 y = 0; y < opengl->target.height; y++) {
@@ -370,6 +381,7 @@ static gfx_driver_t gfx_opengl = {
 	.free	     = gfx_opengl_free,
 	.proc	     = gfx_opengl_proc,
 	.set_target  = gfx_opengl_set_target,
+	.viewport    = gfx_opengl_viewport,
 	.clear_color = gfx_opengl_clear_color,
 	.clear	     = gfx_opengl_clear,
 	.present     = gfx_opengl_present,

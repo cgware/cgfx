@@ -3,6 +3,10 @@
 typedef struct gfx_software_s {
 	gfx_target_t target;
 	alloc_t alloc;
+	u16 viewport_x;
+	u16 viewport_y;
+	u16 viewport_width;
+	u16 viewport_height;
 	u8 color[4];
 } gfx_software_t;
 
@@ -76,6 +80,20 @@ static int gfx_software_set_target(gfx_t *gfx, const gfx_target_t *target)
 	return 0;
 }
 
+static int gfx_software_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_software_t *render	= gfx->data;
+	render->viewport_x	= x;
+	render->viewport_y	= y;
+	render->viewport_width	= width;
+	render->viewport_height = height;
+	return 0;
+}
+
 static int gfx_software_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -124,6 +142,7 @@ static gfx_driver_t gfx_software = {
 	.init	     = gfx_software_init,
 	.free	     = gfx_software_free,
 	.set_target  = gfx_software_set_target,
+	.viewport    = gfx_software_viewport,
 	.clear_color = gfx_software_clear_color,
 	.clear	     = gfx_software_clear,
 };

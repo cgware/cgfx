@@ -85,6 +85,31 @@ TEST(gfx_none_clear_color_null_gfx)
 	END;
 }
 
+TEST(gfx_none_viewport_success)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_none_init(&gfx), 0);
+
+	EXPECT_EQ(gfx_viewport(&gfx, 0, 0, 1, 1), 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_none_viewport_null_gfx)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_none_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->viewport(NULL, 0, 0, 1, 1), 1);
+
+	END;
+}
+
 TEST(gfx_none_set_target_success)
 {
 	START;
@@ -155,6 +180,8 @@ STEST(gfx_none)
 	RUN(gfx_none_free_null_gfx);
 	RUN(gfx_none_clear_color_success);
 	RUN(gfx_none_clear_color_null_gfx);
+	RUN(gfx_none_viewport_success);
+	RUN(gfx_none_viewport_null_gfx);
 	RUN(gfx_none_set_target_success);
 	RUN(gfx_none_set_target_null_gfx);
 	RUN(gfx_none_clear_success);

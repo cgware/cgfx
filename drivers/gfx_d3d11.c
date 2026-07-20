@@ -30,6 +30,15 @@ typedef struct GUID_s {
 
 typedef const GUID *REFIID;
 
+typedef struct D3D11_VIEWPORT_s {
+	float TopLeftX;
+	float TopLeftY;
+	float Width;
+	float Height;
+	float MinDepth;
+	float MaxDepth;
+} D3D11_VIEWPORT;
+
 static const GUID IID_ID3D11Texture2D = {0x6f15aaf2u, 0xd208u, 0x4e89u, {0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c}};
 
 typedef struct ID3D11DeviceVTable_s {
@@ -90,7 +99,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	void (*unused_41)(void);
 	void (*unused_42)(void);
 	void (*unused_43)(void);
-	void (*unused_44)(void);
+	void (*RSSetViewports)(ID3D11DeviceContext *self, UINT num_viewports, const D3D11_VIEWPORT *viewports);
 	void (*unused_45)(void);
 	void (*unused_46)(void);
 	void (*unused_47)(void);
@@ -357,6 +366,30 @@ static int gfx_d3d11_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 	return 0;
 }
 
+static int gfx_d3d11_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11		   = gfx->data;
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->RSSetViewports == NULL) {
+		return 1;
+	}
+
+	D3D11_VIEWPORT viewport = {
+		.TopLeftX = (float)x,
+		.TopLeftY = (float)y,
+		.Width	  = (float)width,
+		.Height	  = (float)height,
+		.MinDepth = 0.0f,
+		.MaxDepth = 1.0f,
+	};
+	context->RSSetViewports(d3d11->context, 1, &viewport);
+	return 0;
+}
+
 static int gfx_d3d11_clear(gfx_t *gfx, u32 buffers)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -398,6 +431,7 @@ static gfx_driver_t gfx_d3d11 = {
 	.free	     = gfx_d3d11_free,
 	.native	     = gfx_d3d11_native,
 	.set_target  = gfx_d3d11_set_target,
+	.viewport    = gfx_d3d11_viewport,
 	.clear_color = gfx_d3d11_clear_color,
 	.clear	     = gfx_d3d11_clear,
 	.present     = gfx_d3d11_present,

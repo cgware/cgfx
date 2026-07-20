@@ -99,6 +99,10 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to set memory render target");
 		ret = 1;
 	}
+	if (ret == 0 && gfx_viewport(&gfx, 0, 0, WIDTH, HEIGHT)) {
+		log_error("cgfx_example", "main", NULL, "failed to set viewport");
+		ret = 1;
+	}
 	if (ret == 0 && gfx_clear_color(&gfx, R / 255.0f, G / 255.0f, B / 255.0f, A / 255.0f)) {
 		log_error("cgfx_example", "main", NULL, "failed to set clear color");
 		ret = 1;

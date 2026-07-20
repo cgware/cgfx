@@ -87,6 +87,7 @@ void gfx_free(gfx_t *gfx);
 int gfx_native(gfx_t *gfx, gfx_native_t *native);
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc);
 int gfx_set_target(gfx_t *gfx, const gfx_target_t *target);
+int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a);
 int gfx_clear(gfx_t *gfx, u32 buffers);
 int gfx_present(gfx_t *gfx);

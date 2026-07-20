@@ -7,6 +7,7 @@ static int t_gfx_free_calls;
 static int t_gfx_native_calls;
 static int t_gfx_proc_calls;
 static int t_gfx_set_target_calls;
+static int t_gfx_viewport_calls;
 static int t_gfx_clear_color_calls;
 static int t_gfx_clear_calls;
 static int t_gfx_present_calls;
@@ -15,6 +16,7 @@ static int t_gfx_free_ret;
 static int t_gfx_native_ret;
 static int t_gfx_proc_ret;
 static int t_gfx_set_target_ret;
+static int t_gfx_viewport_ret;
 static int t_gfx_clear_color_ret;
 static int t_gfx_clear_ret;
 static int t_gfx_present_ret;
@@ -23,6 +25,10 @@ static strv_t t_gfx_proc_name;
 static void *t_gfx_proc_sym;
 static gfx_native_t t_gfx_native_value;
 static const gfx_target_t *t_gfx_target;
+static u16 t_gfx_x;
+static u16 t_gfx_y;
+static u16 t_gfx_width;
+static u16 t_gfx_height;
 static float t_gfx_r;
 static float t_gfx_g;
 static float t_gfx_b;
@@ -69,6 +75,17 @@ static int t_gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
 	return t_gfx_set_target_ret;
 }
 
+static int t_gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	(void)gfx;
+	t_gfx_viewport_calls++;
+	t_gfx_x	     = x;
+	t_gfx_y	     = y;
+	t_gfx_width  = width;
+	t_gfx_height = height;
+	return t_gfx_viewport_ret;
+}
+
 static int t_gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 {
 	(void)gfx;
@@ -103,6 +120,7 @@ static gfx_driver_t t_gfx_driver = {
 	.native	     = t_gfx_native,
 	.proc	     = t_gfx_proc,
 	.set_target  = t_gfx_set_target,
+	.viewport    = t_gfx_viewport,
 	.clear_color = t_gfx_clear_color,
 	.clear	     = t_gfx_clear,
 	.present     = t_gfx_present,
@@ -117,6 +135,7 @@ static void t_gfx_reset(void)
 	t_gfx_native_calls	= 0;
 	t_gfx_proc_calls	= 0;
 	t_gfx_set_target_calls	= 0;
+	t_gfx_viewport_calls	= 0;
 	t_gfx_clear_color_calls = 0;
 	t_gfx_clear_calls	= 0;
 	t_gfx_present_calls	= 0;
@@ -125,6 +144,7 @@ static void t_gfx_reset(void)
 	t_gfx_native_ret	= 0;
 	t_gfx_proc_ret		= 0;
 	t_gfx_set_target_ret	= 0;
+	t_gfx_viewport_ret	= 0;
 	t_gfx_clear_color_ret	= 0;
 	t_gfx_clear_ret		= 0;
 	t_gfx_present_ret	= 0;
@@ -133,6 +153,10 @@ static void t_gfx_reset(void)
 	t_gfx_proc_sym		= NULL;
 	t_gfx_native_value	= (gfx_native_t){0};
 	t_gfx_target		= NULL;
+	t_gfx_x			= 0;
+	t_gfx_y			= 0;
+	t_gfx_width		= 0;
+	t_gfx_height		= 0;
 	t_gfx_r			= 0.0f;
 	t_gfx_g			= 0.0f;
 	t_gfx_b			= 0.0f;
@@ -507,7 +531,8 @@ TEST(gfx_proc_sets_proc)
 
 	t_gfx_reset();
 	t_gfx_proc_sym = (void *)0x1234;
-	gfx_t gfx      = {
+
+	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
 	void *proc = NULL;
@@ -525,7 +550,8 @@ TEST(gfx_proc_returns_driver_result)
 
 	t_gfx_reset();
 	t_gfx_proc_ret = 1;
-	gfx_t gfx      = {
+
+	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
 	void *proc = NULL;
@@ -628,12 +654,171 @@ TEST(gfx_set_target_returns_driver_result)
 
 	t_gfx_reset();
 	t_gfx_set_target_ret = 1;
-	gfx_t gfx	     = {
+
+	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
 	gfx_target_t target = {0};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_null_gfx)
+{
+	START;
+
+	EXPECT_EQ(gfx_viewport(NULL, 0, 0, 1, 1), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_null_driver)
+{
+	START;
+
+	gfx_t gfx = {0};
+
+	EXPECT_EQ(gfx_viewport(&gfx, 0, 0, 1, 1), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.viewport	 = NULL;
+
+	gfx_t gfx = {
+		.drv = &drv,
+	};
+
+	EXPECT_EQ(gfx_viewport(&gfx, 0, 0, 1, 1), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_zero_width)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	EXPECT_EQ(gfx_viewport(&gfx, 0, 0, 0, 1), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_zero_height)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	EXPECT_EQ(gfx_viewport(&gfx, 0, 0, 1, 0), 1);
+
+	END;
+}
+
+TEST(gfx_viewport_calls_driver)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gfx_viewport_calls, 1);
+
+	END;
+}
+
+TEST(gfx_viewport_passes_x)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gfx_x, 1);
+
+	END;
+}
+
+TEST(gfx_viewport_passes_y)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gfx_y, 2);
+
+	END;
+}
+
+TEST(gfx_viewport_passes_width)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gfx_width, 3);
+
+	END;
+}
+
+TEST(gfx_viewport_passes_height)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gfx_height, 4);
+
+	END;
+}
+
+TEST(gfx_viewport_returns_driver_result)
+{
+	START;
+
+	t_gfx_reset();
+	t_gfx_viewport_ret = 1;
+
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 1);
 
 	END;
 }
@@ -972,6 +1157,17 @@ STEST(gfx)
 	RUN(gfx_set_target_calls_driver);
 	RUN(gfx_set_target_passes_target);
 	RUN(gfx_set_target_returns_driver_result);
+	RUN(gfx_viewport_null_gfx);
+	RUN(gfx_viewport_null_driver);
+	RUN(gfx_viewport_null_driver_callback);
+	RUN(gfx_viewport_zero_width);
+	RUN(gfx_viewport_zero_height);
+	RUN(gfx_viewport_calls_driver);
+	RUN(gfx_viewport_passes_x);
+	RUN(gfx_viewport_passes_y);
+	RUN(gfx_viewport_passes_width);
+	RUN(gfx_viewport_passes_height);
+	RUN(gfx_viewport_returns_driver_result);
 	RUN(gfx_clear_color_null_gfx);
 	RUN(gfx_clear_color_null_driver);
 	RUN(gfx_clear_color_null_driver_callback);

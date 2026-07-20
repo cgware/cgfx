@@ -407,6 +407,10 @@ typedef struct gfx_vulkan_s {
 	u32 swapchain_image_count;
 	u32 swapchain_image_index;
 	int swapchain_acquired;
+	u16 viewport_x;
+	u16 viewport_y;
+	u16 viewport_width;
+	u16 viewport_height;
 	VkClearColorValue clear_color;
 	int surface_enabled;
 	int swapchain_enabled;
@@ -1289,6 +1293,20 @@ static int gfx_vulkan_clear_color(gfx_t *gfx, float r, float g, float b, float a
 	return 0;
 }
 
+static int gfx_vulkan_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan	= gfx->data;
+	vulkan->viewport_x	= x;
+	vulkan->viewport_y	= y;
+	vulkan->viewport_width	= width;
+	vulkan->viewport_height = height;
+	return 0;
+}
+
 static int gfx_vulkan_copy_memory(gfx_vulkan_t *vulkan)
 {
 	if (!vulkan->memory_coherent) {
@@ -1561,6 +1579,7 @@ static gfx_driver_t gfx_vulkan = {
 	.native	     = gfx_vulkan_native,
 	.proc	     = gfx_vulkan_proc,
 	.set_target  = gfx_vulkan_set_target,
+	.viewport    = gfx_vulkan_viewport,
 	.clear_color = gfx_vulkan_clear_color,
 	.clear	     = gfx_vulkan_clear,
 	.present     = gfx_vulkan_present,

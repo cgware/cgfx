@@ -31,6 +31,8 @@ static unsigned int t_gl_mask;
 static unsigned int t_gl_framebuffer;
 static unsigned int t_gl_texture;
 static unsigned int t_gl_framebuffer_status;
+static int t_gl_viewport_x;
+static int t_gl_viewport_y;
 static int t_gl_viewport_width;
 static int t_gl_viewport_height;
 static int t_gl_read_pixels_y;
@@ -156,9 +158,9 @@ static void t_glTexImage2D(unsigned int target, int level, int internal_format, 
 
 static void t_glViewport(int x, int y, int width, int height)
 {
-	(void)x;
-	(void)y;
 	t_gl_viewport_calls++;
+	t_gl_viewport_x	     = x;
+	t_gl_viewport_y	     = y;
 	t_gl_viewport_width  = width;
 	t_gl_viewport_height = height;
 }
@@ -260,6 +262,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_framebuffer		    = 0;
 	t_gl_texture			    = 0;
 	t_gl_framebuffer_status		    = 0x8CD5;
+	t_gl_viewport_x			    = 0;
+	t_gl_viewport_y			    = 0;
 	t_gl_viewport_width		    = 0;
 	t_gl_viewport_height		    = 0;
 	t_gl_read_pixels_first_y	    = 0;
@@ -578,6 +582,129 @@ TEST(gfx_opengl_clear_color_null_data)
 
 	EXPECT_EQ(gfx.drv->clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
 
+	END;
+}
+
+TEST(gfx_opengl_viewport_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_opengl_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+
+	EXPECT_EQ(gfx.drv->viewport(&gfx, 1, 2, 3, 4), 1);
+
+	END;
+}
+
+TEST(gfx_opengl_viewport_calls_gl)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
+	EXPECT_EQ(t_gl_viewport_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_passes_x)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gl_viewport_x, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_passes_y)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gl_viewport_y, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_passes_width)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gl_viewport_width, 3);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_passes_height)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+
+	gfx_viewport(&gfx, 1, 2, 3, 4);
+
+	EXPECT_EQ(t_gl_viewport_height, 4);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
 	END;
 }
 
@@ -1519,6 +1646,12 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_free_null_data);
 	RUN(gfx_opengl_clear_color_calls_gl);
 	RUN(gfx_opengl_clear_color_null_data);
+	RUN(gfx_opengl_viewport_null_data);
+	RUN(gfx_opengl_viewport_calls_gl);
+	RUN(gfx_opengl_viewport_passes_x);
+	RUN(gfx_opengl_viewport_passes_y);
+	RUN(gfx_opengl_viewport_passes_width);
+	RUN(gfx_opengl_viewport_passes_height);
 	RUN(gfx_opengl_proc_loads_symbol);
 	RUN(gfx_opengl_proc_sets_symbol);
 	RUN(gfx_opengl_proc_null_data);
