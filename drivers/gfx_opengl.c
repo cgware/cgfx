@@ -18,7 +18,27 @@ enum {
 	GL_FRAMEBUFFER		= 0x8D40,
 	GL_FRAMEBUFFER_COMPLETE = 0x8CD5,
 	GL_COLOR_BUFFER_BIT	= 0x00004000,
+	GL_TRIANGLES		= 0x0004,
+	GL_FLOAT		= 0x1406,
+	GL_FALSE		= 0,
+	GL_ARRAY_BUFFER		= 0x8892,
+	GL_DYNAMIC_DRAW		= 0x88E8,
+	GL_VERTEX_SHADER	= 0x8B31,
+	GL_FRAGMENT_SHADER	= 0x8B30,
+	GL_COMPILE_STATUS	= 0x8B81,
+	GL_LINK_STATUS		= 0x8B82,
+	GFX_OPENGL_POS_ATTR	= 0,
+	GFX_OPENGL_COLOR_ATTR	= 1,
 };
+
+typedef struct gfx_opengl_vertex_2d_s {
+	float x;
+	float y;
+	float r;
+	float g;
+	float b;
+	float a;
+} gfx_opengl_vertex_2d_t;
 
 typedef struct gfx_opengl_s {
 	proc_t *proc;
@@ -27,6 +47,9 @@ typedef struct gfx_opengl_s {
 	gfx_target_t target;
 	unsigned int framebuffer;
 	unsigned int texture;
+	unsigned int triangle_program;
+	unsigned int triangle_buffer;
+	int triangle_target_size;
 	gfx_surface_t *surface;
 	void (*ClearColor)(float, float, float, float);
 	void (*Clear)(unsigned int);
@@ -42,6 +65,28 @@ typedef struct gfx_opengl_s {
 	void (*TexImage2D)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void *);
 	void (*Viewport)(int, int, int, int);
 	void (*ReadPixels)(int, int, int, int, unsigned int, unsigned int, void *);
+	unsigned int (*CreateShader)(unsigned int);
+	void (*ShaderSource)(unsigned int, int, const char **, const int *);
+	void (*CompileShader)(unsigned int);
+	void (*GetShaderiv)(unsigned int, unsigned int, int *);
+	void (*DeleteShader)(unsigned int);
+	unsigned int (*CreateProgram)(void);
+	void (*AttachShader)(unsigned int, unsigned int);
+	void (*BindAttribLocation)(unsigned int, unsigned int, const char *);
+	void (*LinkProgram)(unsigned int);
+	void (*GetProgramiv)(unsigned int, unsigned int, int *);
+	void (*DeleteProgram)(unsigned int);
+	void (*GenBuffers)(int, unsigned int *);
+	void (*DeleteBuffers)(int, const unsigned int *);
+	void (*BindBuffer)(unsigned int, unsigned int);
+	void (*BufferData)(unsigned int, size_t, const void *, unsigned int);
+	void (*UseProgram)(unsigned int);
+	int (*GetUniformLocation)(unsigned int, const char *);
+	void (*Uniform2f)(int, float, float);
+	void (*EnableVertexAttribArray)(unsigned int);
+	void (*DisableVertexAttribArray)(unsigned int);
+	void (*VertexAttribPointer)(unsigned int, int, unsigned int, unsigned char, int, const void *);
+	void (*DrawArrays)(unsigned int, int, int);
 } gfx_opengl_t;
 
 static int load_symbol(gfx_opengl_t *opengl, void *lib, void **sym, strv_t name)
@@ -157,6 +202,19 @@ static void gfx_opengl_target_free(gfx_opengl_t *opengl)
 	opengl->target	= (gfx_target_t){0};
 }
 
+static void gfx_opengl_draw_free(gfx_opengl_t *opengl)
+{
+	if (opengl->triangle_buffer != 0 && opengl->DeleteBuffers != NULL) {
+		opengl->DeleteBuffers(1, &opengl->triangle_buffer);
+		opengl->triangle_buffer = 0;
+	}
+	if (opengl->triangle_program != 0 && opengl->DeleteProgram != NULL) {
+		opengl->DeleteProgram(opengl->triangle_program);
+		opengl->triangle_program = 0;
+	}
+	opengl->triangle_target_size = -1;
+}
+
 static int gfx_opengl_free(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -164,6 +222,7 @@ static int gfx_opengl_free(gfx_t *gfx)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
+	gfx_opengl_draw_free(opengl);
 	gfx_opengl_target_free(opengl);
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(opengl->proc, opengl->gl_lib);
@@ -331,6 +390,198 @@ static int gfx_opengl_read_memory(gfx_opengl_t *opengl)
 	return 0;
 }
 
+static int gfx_opengl_bind_target(gfx_opengl_t *opengl)
+{
+	if (opengl->target.type == GFX_TARGET_MEMORY) {
+		opengl->BindFramebuffer(GL_FRAMEBUFFER, opengl->framebuffer);
+		return 0;
+	}
+	if (opengl->target.type == GFX_TARGET_SURFACE) {
+		opengl->BindFramebuffer(GL_FRAMEBUFFER, 0);
+		return 0;
+	}
+	return 1;
+}
+
+static int gfx_opengl_load_draw(gfx_opengl_t *opengl)
+{
+	if (opengl->CreateShader != NULL && opengl->ShaderSource != NULL && opengl->CompileShader != NULL && opengl->GetShaderiv != NULL &&
+	    opengl->DeleteShader != NULL && opengl->CreateProgram != NULL && opengl->AttachShader != NULL &&
+	    opengl->BindAttribLocation != NULL && opengl->LinkProgram != NULL && opengl->GetProgramiv != NULL &&
+	    opengl->DeleteProgram != NULL && opengl->GenBuffers != NULL && opengl->DeleteBuffers != NULL && opengl->BindBuffer != NULL &&
+	    opengl->BufferData != NULL && opengl->UseProgram != NULL && opengl->GetUniformLocation != NULL && opengl->Uniform2f != NULL &&
+	    opengl->EnableVertexAttribArray != NULL && opengl->DisableVertexAttribArray != NULL && opengl->VertexAttribPointer != NULL &&
+	    opengl->DrawArrays != NULL) {
+		return 0;
+	}
+
+	LOAD_GL_PROC(opengl, CreateShader);
+	LOAD_GL_PROC(opengl, ShaderSource);
+	LOAD_GL_PROC(opengl, CompileShader);
+	LOAD_GL_PROC(opengl, GetShaderiv);
+	LOAD_GL_PROC(opengl, DeleteShader);
+	LOAD_GL_PROC(opengl, CreateProgram);
+	LOAD_GL_PROC(opengl, AttachShader);
+	LOAD_GL_PROC(opengl, BindAttribLocation);
+	LOAD_GL_PROC(opengl, LinkProgram);
+	LOAD_GL_PROC(opengl, GetProgramiv);
+	LOAD_GL_PROC(opengl, DeleteProgram);
+	LOAD_GL_PROC(opengl, GenBuffers);
+	LOAD_GL_PROC(opengl, DeleteBuffers);
+	LOAD_GL_PROC(opengl, BindBuffer);
+	LOAD_GL_PROC(opengl, BufferData);
+	LOAD_GL_PROC(opengl, UseProgram);
+	LOAD_GL_PROC(opengl, GetUniformLocation);
+	LOAD_GL_PROC(opengl, Uniform2f);
+	LOAD_GL_PROC(opengl, EnableVertexAttribArray);
+	LOAD_GL_PROC(opengl, DisableVertexAttribArray);
+	LOAD_GL_PROC(opengl, VertexAttribPointer);
+	LOAD_GL_PROC(opengl, DrawArrays);
+	return 0;
+}
+
+static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int type, const char *source)
+{
+	unsigned int shader = opengl->CreateShader(type);
+	if (shader == 0) {
+		return 0;
+	}
+
+	opengl->ShaderSource(shader, 1, &source, NULL);
+	opengl->CompileShader(shader);
+	int compiled = 0;
+	opengl->GetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+	if (!compiled) {
+		opengl->DeleteShader(shader);
+		return 0;
+	}
+
+	return shader;
+}
+
+static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
+{
+	static const char *vertex_source =
+		"#version 120\n"
+		"attribute vec2 a_pos;\n"
+		"attribute vec4 a_color;\n"
+		"uniform vec2 u_target_size;\n"
+		"varying vec4 v_color;\n"
+		"void main(void) {\n"
+		"    vec2 p = a_pos / u_target_size * 2.0 - 1.0;\n"
+		"    gl_Position = vec4(p.x, -p.y, 0.0, 1.0);\n"
+		"    v_color = a_color;\n"
+		"}\n";
+	static const char *fragment_source =
+		"#version 120\n"
+		"varying vec4 v_color;\n"
+		"void main(void) {\n"
+		"    gl_FragColor = v_color;\n"
+		"}\n";
+
+	if (opengl->triangle_program != 0 && opengl->triangle_buffer != 0) {
+		return 0;
+	}
+
+	unsigned int vertex_shader = gfx_opengl_compile_shader(opengl, GL_VERTEX_SHADER, vertex_source);
+	if (vertex_shader == 0) {
+		return 1;
+	}
+	unsigned int fragment_shader = gfx_opengl_compile_shader(opengl, GL_FRAGMENT_SHADER, fragment_source);
+	if (fragment_shader == 0) {
+		opengl->DeleteShader(vertex_shader);
+		return 1;
+	}
+
+	unsigned int program = opengl->CreateProgram();
+	if (program == 0) {
+		opengl->DeleteShader(fragment_shader);
+		opengl->DeleteShader(vertex_shader);
+		return 1;
+	}
+
+	opengl->AttachShader(program, vertex_shader);
+	opengl->AttachShader(program, fragment_shader);
+	opengl->BindAttribLocation(program, GFX_OPENGL_POS_ATTR, "a_pos");
+	opengl->BindAttribLocation(program, GFX_OPENGL_COLOR_ATTR, "a_color");
+	opengl->LinkProgram(program);
+	opengl->DeleteShader(fragment_shader);
+	opengl->DeleteShader(vertex_shader);
+
+	int linked = 0;
+	opengl->GetProgramiv(program, GL_LINK_STATUS, &linked);
+	if (!linked) {
+		opengl->DeleteProgram(program);
+		return 1;
+	}
+
+	unsigned int buffer = 0;
+	opengl->GenBuffers(1, &buffer);
+	if (buffer == 0) {
+		opengl->DeleteProgram(program);
+		return 1;
+	}
+
+	opengl->triangle_program	    = program;
+	opengl->triangle_buffer	    = buffer;
+	opengl->triangle_target_size = opengl->GetUniformLocation(program, "u_target_size");
+	if (opengl->triangle_target_size < 0) {
+		gfx_opengl_draw_free(opengl);
+		return 1;
+	}
+	return 0;
+}
+
+static int gfx_opengl_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = gfx->data;
+	if (gfx_opengl_load_draw(opengl)) {
+		return 1;
+	}
+	if (gfx_opengl_bind_target(opengl)) {
+		return 1;
+	}
+	if (gfx_opengl_create_draw_state(opengl)) {
+		return 1;
+	}
+
+	gfx_opengl_vertex_2d_t gl_vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		gl_vertices[i] = (gfx_opengl_vertex_2d_t){
+			.x = vertices[i].x,
+			.y = vertices[i].y,
+			.r = vertices[i].r,
+			.g = vertices[i].g,
+			.b = vertices[i].b,
+			.a = vertices[i].a,
+		};
+	}
+
+	opengl->UseProgram(opengl->triangle_program);
+	opengl->Uniform2f(opengl->triangle_target_size, (float)opengl->target.width, (float)opengl->target.height);
+	opengl->BindBuffer(GL_ARRAY_BUFFER, opengl->triangle_buffer);
+	opengl->BufferData(GL_ARRAY_BUFFER, sizeof(gl_vertices), gl_vertices, GL_DYNAMIC_DRAW);
+	opengl->EnableVertexAttribArray(GFX_OPENGL_POS_ATTR);
+	opengl->EnableVertexAttribArray(GFX_OPENGL_COLOR_ATTR);
+	opengl->VertexAttribPointer(GFX_OPENGL_POS_ATTR, 2, GL_FLOAT, GL_FALSE, sizeof(gfx_opengl_vertex_2d_t), (const void *)0);
+	opengl->VertexAttribPointer(
+		GFX_OPENGL_COLOR_ATTR, 4, GL_FLOAT, GL_FALSE, sizeof(gfx_opengl_vertex_2d_t), (const void *)(2 * sizeof(float)));
+	opengl->DrawArrays(GL_TRIANGLES, 0, 3);
+	opengl->DisableVertexAttribArray(GFX_OPENGL_COLOR_ATTR);
+	opengl->DisableVertexAttribArray(GFX_OPENGL_POS_ATTR);
+	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
+	opengl->UseProgram(0);
+
+	if (opengl->target.type == GFX_TARGET_MEMORY) {
+		return gfx_opengl_read_memory(opengl);
+	}
+	return 0;
+}
+
 static int gfx_opengl_clear(gfx_t *gfx, u32 buffers)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -384,6 +635,7 @@ static gfx_driver_t gfx_opengl = {
 	.viewport    = gfx_opengl_viewport,
 	.clear_color = gfx_opengl_clear_color,
 	.clear	     = gfx_opengl_clear,
+	.draw_triangle_2d = gfx_opengl_draw_triangle_2d,
 	.present     = gfx_opengl_present,
 };
 

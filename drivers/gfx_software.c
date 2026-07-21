@@ -77,6 +77,10 @@ static int gfx_software_set_target(gfx_t *gfx, const gfx_target_t *target)
 		return 1;
 	}
 	render->target = *target;
+	render->viewport_x	= 0;
+	render->viewport_y	= 0;
+	render->viewport_width	= target->width;
+	render->viewport_height = target->height;
 	return 0;
 }
 
@@ -91,6 +95,84 @@ static int gfx_software_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height
 	render->viewport_y	= y;
 	render->viewport_width	= width;
 	render->viewport_height = height;
+	return 0;
+}
+
+static float edge(const gfx_vertex_2d_t *a, const gfx_vertex_2d_t *b, float x, float y)
+{
+	return (x - a->x) * (b->y - a->y) - (y - a->y) * (b->x - a->x);
+}
+
+static int point_inside(float w0, float w1, float w2, float area)
+{
+	if (area > 0.0f) {
+		return w0 >= 0.0f && w1 >= 0.0f && w2 >= 0.0f;
+	}
+	return w0 <= 0.0f && w1 <= 0.0f && w2 <= 0.0f;
+}
+
+static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
+{
+	u8 *row	  = (u8 *)render->target.data + (size_t)y * render->target.stride;
+	u8 *pixel = row + (size_t)x * 4;
+	pixel[0]  = color[0];
+	pixel[1]  = color[1];
+	pixel[2]  = color[2];
+	pixel[3]  = color[3];
+}
+
+static int gfx_software_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	gfx_software_t *render = gfx->data;
+	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
+		return 1;
+	}
+
+	float area = edge(&vertices[0], &vertices[1], vertices[2].x, vertices[2].y);
+	if (area == 0.0f) {
+		return 0;
+	}
+
+	u16 x0 = render->viewport_x;
+	u16 y0 = render->viewport_y;
+	u32 x1 = (u32)x0 + render->viewport_width;
+	u32 y1 = (u32)y0 + render->viewport_height;
+	if (x1 > render->target.width) {
+		x1 = render->target.width;
+	}
+	if (y1 > render->target.height) {
+		y1 = render->target.height;
+	}
+
+	for (u16 y = y0; y < y1; y++) {
+		for (u16 x = x0; x < x1; x++) {
+			float px = (float)x + 0.5f;
+			float py = (float)y + 0.5f;
+			float w0 = edge(&vertices[1], &vertices[2], px, py);
+			float w1 = edge(&vertices[2], &vertices[0], px, py);
+			float w2 = edge(&vertices[0], &vertices[1], px, py);
+			if (!point_inside(w0, w1, w2, area)) {
+				continue;
+			}
+
+			float inv_area = 1.0f / area;
+			w0 *= inv_area;
+			w1 *= inv_area;
+			w2 *= inv_area;
+			u8 color[4] = {
+				color_u8(vertices[0].r * w0 + vertices[1].r * w1 + vertices[2].r * w2),
+				color_u8(vertices[0].g * w0 + vertices[1].g * w1 + vertices[2].g * w2),
+				color_u8(vertices[0].b * w0 + vertices[1].b * w1 + vertices[2].b * w2),
+				color_u8(vertices[0].a * w0 + vertices[1].a * w1 + vertices[2].a * w2),
+			};
+			draw_pixel(render, x, y, color);
+		}
+	}
+
 	return 0;
 }
 
@@ -145,6 +227,7 @@ static gfx_driver_t gfx_software = {
 	.viewport    = gfx_software_viewport,
 	.clear_color = gfx_software_clear_color,
 	.clear	     = gfx_software_clear,
+	.draw_triangle_2d = gfx_software_draw_triangle_2d,
 };
 
 GFX_DRIVER(gfx_software, &gfx_software);

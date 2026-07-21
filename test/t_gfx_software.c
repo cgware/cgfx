@@ -254,6 +254,153 @@ TEST(gfx_software_viewport_null_data)
 	END;
 }
 
+TEST(gfx_software_draw_triangle_2d_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_software_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_null_vertices)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, NULL), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_without_target)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_writes_inside_pixel)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[0], 255);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_leaves_outside_pixel)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[3 * 16 + 3 * 4], 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_respects_viewport)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 1, 3, 3), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[0], 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_interpolates_first_vertex_color)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 4.0f, .y = 0.0f, .g = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 4.0f, .b = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[0], 191);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_degenerate_succeeds)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f, .y = 1.0f},
+		{.x = 1.0f, .y = 1.0f},
+		{.x = 1.0f, .y = 1.0f},
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_set_target_null_data)
 {
 	START;
@@ -544,6 +691,14 @@ STEST(gfx_software)
 	RUN(gfx_software_set_target_invalid_type);
 	RUN(gfx_software_viewport_success);
 	RUN(gfx_software_viewport_null_data);
+	RUN(gfx_software_draw_triangle_2d_null_data);
+	RUN(gfx_software_draw_triangle_2d_null_vertices);
+	RUN(gfx_software_draw_triangle_2d_without_target);
+	RUN(gfx_software_draw_triangle_2d_writes_inside_pixel);
+	RUN(gfx_software_draw_triangle_2d_leaves_outside_pixel);
+	RUN(gfx_software_draw_triangle_2d_respects_viewport);
+	RUN(gfx_software_draw_triangle_2d_interpolates_first_vertex_color);
+	RUN(gfx_software_draw_triangle_2d_degenerate_succeeds);
 	RUN(gfx_software_set_target_invalid_format);
 	RUN(gfx_software_set_target_null_data);
 	RUN(gfx_software_set_target_zero_width);

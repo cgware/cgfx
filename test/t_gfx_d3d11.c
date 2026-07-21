@@ -1156,6 +1156,52 @@ TEST(gfx_d3d11_present_calls_surface)
 	END;
 }
 
+TEST(gfx_d3d11_draw_triangle_2d_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_null_vertices)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, NULL), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_unsupported)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_present_null_data)
 {
 	START;
@@ -1279,6 +1325,9 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_clear_without_target);
 	RUN(gfx_d3d11_clear_calls_context);
 	RUN(gfx_d3d11_clear_uses_red);
+	RUN(gfx_d3d11_draw_triangle_2d_null_data);
+	RUN(gfx_d3d11_draw_triangle_2d_null_vertices);
+	RUN(gfx_d3d11_draw_triangle_2d_unsupported);
 	RUN(gfx_d3d11_present_null_data);
 	RUN(gfx_d3d11_present_without_target);
 	RUN(gfx_d3d11_present_calls_surface);

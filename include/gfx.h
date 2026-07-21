@@ -70,6 +70,15 @@ typedef struct gfx_target_s {
 	size_t stride;
 } gfx_target_t;
 
+typedef struct gfx_vertex_2d_s {
+	float x;
+	float y;
+	float r;
+	float g;
+	float b;
+	float a;
+} gfx_vertex_2d_t;
+
 typedef struct gfx_config_s {
 	proc_t *proc;
 	alloc_t alloc;
@@ -90,6 +99,7 @@ int gfx_set_target(gfx_t *gfx, const gfx_target_t *target);
 int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a);
 int gfx_clear(gfx_t *gfx, u32 buffers);
+int gfx_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3]);
 int gfx_present(gfx_t *gfx);
 
 #endif

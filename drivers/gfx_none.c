@@ -68,6 +68,15 @@ static int gfx_none_clear(gfx_t *gfx, u32 buffers)
 	return 0;
 }
 
+static int gfx_none_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static gfx_driver_t gfx_none = {
 	.name	     = "none",
 	.api	     = GFX_API_NONE,
@@ -77,6 +86,7 @@ static gfx_driver_t gfx_none = {
 	.viewport    = gfx_none_viewport,
 	.clear_color = gfx_none_clear_color,
 	.clear	     = gfx_none_clear,
+	.draw_triangle_2d = gfx_none_draw_triangle_2d,
 };
 
 GFX_DRIVER(gfx_none, &gfx_none);

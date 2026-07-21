@@ -111,6 +111,30 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
 		ret = 1;
 	}
+	if (ret == 0 && gfx_draw_triangle_2d(&gfx,
+					      (gfx_vertex_2d_t[3]){
+						      {
+							      .x = WIDTH * 0.5f,
+							      .y = HEIGHT * 0.15f,
+							      .r = 1.0f,
+							      .a = 1.0f,
+						      },
+						      {
+							      .x = WIDTH * 0.85f,
+							      .y = HEIGHT * 0.85f,
+							      .g = 1.0f,
+							      .a = 1.0f,
+						      },
+						      {
+							      .x = WIDTH * 0.15f,
+							      .y = HEIGHT * 0.85f,
+							      .b = 1.0f,
+							      .a = 1.0f,
+						      },
+					      })) {
+		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
+		ret = 1;
+	}
 
 	if (ret == 0 && (pixels[0] != R || pixels[1] != G || pixels[2] != B || pixels[3] != A)) {
 		log_error("cgfx_example", "main", NULL, "unexpected first pixel: %u %u %u %u", pixels[0], pixels[1], pixels[2], pixels[3]);

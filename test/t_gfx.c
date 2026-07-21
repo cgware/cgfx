@@ -10,6 +10,7 @@ static int t_gfx_set_target_calls;
 static int t_gfx_viewport_calls;
 static int t_gfx_clear_color_calls;
 static int t_gfx_clear_calls;
+static int t_gfx_draw_triangle_2d_calls;
 static int t_gfx_present_calls;
 static int t_gfx_init_ret;
 static int t_gfx_free_ret;
@@ -19,6 +20,7 @@ static int t_gfx_set_target_ret;
 static int t_gfx_viewport_ret;
 static int t_gfx_clear_color_ret;
 static int t_gfx_clear_ret;
+static int t_gfx_draw_triangle_2d_ret;
 static int t_gfx_present_ret;
 static const gfx_config_t *t_gfx_config;
 static strv_t t_gfx_proc_name;
@@ -29,6 +31,7 @@ static u16 t_gfx_x;
 static u16 t_gfx_y;
 static u16 t_gfx_width;
 static u16 t_gfx_height;
+static const gfx_vertex_2d_t *t_gfx_vertices;
 static float t_gfx_r;
 static float t_gfx_g;
 static float t_gfx_b;
@@ -105,6 +108,14 @@ static int t_gfx_clear(gfx_t *gfx, u32 buffers)
 	return t_gfx_clear_ret;
 }
 
+static int t_gfx_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	(void)gfx;
+	t_gfx_draw_triangle_2d_calls++;
+	t_gfx_vertices = vertices;
+	return t_gfx_draw_triangle_2d_ret;
+}
+
 static int t_gfx_present(gfx_t *gfx)
 {
 	(void)gfx;
@@ -123,6 +134,7 @@ static gfx_driver_t t_gfx_driver = {
 	.viewport    = t_gfx_viewport,
 	.clear_color = t_gfx_clear_color,
 	.clear	     = t_gfx_clear,
+	.draw_triangle_2d = t_gfx_draw_triangle_2d,
 	.present     = t_gfx_present,
 };
 
@@ -138,6 +150,7 @@ static void t_gfx_reset(void)
 	t_gfx_viewport_calls	= 0;
 	t_gfx_clear_color_calls = 0;
 	t_gfx_clear_calls	= 0;
+	t_gfx_draw_triangle_2d_calls = 0;
 	t_gfx_present_calls	= 0;
 	t_gfx_init_ret		= 0;
 	t_gfx_free_ret		= 0;
@@ -147,6 +160,7 @@ static void t_gfx_reset(void)
 	t_gfx_viewport_ret	= 0;
 	t_gfx_clear_color_ret	= 0;
 	t_gfx_clear_ret		= 0;
+	t_gfx_draw_triangle_2d_ret = 0;
 	t_gfx_present_ret	= 0;
 	t_gfx_config		= NULL;
 	t_gfx_proc_name		= STRV_NULL;
@@ -157,6 +171,7 @@ static void t_gfx_reset(void)
 	t_gfx_y			= 0;
 	t_gfx_width		= 0;
 	t_gfx_height		= 0;
+	t_gfx_vertices		= NULL;
 	t_gfx_r			= 0.0f;
 	t_gfx_g			= 0.0f;
 	t_gfx_b			= 0.0f;
@@ -960,6 +975,108 @@ TEST(gfx_clear_returns_driver_result)
 	END;
 }
 
+TEST(gfx_draw_triangle_2d_null_gfx)
+{
+	START;
+
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(NULL, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_null_driver)
+{
+	START;
+
+	gfx_t gfx		      = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.draw_triangle_2d = NULL;
+	gfx_t gfx	     = {
+		 .drv = &drv,
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_null_vertices)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, NULL), 1);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_calls_driver)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_gfx_draw_triangle_2d_calls, 1);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_passes_vertices)
+{
+	START;
+
+	t_gfx_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_driver,
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_PTR(t_gfx_vertices, vertices);
+
+	END;
+}
+
+TEST(gfx_draw_triangle_2d_returns_driver_result)
+{
+	START;
+
+	t_gfx_reset();
+	t_gfx_draw_triangle_2d_ret = 1;
+	gfx_t gfx		   = {
+		  .drv = &t_gfx_driver,
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
 TEST(gfx_present_null_gfx)
 {
 	START;
@@ -1178,6 +1295,13 @@ STEST(gfx)
 	RUN(gfx_clear_null_driver_callback);
 	RUN(gfx_clear_calls_driver);
 	RUN(gfx_clear_returns_driver_result);
+	RUN(gfx_draw_triangle_2d_null_gfx);
+	RUN(gfx_draw_triangle_2d_null_driver);
+	RUN(gfx_draw_triangle_2d_null_driver_callback);
+	RUN(gfx_draw_triangle_2d_null_vertices);
+	RUN(gfx_draw_triangle_2d_calls_driver);
+	RUN(gfx_draw_triangle_2d_passes_vertices);
+	RUN(gfx_draw_triangle_2d_returns_driver_result);
 	RUN(gfx_present_null_gfx);
 	RUN(gfx_present_null_driver);
 	RUN(gfx_present_null_driver_callback);

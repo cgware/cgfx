@@ -19,6 +19,13 @@ typedef u64 VkCommandBuffer;
 typedef u64 VkFence;
 typedef u64 VkSurfaceKHR;
 typedef u64 VkSwapchainKHR;
+typedef u64 VkBuffer;
+typedef u64 VkImageView;
+typedef u64 VkRenderPass;
+typedef u64 VkFramebuffer;
+typedef u64 VkShaderModule;
+typedef u64 VkPipelineLayout;
+typedef u64 VkPipeline;
 typedef u32 VkColorSpaceKHR;
 
 enum {
@@ -29,14 +36,18 @@ enum {
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT    = 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT   = 0x00000004,
 	VK_FORMAT_FEATURE_TRANSFER_DST_BIT     = 0x00004000,
+	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT = 0x00000080,
 	VK_IMAGE_LAYOUT_GENERAL		       = 1,
+	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR	       = 1000001002,
 	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE  = 6,
 	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER = 44,
 	VK_IMAGE_ASPECT_COLOR_BIT	       = 0x00000001,
 	VK_ACCESS_TRANSFER_WRITE_BIT	       = 0x00001000,
+	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT   = 0x00000100,
 	VK_ACCESS_HOST_READ_BIT		       = 0x00002000,
 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT      = 0x00000001,
 	VK_PIPELINE_STAGE_TRANSFER_BIT	       = 0x00001000,
+	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT = 0x00000400,
 	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT   = 0x00002000,
 	VK_PIPELINE_STAGE_HOST_BIT	       = 0x00004000,
 	VK_API_VERSION_1_0		       = 1u << 22,
@@ -45,9 +56,9 @@ enum {
 	VK_FORMAT_B8G8R8A8_UNORM	       = 44,
 	VK_FORMAT_B8G8R8A8_SRGB		       = 50,
 	VK_IMAGE_USAGE_TRANSFER_DST_BIT	       = 0x00000002,
+	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT    = 0x00000010,
 	VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR      = 0x00000001,
 	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR      = 0,
-	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR	       = 1000001002,
 };
 
 typedef struct VkExtent2D_s {
@@ -215,10 +226,14 @@ static int t_vk_device_wait_idle_calls;
 static int t_vk_destroy_device_calls;
 static int t_vk_create_image_calls;
 static int t_vk_destroy_image_calls;
+static int t_vk_create_buffer_calls;
+static int t_vk_destroy_buffer_calls;
 static int t_vk_allocate_memory_calls;
 static int t_vk_free_memory_calls;
 static int t_vk_bind_image_memory_calls;
+static int t_vk_bind_buffer_memory_calls;
 static int t_vk_clear_color_image_calls;
+static int t_vk_flush_mapped_memory_ranges_calls;
 static int t_vk_queue_submit_calls;
 static int t_vk_wait_for_fences_calls;
 static int t_vk_invalidate_mapped_memory_ranges_calls;
@@ -245,6 +260,25 @@ static int t_vk_destroy_swapchain_calls;
 static int t_vk_get_swapchain_images_calls;
 static int t_vk_acquire_next_image_calls;
 static int t_vk_queue_present_calls;
+static int t_vk_create_image_view_calls;
+static int t_vk_destroy_image_view_calls;
+static int t_vk_create_shader_module_calls;
+static int t_vk_destroy_shader_module_calls;
+static int t_vk_create_render_pass_calls;
+static int t_vk_destroy_render_pass_calls;
+static int t_vk_create_framebuffer_calls;
+static int t_vk_destroy_framebuffer_calls;
+static int t_vk_create_pipeline_layout_calls;
+static int t_vk_destroy_pipeline_layout_calls;
+static int t_vk_create_graphics_pipelines_calls;
+static int t_vk_destroy_pipeline_calls;
+static int t_vk_begin_render_pass_calls;
+static int t_vk_end_render_pass_calls;
+static int t_vk_bind_pipeline_calls;
+static int t_vk_bind_vertex_buffers_calls;
+static int t_vk_set_viewport_calls;
+static int t_vk_set_scissor_calls;
+static int t_vk_draw_calls;
 static int t_vk_physical_device_count;
 static int t_vk_queue_count;
 static VkFlags t_vk_linear_features;
@@ -257,7 +291,13 @@ static u32 t_vk_clear_layout;
 static VkImage t_vk_destroyed_image;
 static VkDeviceMemory t_vk_freed_memory;
 static VkMappedMemoryRange t_vk_invalidate_range;
+static VkMappedMemoryRange t_vk_flush_range;
 static VkImageMemoryBarrier t_vk_last_barrier;
+static VkBuffer t_vk_bound_vertex_buffer;
+static u32 t_vk_draw_vertex_count;
+static u32 t_vk_draw_instance_count;
+static int t_vk_vertex_first_x;
+static int t_vk_vertex_last_y;
 static int t_vk_missing_device_symbol;
 static int t_vk_missing_instance_symbol;
 static const char *t_vk_missing_device_symbol_name;
@@ -274,7 +314,16 @@ static int t_vk_create_fence_ret;
 static int t_vk_create_image_ret;
 static int t_vk_allocate_memory_ret;
 static int t_vk_bind_image_memory_ret;
+static int t_vk_create_buffer_ret;
+static int t_vk_bind_buffer_memory_ret;
+static int t_vk_create_image_view_ret;
+static int t_vk_create_shader_module_ret;
+static int t_vk_create_render_pass_ret;
+static int t_vk_create_framebuffer_ret;
+static int t_vk_create_pipeline_layout_ret;
+static int t_vk_create_graphics_pipelines_ret;
 static int t_vk_map_memory_ret;
+static int t_vk_flush_mapped_memory_ranges_ret;
 static int t_vk_invalidate_mapped_memory_ranges_ret;
 static int t_vk_reset_fences_ret;
 static int t_vk_wait_for_fences_ret;
@@ -562,6 +611,33 @@ static void t_vkGetImageMemoryRequirements(VkDevice device, VkImage image, VkMem
 	req->memoryTypeBits = t_vk_memory_type_bits;
 }
 
+static int t_vkCreateBuffer(VkDevice device, const void *create, const void *alloc, VkBuffer *buffer)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_buffer_calls++;
+	*buffer = 12;
+	return t_vk_create_buffer_ret;
+}
+
+static void t_vkDestroyBuffer(VkDevice device, VkBuffer buffer, const void *alloc)
+{
+	(void)device;
+	(void)buffer;
+	(void)alloc;
+	t_vk_destroy_buffer_calls++;
+}
+
+static void t_vkGetBufferMemoryRequirements(VkDevice device, VkBuffer buffer, VkMemoryRequirements *req)
+{
+	(void)device;
+	(void)buffer;
+	req->size	    = sizeof(t_vk_memory);
+	req->alignment	    = 1;
+	req->memoryTypeBits = t_vk_memory_type_bits;
+}
+
 static int t_vkAllocateMemory(VkDevice device, const void *alloc_info, const void *alloc, VkDeviceMemory *memory)
 {
 	(void)device;
@@ -588,6 +664,16 @@ static int t_vkBindImageMemory(VkDevice device, VkImage image, VkDeviceMemory me
 	(void)offset;
 	t_vk_bind_image_memory_calls++;
 	return t_vk_bind_image_memory_ret;
+}
+
+static int t_vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize offset)
+{
+	(void)device;
+	(void)buffer;
+	(void)memory;
+	(void)offset;
+	t_vk_bind_buffer_memory_calls++;
+	return t_vk_bind_buffer_memory_ret;
 }
 
 static void t_vkGetImageSubresourceLayout(VkDevice device, VkImage image, const void *subresource, VkSubresourceLayout *layout)
@@ -618,7 +704,20 @@ static void t_vkUnmapMemory(VkDevice device, VkDeviceMemory memory)
 {
 	(void)device;
 	(void)memory;
+	const float *vertices = (const float *)t_vk_memory;
+	t_vk_vertex_first_x   = (int)vertices[0];
+	t_vk_vertex_last_y    = (int)vertices[13];
 	t_vk_unmap_memory_calls++;
+}
+
+static int t_vkFlushMappedMemoryRanges(VkDevice device, u32 count, const VkMappedMemoryRange *ranges)
+{
+	(void)device;
+	t_vk_flush_mapped_memory_ranges_calls++;
+	if (count > 0) {
+		t_vk_flush_range = ranges[0];
+	}
+	return t_vk_flush_mapped_memory_ranges_ret;
 }
 
 static int t_vkInvalidateMappedMemoryRanges(VkDevice device, u32 count, const VkMappedMemoryRange *ranges)
@@ -685,6 +784,176 @@ static void t_vkCmdClearColorImage(VkCommandBuffer buffer, VkImage image, u32 la
 	t_vk_clear_color[1] = color->float32[1];
 	t_vk_clear_color[2] = color->float32[2];
 	t_vk_clear_color[3] = color->float32[3];
+}
+
+static int t_vkCreateImageView(VkDevice device, const void *create, const void *alloc, VkImageView *view)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_image_view_calls++;
+	*view = 13 + (VkImageView)t_vk_create_image_view_calls;
+	return t_vk_create_image_view_ret;
+}
+
+static void t_vkDestroyImageView(VkDevice device, VkImageView view, const void *alloc)
+{
+	(void)device;
+	(void)view;
+	(void)alloc;
+	t_vk_destroy_image_view_calls++;
+}
+
+static int t_vkCreateShaderModule(VkDevice device, const void *create, const void *alloc, VkShaderModule *shader)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_shader_module_calls++;
+	*shader = 20 + (VkShaderModule)t_vk_create_shader_module_calls;
+	return t_vk_create_shader_module_ret;
+}
+
+static void t_vkDestroyShaderModule(VkDevice device, VkShaderModule shader, const void *alloc)
+{
+	(void)device;
+	(void)shader;
+	(void)alloc;
+	t_vk_destroy_shader_module_calls++;
+}
+
+static int t_vkCreateRenderPass(VkDevice device, const void *create, const void *alloc, VkRenderPass *render_pass)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_render_pass_calls++;
+	*render_pass = 30;
+	return t_vk_create_render_pass_ret;
+}
+
+static void t_vkDestroyRenderPass(VkDevice device, VkRenderPass render_pass, const void *alloc)
+{
+	(void)device;
+	(void)render_pass;
+	(void)alloc;
+	t_vk_destroy_render_pass_calls++;
+}
+
+static int t_vkCreateFramebuffer(VkDevice device, const void *create, const void *alloc, VkFramebuffer *framebuffer)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_framebuffer_calls++;
+	*framebuffer = 31 + (VkFramebuffer)t_vk_create_framebuffer_calls;
+	return t_vk_create_framebuffer_ret;
+}
+
+static void t_vkDestroyFramebuffer(VkDevice device, VkFramebuffer framebuffer, const void *alloc)
+{
+	(void)device;
+	(void)framebuffer;
+	(void)alloc;
+	t_vk_destroy_framebuffer_calls++;
+}
+
+static int t_vkCreatePipelineLayout(VkDevice device, const void *create, const void *alloc, VkPipelineLayout *layout)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_pipeline_layout_calls++;
+	*layout = 40;
+	return t_vk_create_pipeline_layout_ret;
+}
+
+static void t_vkDestroyPipelineLayout(VkDevice device, VkPipelineLayout layout, const void *alloc)
+{
+	(void)device;
+	(void)layout;
+	(void)alloc;
+	t_vk_destroy_pipeline_layout_calls++;
+}
+
+static int t_vkCreateGraphicsPipelines(VkDevice device, u64 cache, u32 count, const void *create, const void *alloc, VkPipeline *pipeline)
+{
+	(void)device;
+	(void)cache;
+	(void)count;
+	(void)create;
+	(void)alloc;
+	t_vk_create_graphics_pipelines_calls++;
+	*pipeline = 41;
+	return t_vk_create_graphics_pipelines_ret;
+}
+
+static void t_vkDestroyPipeline(VkDevice device, VkPipeline pipeline, const void *alloc)
+{
+	(void)device;
+	(void)pipeline;
+	(void)alloc;
+	t_vk_destroy_pipeline_calls++;
+}
+
+static void t_vkCmdBeginRenderPass(VkCommandBuffer buffer, const void *begin, u32 contents)
+{
+	(void)buffer;
+	(void)begin;
+	(void)contents;
+	t_vk_begin_render_pass_calls++;
+}
+
+static void t_vkCmdEndRenderPass(VkCommandBuffer buffer)
+{
+	(void)buffer;
+	t_vk_end_render_pass_calls++;
+}
+
+static void t_vkCmdBindPipeline(VkCommandBuffer buffer, u32 bind_point, VkPipeline pipeline)
+{
+	(void)buffer;
+	(void)bind_point;
+	(void)pipeline;
+	t_vk_bind_pipeline_calls++;
+}
+
+static void t_vkCmdBindVertexBuffers(VkCommandBuffer buffer, u32 first, u32 count, const VkBuffer *buffers, const VkDeviceSize *offsets)
+{
+	(void)buffer;
+	(void)first;
+	(void)count;
+	(void)offsets;
+	t_vk_bind_vertex_buffers_calls++;
+	t_vk_bound_vertex_buffer = buffers[0];
+}
+
+static void t_vkCmdSetViewport(VkCommandBuffer buffer, u32 first, u32 count, const void *viewports)
+{
+	(void)buffer;
+	(void)first;
+	(void)count;
+	(void)viewports;
+	t_vk_set_viewport_calls++;
+}
+
+static void t_vkCmdSetScissor(VkCommandBuffer buffer, u32 first, u32 count, const void *scissors)
+{
+	(void)buffer;
+	(void)first;
+	(void)count;
+	(void)scissors;
+	t_vk_set_scissor_calls++;
+}
+
+static void t_vkCmdDraw(VkCommandBuffer buffer, u32 vertex_count, u32 instance_count, u32 first_vertex, u32 first_instance)
+{
+	(void)buffer;
+	(void)first_vertex;
+	(void)first_instance;
+	t_vk_draw_calls++;
+	t_vk_draw_vertex_count   = vertex_count;
+	t_vk_draw_instance_count = instance_count;
 }
 
 static int t_vkQueueSubmit(VkQueue queue, u32 count, const void *submits, VkFence fence)
@@ -803,10 +1072,14 @@ static void t_vkReset(void)
 	t_vk_destroy_device_calls		   = 0;
 	t_vk_create_image_calls			   = 0;
 	t_vk_destroy_image_calls		   = 0;
+	t_vk_create_buffer_calls		   = 0;
+	t_vk_destroy_buffer_calls		   = 0;
 	t_vk_allocate_memory_calls		   = 0;
 	t_vk_free_memory_calls			   = 0;
 	t_vk_bind_image_memory_calls		   = 0;
+	t_vk_bind_buffer_memory_calls		   = 0;
 	t_vk_clear_color_image_calls		   = 0;
+	t_vk_flush_mapped_memory_ranges_calls   = 0;
 	t_vk_queue_submit_calls			   = 0;
 	t_vk_wait_for_fences_calls		   = 0;
 	t_vk_invalidate_mapped_memory_ranges_calls = 0;
@@ -833,16 +1106,41 @@ static void t_vkReset(void)
 	t_vk_get_swapchain_images_calls		   = 0;
 	t_vk_acquire_next_image_calls		   = 0;
 	t_vk_queue_present_calls		   = 0;
+	t_vk_create_image_view_calls		   = 0;
+	t_vk_destroy_image_view_calls		   = 0;
+	t_vk_create_shader_module_calls	   = 0;
+	t_vk_destroy_shader_module_calls	   = 0;
+	t_vk_create_render_pass_calls		   = 0;
+	t_vk_destroy_render_pass_calls	   = 0;
+	t_vk_create_framebuffer_calls		   = 0;
+	t_vk_destroy_framebuffer_calls	   = 0;
+	t_vk_create_pipeline_layout_calls	   = 0;
+	t_vk_destroy_pipeline_layout_calls	   = 0;
+	t_vk_create_graphics_pipelines_calls	   = 0;
+	t_vk_destroy_pipeline_calls		   = 0;
+	t_vk_begin_render_pass_calls		   = 0;
+	t_vk_end_render_pass_calls		   = 0;
+	t_vk_bind_pipeline_calls		   = 0;
+	t_vk_bind_vertex_buffers_calls	   = 0;
+	t_vk_set_viewport_calls		   = 0;
+	t_vk_set_scissor_calls			   = 0;
+	t_vk_draw_calls			   = 0;
 	t_vk_physical_device_count		   = 1;
 	t_vk_queue_count			   = 1;
-	t_vk_linear_features			   = VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+	t_vk_linear_features			   = VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 	t_vk_memory_flags			   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	t_vk_memory_type_bits			   = 1;
 	t_vk_row_pitch				   = 8;
 	t_vk_destroyed_image			   = 0;
 	t_vk_freed_memory			   = 0;
 	t_vk_invalidate_range			   = (VkMappedMemoryRange){0};
+	t_vk_flush_range			   = (VkMappedMemoryRange){0};
 	t_vk_last_barrier			   = (VkImageMemoryBarrier){0};
+	t_vk_bound_vertex_buffer		   = 0;
+	t_vk_draw_vertex_count		   = 0;
+	t_vk_draw_instance_count		   = 0;
+	t_vk_vertex_first_x			   = 0;
+	t_vk_vertex_last_y			   = 0;
 	t_vk_clear_layout			   = 0;
 	t_vk_missing_device_symbol		   = 0;
 	t_vk_missing_instance_symbol		   = 0;
@@ -858,9 +1156,18 @@ static void t_vkReset(void)
 	t_vk_allocate_command_buffers_ret	   = VK_SUCCESS;
 	t_vk_create_fence_ret			   = VK_SUCCESS;
 	t_vk_create_image_ret			   = VK_SUCCESS;
+	t_vk_create_buffer_ret			   = VK_SUCCESS;
 	t_vk_allocate_memory_ret		   = VK_SUCCESS;
 	t_vk_bind_image_memory_ret		   = VK_SUCCESS;
+	t_vk_bind_buffer_memory_ret		   = VK_SUCCESS;
+	t_vk_create_image_view_ret		   = VK_SUCCESS;
+	t_vk_create_shader_module_ret		   = VK_SUCCESS;
+	t_vk_create_render_pass_ret		   = VK_SUCCESS;
+	t_vk_create_framebuffer_ret		   = VK_SUCCESS;
+	t_vk_create_pipeline_layout_ret	   = VK_SUCCESS;
+	t_vk_create_graphics_pipelines_ret	   = VK_SUCCESS;
 	t_vk_map_memory_ret			   = VK_SUCCESS;
+	t_vk_flush_mapped_memory_ranges_ret	   = VK_SUCCESS;
 	t_vk_invalidate_mapped_memory_ranges_ret   = VK_SUCCESS;
 	t_vk_reset_fences_ret			   = VK_SUCCESS;
 	t_vk_wait_for_fences_ret		   = VK_SUCCESS;
@@ -880,7 +1187,7 @@ static void t_vkReset(void)
 				 .maxImageExtent	  = {.width = 4096, .height = 4096},
 				 .currentTransform	  = 1,
 				 .supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-				 .supportedUsageFlags	  = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+				 .supportedUsageFlags	  = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 	 };
 	t_vk_surface_formats_count_ret	    = VK_SUCCESS;
 	t_vk_surface_formats_ret	    = VK_SUCCESS;
@@ -970,6 +1277,15 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	if (t_strcmp(name, "vkGetImageMemoryRequirements") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetImageMemoryRequirements);
 	}
+	if (t_strcmp(name, "vkCreateBuffer") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateBuffer);
+	}
+	if (t_strcmp(name, "vkDestroyBuffer") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyBuffer);
+	}
+	if (t_strcmp(name, "vkGetBufferMemoryRequirements") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetBufferMemoryRequirements);
+	}
 	if (t_strcmp(name, "vkAllocateMemory") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkAllocateMemory);
 	}
@@ -979,6 +1295,9 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	if (t_strcmp(name, "vkBindImageMemory") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkBindImageMemory);
 	}
+	if (t_strcmp(name, "vkBindBufferMemory") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkBindBufferMemory);
+	}
 	if (t_strcmp(name, "vkGetImageSubresourceLayout") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetImageSubresourceLayout);
 	}
@@ -987,6 +1306,9 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	}
 	if (t_strcmp(name, "vkUnmapMemory") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkUnmapMemory);
+	}
+	if (t_strcmp(name, "vkFlushMappedMemoryRanges") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkFlushMappedMemoryRanges);
 	}
 	if (t_strcmp(name, "vkInvalidateMappedMemoryRanges") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkInvalidateMappedMemoryRanges);
@@ -1005,6 +1327,63 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	}
 	if (t_strcmp(name, "vkCmdClearColorImage") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdClearColorImage);
+	}
+	if (t_strcmp(name, "vkCreateImageView") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateImageView);
+	}
+	if (t_strcmp(name, "vkDestroyImageView") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyImageView);
+	}
+	if (t_strcmp(name, "vkCreateShaderModule") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateShaderModule);
+	}
+	if (t_strcmp(name, "vkDestroyShaderModule") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyShaderModule);
+	}
+	if (t_strcmp(name, "vkCreateRenderPass") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateRenderPass);
+	}
+	if (t_strcmp(name, "vkDestroyRenderPass") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyRenderPass);
+	}
+	if (t_strcmp(name, "vkCreateFramebuffer") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateFramebuffer);
+	}
+	if (t_strcmp(name, "vkDestroyFramebuffer") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyFramebuffer);
+	}
+	if (t_strcmp(name, "vkCreatePipelineLayout") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreatePipelineLayout);
+	}
+	if (t_strcmp(name, "vkDestroyPipelineLayout") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyPipelineLayout);
+	}
+	if (t_strcmp(name, "vkCreateGraphicsPipelines") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateGraphicsPipelines);
+	}
+	if (t_strcmp(name, "vkDestroyPipeline") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroyPipeline);
+	}
+	if (t_strcmp(name, "vkCmdBeginRenderPass") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdBeginRenderPass);
+	}
+	if (t_strcmp(name, "vkCmdEndRenderPass") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdEndRenderPass);
+	}
+	if (t_strcmp(name, "vkCmdBindPipeline") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdBindPipeline);
+	}
+	if (t_strcmp(name, "vkCmdBindVertexBuffers") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdBindVertexBuffers);
+	}
+	if (t_strcmp(name, "vkCmdSetViewport") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdSetViewport);
+	}
+	if (t_strcmp(name, "vkCmdSetScissor") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdSetScissor);
+	}
+	if (t_strcmp(name, "vkCmdDraw") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdDraw);
 	}
 	if (t_strcmp(name, "vkQueueSubmit") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkQueueSubmit);
@@ -3624,6 +4003,179 @@ TEST(gfx_vulkan_viewport_success)
 	END;
 }
 
+TEST(gfx_vulkan_draw_triangle_2d_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_vulkan_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_null_vertices)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, NULL), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_without_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_success)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_creates_pipeline)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_vk_create_graphics_pipelines_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_binds_vertex_buffer)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_vk_bind_vertex_buffers_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_draws_three_vertices)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_vk_draw_vertex_count, 3);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_passes_first_vertex_x)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 7.0f},
+		{.x = 0.0f},
+		{.x = 0.0f},
+	};
+
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_vk_vertex_first_x, 6);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_draw_triangle_2d_recreates_swapchain_draw_targets_after_resize)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
+	gfx_vertex_2d_t vertices[3] = {0};
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+
+	t_vk_swapchain = 12;
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+
+	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 1);
+	EXPECT_EQ(t_vk_destroy_image_view_calls, 1);
+	EXPECT_EQ(t_vk_create_framebuffer_calls, 2);
+	EXPECT_EQ(t_vk_create_image_view_calls, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_present_null_data)
 {
 	START;
@@ -3823,6 +4375,15 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_clear_color_null_data);
 	RUN(gfx_vulkan_viewport_null_data);
 	RUN(gfx_vulkan_viewport_success);
+	RUN(gfx_vulkan_draw_triangle_2d_null_data);
+	RUN(gfx_vulkan_draw_triangle_2d_null_vertices);
+	RUN(gfx_vulkan_draw_triangle_2d_without_target);
+	RUN(gfx_vulkan_draw_triangle_2d_success);
+	RUN(gfx_vulkan_draw_triangle_2d_creates_pipeline);
+	RUN(gfx_vulkan_draw_triangle_2d_binds_vertex_buffer);
+	RUN(gfx_vulkan_draw_triangle_2d_draws_three_vertices);
+	RUN(gfx_vulkan_draw_triangle_2d_passes_first_vertex_x);
+	RUN(gfx_vulkan_draw_triangle_2d_recreates_swapchain_draw_targets_after_resize);
 	RUN(gfx_vulkan_present_null_data);
 	RUN(gfx_vulkan_present_without_acquired_image);
 	RUN(gfx_vulkan_present_failure);

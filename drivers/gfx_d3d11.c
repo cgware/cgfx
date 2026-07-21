@@ -409,6 +409,15 @@ static int gfx_d3d11_clear(gfx_t *gfx, u32 buffers)
 	return 0;
 }
 
+static int gfx_d3d11_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	return 1;
+}
+
 static int gfx_d3d11_present(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -434,6 +443,7 @@ static gfx_driver_t gfx_d3d11 = {
 	.viewport    = gfx_d3d11_viewport,
 	.clear_color = gfx_d3d11_clear_color,
 	.clear	     = gfx_d3d11_clear,
+	.draw_triangle_2d = gfx_d3d11_draw_triangle_2d,
 	.present     = gfx_d3d11_present,
 };
 

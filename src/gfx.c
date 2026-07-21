@@ -92,6 +92,15 @@ int gfx_clear(gfx_t *gfx, u32 buffers)
 	return gfx->drv->clear(gfx, buffers);
 }
 
+int gfx_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || gfx->drv == NULL || gfx->drv->draw_triangle_2d == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	return gfx->drv->draw_triangle_2d(gfx, vertices);
+}
+
 int gfx_present(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->present == NULL) {

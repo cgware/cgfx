@@ -17,6 +17,13 @@ typedef u64 VkCommandBuffer;
 typedef u64 VkFence;
 typedef u64 VkSurfaceKHR;
 typedef u64 VkSwapchainKHR;
+typedef u64 VkBuffer;
+typedef u64 VkImageView;
+typedef u64 VkRenderPass;
+typedef u64 VkFramebuffer;
+typedef u64 VkShaderModule;
+typedef u64 VkPipelineLayout;
+typedef u64 VkPipeline;
 typedef u32 VkColorSpaceKHR;
 typedef u32 VkPresentModeKHR;
 
@@ -30,15 +37,20 @@ enum {
 	VK_QUEUE_GRAPHICS_BIT				= 0x00000001,
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT		= 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT		= 0x00000004,
+	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT		= 0x00000080,
 	VK_IMAGE_USAGE_TRANSFER_DST_BIT			= 0x00000002,
+	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT		= 0x00000010,
 	VK_FORMAT_FEATURE_TRANSFER_DST_BIT		= 0x00004000,
+	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT		= 0x00000080,
 	VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT = 0x00000002,
 	VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT	= 0x00000001,
 	VK_IMAGE_ASPECT_COLOR_BIT			= 0x00000001,
 	VK_ACCESS_TRANSFER_WRITE_BIT			= 0x00001000,
+	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT		= 0x00000100,
 	VK_ACCESS_HOST_READ_BIT				= 0x00002000,
 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT		= 0x00000001,
 	VK_PIPELINE_STAGE_TRANSFER_BIT			= 0x00001000,
+	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT	= 0x00000400,
 	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT		= 0x00002000,
 	VK_PIPELINE_STAGE_HOST_BIT			= 0x00004000,
 	VK_FENCE_CREATE_SIGNALED_BIT			= 0x00000001,
@@ -47,6 +59,7 @@ enum {
 	VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO	= 2,
 	VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO		= 3,
 	VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO		= 14,
+	VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO		= 12,
 	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO		= 5,
 	VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO	= 39,
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO	= 40,
@@ -55,6 +68,21 @@ enum {
 	VK_STRUCTURE_TYPE_FENCE_CREATE_INFO		= 8,
 	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE		= 6,
 	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER		= 44,
+	VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO		= 15,
+	VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO	= 16,
+	VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO	= 38,
+	VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO	= 37,
+	VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO = 18,
+	VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO = 19,
+	VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO = 20,
+	VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO = 22,
+	VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO = 23,
+	VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO = 24,
+	VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO = 26,
+	VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO = 27,
+	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO	= 30,
+	VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO = 28,
+	VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO		= 43,
 	VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR	= 1000001000,
 	VK_STRUCTURE_TYPE_PRESENT_INFO_KHR		= 1000001001,
 	VK_IMAGE_TYPE_2D				= 0,
@@ -65,11 +93,37 @@ enum {
 	VK_IMAGE_TILING_LINEAR				= 1,
 	VK_IMAGE_LAYOUT_UNDEFINED			= 0,
 	VK_IMAGE_LAYOUT_GENERAL				= 1,
+	VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL		= 2,
 	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL		= 7,
 	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR			= 1000001002,
 	VK_SHARING_MODE_EXCLUSIVE			= 0,
 	VK_SAMPLE_COUNT_1_BIT				= 1,
 	VK_COMMAND_BUFFER_LEVEL_PRIMARY			= 0,
+	VK_IMAGE_VIEW_TYPE_2D				= 1,
+	VK_ATTACHMENT_LOAD_OP_LOAD			= 0,
+	VK_ATTACHMENT_STORE_OP_STORE			= 0,
+	VK_ATTACHMENT_LOAD_OP_DONT_CARE			= 2,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE		= 1,
+	VK_PIPELINE_BIND_POINT_GRAPHICS			= 0,
+	VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST		= 3,
+	VK_POLYGON_MODE_FILL				= 0,
+	VK_CULL_MODE_NONE				= 0,
+	VK_FRONT_FACE_COUNTER_CLOCKWISE			= 1,
+	VK_BLEND_FACTOR_ONE				= 1,
+	VK_BLEND_FACTOR_ZERO				= 0,
+	VK_BLEND_OP_ADD					= 0,
+	VK_COLOR_COMPONENT_R_BIT			= 0x00000001,
+	VK_COLOR_COMPONENT_G_BIT			= 0x00000002,
+	VK_COLOR_COMPONENT_B_BIT			= 0x00000004,
+	VK_COLOR_COMPONENT_A_BIT			= 0x00000008,
+	VK_DYNAMIC_STATE_VIEWPORT			= 0,
+	VK_DYNAMIC_STATE_SCISSOR			= 1,
+	VK_VERTEX_INPUT_RATE_VERTEX			= 0,
+	VK_FORMAT_R32G32_SFLOAT				= 103,
+	VK_FORMAT_R32G32B32A32_SFLOAT			= 109,
+	VK_SHADER_STAGE_VERTEX_BIT			= 0x00000001,
+	VK_SHADER_STAGE_FRAGMENT_BIT			= 0x00000010,
+	VK_SUBPASS_CONTENTS_INLINE			= 0,
 	VK_API_VERSION_1_0				= 1u << 22,
 	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR		= 0,
 	VK_PRESENT_MODE_FIFO_KHR			= 2,
@@ -198,6 +252,17 @@ typedef struct VkImageCreateInfo_s {
 	u32 initialLayout;
 } VkImageCreateInfo;
 
+typedef struct VkBufferCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	VkDeviceSize size;
+	VkFlags usage;
+	u32 sharingMode;
+	u32 queueFamilyIndexCount;
+	const u32 *pQueueFamilyIndices;
+} VkBufferCreateInfo;
+
 typedef struct VkSwapchainCreateInfoKHR_s {
 	u32 sType;
 	const void *pNext;
@@ -254,11 +319,12 @@ typedef struct VkCommandBufferBeginInfo_s {
 	const void *pInheritanceInfo;
 } VkCommandBufferBeginInfo;
 
-typedef union VkClearColorValue_u {
-	float float32[4];
-	int int32[4];
-	u32 uint32[4];
-} VkClearColorValue;
+typedef struct VkComponentMapping_s {
+	u32 r;
+	u32 g;
+	u32 b;
+	u32 a;
+} VkComponentMapping;
 
 typedef struct VkImageSubresourceRange_s {
 	VkFlags aspectMask;
@@ -267,6 +333,255 @@ typedef struct VkImageSubresourceRange_s {
 	u32 baseArrayLayer;
 	u32 layerCount;
 } VkImageSubresourceRange;
+
+typedef struct VkImageViewCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	VkImage image;
+	u32 viewType;
+	u32 format;
+	VkComponentMapping components;
+	VkImageSubresourceRange subresourceRange;
+} VkImageViewCreateInfo;
+
+typedef struct VkShaderModuleCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	size_t codeSize;
+	const u32 *pCode;
+} VkShaderModuleCreateInfo;
+
+typedef struct VkAttachmentDescription_s {
+	VkFlags flags;
+	u32 format;
+	u32 samples;
+	u32 loadOp;
+	u32 storeOp;
+	u32 stencilLoadOp;
+	u32 stencilStoreOp;
+	u32 initialLayout;
+	u32 finalLayout;
+} VkAttachmentDescription;
+
+typedef struct VkAttachmentReference_s {
+	u32 attachment;
+	u32 layout;
+} VkAttachmentReference;
+
+typedef struct VkSubpassDescription_s {
+	VkFlags flags;
+	u32 pipelineBindPoint;
+	u32 inputAttachmentCount;
+	const void *pInputAttachments;
+	u32 colorAttachmentCount;
+	const VkAttachmentReference *pColorAttachments;
+	const void *pResolveAttachments;
+	const void *pDepthStencilAttachment;
+	u32 preserveAttachmentCount;
+	const u32 *pPreserveAttachments;
+} VkSubpassDescription;
+
+typedef struct VkRenderPassCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 attachmentCount;
+	const VkAttachmentDescription *pAttachments;
+	u32 subpassCount;
+	const VkSubpassDescription *pSubpasses;
+	u32 dependencyCount;
+	const void *pDependencies;
+} VkRenderPassCreateInfo;
+
+typedef struct VkFramebufferCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	VkRenderPass renderPass;
+	u32 attachmentCount;
+	const VkImageView *pAttachments;
+	u32 width;
+	u32 height;
+	u32 layers;
+} VkFramebufferCreateInfo;
+
+typedef struct VkVertexInputBindingDescription_s {
+	u32 binding;
+	u32 stride;
+	u32 inputRate;
+} VkVertexInputBindingDescription;
+
+typedef struct VkVertexInputAttributeDescription_s {
+	u32 location;
+	u32 binding;
+	u32 format;
+	u32 offset;
+} VkVertexInputAttributeDescription;
+
+typedef struct VkPipelineShaderStageCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 stage;
+	VkShaderModule module;
+	const char *pName;
+	const void *pSpecializationInfo;
+} VkPipelineShaderStageCreateInfo;
+
+typedef struct VkPipelineVertexInputStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 vertexBindingDescriptionCount;
+	const VkVertexInputBindingDescription *pVertexBindingDescriptions;
+	u32 vertexAttributeDescriptionCount;
+	const VkVertexInputAttributeDescription *pVertexAttributeDescriptions;
+} VkPipelineVertexInputStateCreateInfo;
+
+typedef struct VkPipelineInputAssemblyStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 topology;
+	VkBool32 primitiveRestartEnable;
+} VkPipelineInputAssemblyStateCreateInfo;
+
+typedef struct VkViewport_s {
+	float x;
+	float y;
+	float width;
+	float height;
+	float minDepth;
+	float maxDepth;
+} VkViewport;
+
+typedef struct VkOffset2D_s {
+	int x;
+	int y;
+} VkOffset2D;
+
+typedef struct VkRect2D_s {
+	VkOffset2D offset;
+	VkExtent2D extent;
+} VkRect2D;
+
+typedef struct VkPipelineViewportStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 viewportCount;
+	const VkViewport *pViewports;
+	u32 scissorCount;
+	const VkRect2D *pScissors;
+} VkPipelineViewportStateCreateInfo;
+
+typedef struct VkPipelineRasterizationStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	VkBool32 depthClampEnable;
+	VkBool32 rasterizerDiscardEnable;
+	u32 polygonMode;
+	VkFlags cullMode;
+	u32 frontFace;
+	VkBool32 depthBiasEnable;
+	float depthBiasConstantFactor;
+	float depthBiasClamp;
+	float depthBiasSlopeFactor;
+	float lineWidth;
+} VkPipelineRasterizationStateCreateInfo;
+
+typedef struct VkPipelineMultisampleStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 rasterizationSamples;
+	VkBool32 sampleShadingEnable;
+	float minSampleShading;
+	const void *pSampleMask;
+	VkBool32 alphaToCoverageEnable;
+	VkBool32 alphaToOneEnable;
+} VkPipelineMultisampleStateCreateInfo;
+
+typedef struct VkPipelineColorBlendAttachmentState_s {
+	VkBool32 blendEnable;
+	u32 srcColorBlendFactor;
+	u32 dstColorBlendFactor;
+	u32 colorBlendOp;
+	u32 srcAlphaBlendFactor;
+	u32 dstAlphaBlendFactor;
+	u32 alphaBlendOp;
+	VkFlags colorWriteMask;
+} VkPipelineColorBlendAttachmentState;
+
+typedef struct VkPipelineColorBlendStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	VkBool32 logicOpEnable;
+	u32 logicOp;
+	u32 attachmentCount;
+	const VkPipelineColorBlendAttachmentState *pAttachments;
+	float blendConstants[4];
+} VkPipelineColorBlendStateCreateInfo;
+
+typedef struct VkPipelineDynamicStateCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 dynamicStateCount;
+	const u32 *pDynamicStates;
+} VkPipelineDynamicStateCreateInfo;
+
+typedef struct VkPipelineLayoutCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 setLayoutCount;
+	const void *pSetLayouts;
+	u32 pushConstantRangeCount;
+	const void *pPushConstantRanges;
+} VkPipelineLayoutCreateInfo;
+
+typedef struct VkGraphicsPipelineCreateInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkFlags flags;
+	u32 stageCount;
+	const VkPipelineShaderStageCreateInfo *pStages;
+	const VkPipelineVertexInputStateCreateInfo *pVertexInputState;
+	const VkPipelineInputAssemblyStateCreateInfo *pInputAssemblyState;
+	const void *pTessellationState;
+	const VkPipelineViewportStateCreateInfo *pViewportState;
+	const VkPipelineRasterizationStateCreateInfo *pRasterizationState;
+	const VkPipelineMultisampleStateCreateInfo *pMultisampleState;
+	const void *pDepthStencilState;
+	const VkPipelineColorBlendStateCreateInfo *pColorBlendState;
+	const VkPipelineDynamicStateCreateInfo *pDynamicState;
+	VkPipelineLayout layout;
+	VkRenderPass renderPass;
+	u32 subpass;
+	VkPipeline basePipelineHandle;
+	int basePipelineIndex;
+} VkGraphicsPipelineCreateInfo;
+
+typedef struct VkRenderPassBeginInfo_s {
+	u32 sType;
+	const void *pNext;
+	VkRenderPass renderPass;
+	VkFramebuffer framebuffer;
+	VkRect2D renderArea;
+	u32 clearValueCount;
+	const void *pClearValues;
+} VkRenderPassBeginInfo;
+
+typedef union VkClearColorValue_u {
+	float float32[4];
+	int int32[4];
+	u32 uint32[4];
+} VkClearColorValue;
 
 typedef struct VkImageMemoryBarrier_s {
 	u32 sType;
@@ -359,12 +674,17 @@ typedef VkResult (*PFN_vkWaitForFences)(VkDevice, u32, const VkFence *, VkBool32
 typedef VkResult (*PFN_vkCreateImage)(VkDevice, const VkImageCreateInfo *, const void *, VkImage *);
 typedef void (*PFN_vkDestroyImage)(VkDevice, VkImage, const void *);
 typedef void (*PFN_vkGetImageMemoryRequirements)(VkDevice, VkImage, VkMemoryRequirements *);
+typedef VkResult (*PFN_vkCreateBuffer)(VkDevice, const VkBufferCreateInfo *, const void *, VkBuffer *);
+typedef void (*PFN_vkDestroyBuffer)(VkDevice, VkBuffer, const void *);
+typedef void (*PFN_vkGetBufferMemoryRequirements)(VkDevice, VkBuffer, VkMemoryRequirements *);
 typedef VkResult (*PFN_vkAllocateMemory)(VkDevice, const VkMemoryAllocateInfo *, const void *, VkDeviceMemory *);
 typedef void (*PFN_vkFreeMemory)(VkDevice, VkDeviceMemory, const void *);
 typedef VkResult (*PFN_vkBindImageMemory)(VkDevice, VkImage, VkDeviceMemory, VkDeviceSize);
+typedef VkResult (*PFN_vkBindBufferMemory)(VkDevice, VkBuffer, VkDeviceMemory, VkDeviceSize);
 typedef void (*PFN_vkGetImageSubresourceLayout)(VkDevice, VkImage, const VkImageSubresource *, VkSubresourceLayout *);
 typedef VkResult (*PFN_vkMapMemory)(VkDevice, VkDeviceMemory, VkDeviceSize, VkDeviceSize, VkFlags, void **);
 typedef void (*PFN_vkUnmapMemory)(VkDevice, VkDeviceMemory);
+typedef VkResult (*PFN_vkFlushMappedMemoryRanges)(VkDevice, u32, const VkMappedMemoryRange *);
 typedef VkResult (*PFN_vkInvalidateMappedMemoryRanges)(VkDevice, u32, const VkMappedMemoryRange *);
 typedef VkResult (*PFN_vkBeginCommandBuffer)(VkCommandBuffer, const VkCommandBufferBeginInfo *);
 typedef VkResult (*PFN_vkEndCommandBuffer)(VkCommandBuffer);
@@ -372,6 +692,25 @@ typedef VkResult (*PFN_vkResetCommandBuffer)(VkCommandBuffer, VkFlags);
 typedef void (*PFN_vkCmdPipelineBarrier)(VkCommandBuffer, VkFlags, VkFlags, VkFlags, u32, const void *, u32, const void *, u32,
 					 const VkImageMemoryBarrier *);
 typedef void (*PFN_vkCmdClearColorImage)(VkCommandBuffer, VkImage, u32, const VkClearColorValue *, u32, const VkImageSubresourceRange *);
+typedef VkResult (*PFN_vkCreateImageView)(VkDevice, const VkImageViewCreateInfo *, const void *, VkImageView *);
+typedef void (*PFN_vkDestroyImageView)(VkDevice, VkImageView, const void *);
+typedef VkResult (*PFN_vkCreateShaderModule)(VkDevice, const VkShaderModuleCreateInfo *, const void *, VkShaderModule *);
+typedef void (*PFN_vkDestroyShaderModule)(VkDevice, VkShaderModule, const void *);
+typedef VkResult (*PFN_vkCreateRenderPass)(VkDevice, const VkRenderPassCreateInfo *, const void *, VkRenderPass *);
+typedef void (*PFN_vkDestroyRenderPass)(VkDevice, VkRenderPass, const void *);
+typedef VkResult (*PFN_vkCreateFramebuffer)(VkDevice, const VkFramebufferCreateInfo *, const void *, VkFramebuffer *);
+typedef void (*PFN_vkDestroyFramebuffer)(VkDevice, VkFramebuffer, const void *);
+typedef VkResult (*PFN_vkCreatePipelineLayout)(VkDevice, const VkPipelineLayoutCreateInfo *, const void *, VkPipelineLayout *);
+typedef void (*PFN_vkDestroyPipelineLayout)(VkDevice, VkPipelineLayout, const void *);
+typedef VkResult (*PFN_vkCreateGraphicsPipelines)(VkDevice, u64, u32, const VkGraphicsPipelineCreateInfo *, const void *, VkPipeline *);
+typedef void (*PFN_vkDestroyPipeline)(VkDevice, VkPipeline, const void *);
+typedef void (*PFN_vkCmdBeginRenderPass)(VkCommandBuffer, const VkRenderPassBeginInfo *, u32);
+typedef void (*PFN_vkCmdEndRenderPass)(VkCommandBuffer);
+typedef void (*PFN_vkCmdBindPipeline)(VkCommandBuffer, u32, VkPipeline);
+typedef void (*PFN_vkCmdBindVertexBuffers)(VkCommandBuffer, u32, u32, const VkBuffer *, const VkDeviceSize *);
+typedef void (*PFN_vkCmdSetViewport)(VkCommandBuffer, u32, u32, const VkViewport *);
+typedef void (*PFN_vkCmdSetScissor)(VkCommandBuffer, u32, u32, const VkRect2D *);
+typedef void (*PFN_vkCmdDraw)(VkCommandBuffer, u32, u32, u32, u32);
 typedef VkResult (*PFN_vkQueueSubmit)(VkQueue, u32, const VkSubmitInfo *, VkFence);
 typedef VkResult (*PFN_vkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR *, const void *, VkSwapchainKHR *);
 typedef void (*PFN_vkDestroySwapchainKHR)(VkDevice, VkSwapchainKHR, const void *);
@@ -401,8 +740,19 @@ typedef struct gfx_vulkan_s {
 	VkDeviceSize memory_size;
 	int memory_coherent;
 	VkSubresourceLayout layout;
+	VkBuffer vertex_buffer;
+	VkDeviceMemory vertex_memory;
+	VkDeviceSize vertex_memory_size;
+	int vertex_memory_coherent;
+	VkImageView image_view;
+	VkRenderPass render_pass;
+	VkFramebuffer framebuffer;
+	VkPipelineLayout pipeline_layout;
+	VkPipeline pipeline;
 	VkSwapchainKHR swapchain;
 	VkImage swapchain_images[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+	VkImageView swapchain_image_views[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+	VkFramebuffer swapchain_framebuffers[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
 	u32 swapchain_image_layouts[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
 	u32 swapchain_image_count;
 	u32 swapchain_image_index;
@@ -439,18 +789,42 @@ typedef struct gfx_vulkan_s {
 	PFN_vkCreateImage CreateImage;
 	PFN_vkDestroyImage DestroyImage;
 	PFN_vkGetImageMemoryRequirements GetImageMemoryRequirements;
+	PFN_vkCreateBuffer CreateBuffer;
+	PFN_vkDestroyBuffer DestroyBuffer;
+	PFN_vkGetBufferMemoryRequirements GetBufferMemoryRequirements;
 	PFN_vkAllocateMemory AllocateMemory;
 	PFN_vkFreeMemory FreeMemory;
 	PFN_vkBindImageMemory BindImageMemory;
+	PFN_vkBindBufferMemory BindBufferMemory;
 	PFN_vkGetImageSubresourceLayout GetImageSubresourceLayout;
 	PFN_vkMapMemory MapMemory;
 	PFN_vkUnmapMemory UnmapMemory;
+	PFN_vkFlushMappedMemoryRanges FlushMappedMemoryRanges;
 	PFN_vkInvalidateMappedMemoryRanges InvalidateMappedMemoryRanges;
 	PFN_vkBeginCommandBuffer BeginCommandBuffer;
 	PFN_vkEndCommandBuffer EndCommandBuffer;
 	PFN_vkResetCommandBuffer ResetCommandBuffer;
 	PFN_vkCmdPipelineBarrier CmdPipelineBarrier;
 	PFN_vkCmdClearColorImage CmdClearColorImage;
+	PFN_vkCreateImageView CreateImageView;
+	PFN_vkDestroyImageView DestroyImageView;
+	PFN_vkCreateShaderModule CreateShaderModule;
+	PFN_vkDestroyShaderModule DestroyShaderModule;
+	PFN_vkCreateRenderPass CreateRenderPass;
+	PFN_vkDestroyRenderPass DestroyRenderPass;
+	PFN_vkCreateFramebuffer CreateFramebuffer;
+	PFN_vkDestroyFramebuffer DestroyFramebuffer;
+	PFN_vkCreatePipelineLayout CreatePipelineLayout;
+	PFN_vkDestroyPipelineLayout DestroyPipelineLayout;
+	PFN_vkCreateGraphicsPipelines CreateGraphicsPipelines;
+	PFN_vkDestroyPipeline DestroyPipeline;
+	PFN_vkCmdBeginRenderPass CmdBeginRenderPass;
+	PFN_vkCmdEndRenderPass CmdEndRenderPass;
+	PFN_vkCmdBindPipeline CmdBindPipeline;
+	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
+	PFN_vkCmdSetViewport CmdSetViewport;
+	PFN_vkCmdSetScissor CmdSetScissor;
+	PFN_vkCmdDraw CmdDraw;
 	PFN_vkQueueSubmit QueueSubmit;
 	PFN_vkCreateSwapchainKHR CreateSwapchainKHR;
 	PFN_vkDestroySwapchainKHR DestroySwapchainKHR;
@@ -543,6 +917,14 @@ static int extension_enabled(const char *const *extensions, u32 count, const cha
 
 static void gfx_vulkan_swapchain_free(gfx_vulkan_t *vulkan)
 {
+	for (u32 i = 0; i < vulkan->swapchain_image_count; i++) {
+		if (vulkan->swapchain_framebuffers[i] != 0) {
+			vulkan->DestroyFramebuffer(vulkan->device, vulkan->swapchain_framebuffers[i], NULL);
+		}
+		if (vulkan->swapchain_image_views[i] != 0) {
+			vulkan->DestroyImageView(vulkan->device, vulkan->swapchain_image_views[i], NULL);
+		}
+	}
 	if (vulkan->swapchain != 0) {
 		if (vulkan->DeviceWaitIdle != NULL) {
 			vulkan->DeviceWaitIdle(vulkan->device);
@@ -554,7 +936,63 @@ static void gfx_vulkan_swapchain_free(gfx_vulkan_t *vulkan)
 	vulkan->swapchain_image_index = 0;
 	vulkan->swapchain_acquired    = 0;
 	mem_set(vulkan->swapchain_images, 0, sizeof(vulkan->swapchain_images));
+	mem_set(vulkan->swapchain_image_views, 0, sizeof(vulkan->swapchain_image_views));
+	mem_set(vulkan->swapchain_framebuffers, 0, sizeof(vulkan->swapchain_framebuffers));
 	mem_set(vulkan->swapchain_image_layouts, 0, sizeof(vulkan->swapchain_image_layouts));
+}
+
+static void gfx_vulkan_draw_target_free(gfx_vulkan_t *vulkan)
+{
+	if (vulkan->framebuffer != 0) {
+		vulkan->DestroyFramebuffer(vulkan->device, vulkan->framebuffer, NULL);
+		vulkan->framebuffer = 0;
+	}
+	if (vulkan->image_view != 0) {
+		vulkan->DestroyImageView(vulkan->device, vulkan->image_view, NULL);
+		vulkan->image_view = 0;
+	}
+}
+
+static void gfx_vulkan_swapchain_draw_targets_free(gfx_vulkan_t *vulkan)
+{
+	for (u32 i = 0; i < vulkan->swapchain_image_count; i++) {
+		if (vulkan->swapchain_framebuffers[i] != 0) {
+			vulkan->DestroyFramebuffer(vulkan->device, vulkan->swapchain_framebuffers[i], NULL);
+			vulkan->swapchain_framebuffers[i] = 0;
+		}
+		if (vulkan->swapchain_image_views[i] != 0) {
+			vulkan->DestroyImageView(vulkan->device, vulkan->swapchain_image_views[i], NULL);
+			vulkan->swapchain_image_views[i] = 0;
+		}
+	}
+}
+
+static void gfx_vulkan_draw_free(gfx_vulkan_t *vulkan)
+{
+	gfx_vulkan_draw_target_free(vulkan);
+	gfx_vulkan_swapchain_draw_targets_free(vulkan);
+	if (vulkan->pipeline != 0) {
+		vulkan->DestroyPipeline(vulkan->device, vulkan->pipeline, NULL);
+		vulkan->pipeline = 0;
+	}
+	if (vulkan->pipeline_layout != 0) {
+		vulkan->DestroyPipelineLayout(vulkan->device, vulkan->pipeline_layout, NULL);
+		vulkan->pipeline_layout = 0;
+	}
+	if (vulkan->render_pass != 0) {
+		vulkan->DestroyRenderPass(vulkan->device, vulkan->render_pass, NULL);
+		vulkan->render_pass = 0;
+	}
+	if (vulkan->vertex_buffer != 0) {
+		vulkan->DestroyBuffer(vulkan->device, vulkan->vertex_buffer, NULL);
+		vulkan->vertex_buffer = 0;
+	}
+	if (vulkan->vertex_memory != 0) {
+		vulkan->FreeMemory(vulkan->device, vulkan->vertex_memory, NULL);
+		vulkan->vertex_memory = 0;
+	}
+	vulkan->vertex_memory_size     = 0;
+	vulkan->vertex_memory_coherent = 0;
 }
 
 static void gfx_vulkan_target_free(gfx_vulkan_t *vulkan)
@@ -564,6 +1002,7 @@ static void gfx_vulkan_target_free(gfx_vulkan_t *vulkan)
 		return;
 	}
 
+	gfx_vulkan_draw_target_free(vulkan);
 	gfx_vulkan_swapchain_free(vulkan);
 	if (vulkan->image != 0) {
 		vulkan->DestroyImage(vulkan->device, vulkan->image, NULL);
@@ -581,6 +1020,7 @@ static void gfx_vulkan_target_free(gfx_vulkan_t *vulkan)
 
 static void gfx_vulkan_device_free(gfx_vulkan_t *vulkan)
 {
+	gfx_vulkan_draw_free(vulkan);
 	gfx_vulkan_target_free(vulkan);
 	if (vulkan->device != 0) {
 		if (vulkan->command_buffer != 0) {
@@ -647,7 +1087,8 @@ static int gfx_vulkan_pick_device(gfx_vulkan_t *vulkan)
 			if (queues[q].queueCount != 0 && (queues[q].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
 				VkFormatProperties props = {0};
 				vulkan->GetPhysicalDeviceFormatProperties(devices[i], VK_FORMAT_R8G8B8A8_UNORM, &props);
-				if ((props.linearTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) == 0) {
+				if ((props.linearTilingFeatures & (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) !=
+				    (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
 					continue;
 				}
 				vulkan->physical_device = devices[i];
@@ -713,11 +1154,23 @@ static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan
 	    LOAD_VK_DEV(vulkan, DestroyCommandPool) || LOAD_VK_DEV(vulkan, AllocateCommandBuffers) ||
 	    LOAD_VK_DEV(vulkan, FreeCommandBuffers) || LOAD_VK_DEV(vulkan, CreateFence) || LOAD_VK_DEV(vulkan, DestroyFence) ||
 	    LOAD_VK_DEV(vulkan, ResetFences) || LOAD_VK_DEV(vulkan, WaitForFences) || LOAD_VK_DEV(vulkan, CreateImage) ||
-	    LOAD_VK_DEV(vulkan, DestroyImage) || LOAD_VK_DEV(vulkan, GetImageMemoryRequirements) || LOAD_VK_DEV(vulkan, AllocateMemory) ||
-	    LOAD_VK_DEV(vulkan, FreeMemory) || LOAD_VK_DEV(vulkan, BindImageMemory) || LOAD_VK_DEV(vulkan, GetImageSubresourceLayout) ||
-	    LOAD_VK_DEV(vulkan, MapMemory) || LOAD_VK_DEV(vulkan, UnmapMemory) || LOAD_VK_DEV(vulkan, InvalidateMappedMemoryRanges) ||
+	    LOAD_VK_DEV(vulkan, DestroyImage) || LOAD_VK_DEV(vulkan, GetImageMemoryRequirements) || LOAD_VK_DEV(vulkan, CreateBuffer) ||
+	    LOAD_VK_DEV(vulkan, DestroyBuffer) || LOAD_VK_DEV(vulkan, GetBufferMemoryRequirements) || LOAD_VK_DEV(vulkan, AllocateMemory) ||
+	    LOAD_VK_DEV(vulkan, FreeMemory) || LOAD_VK_DEV(vulkan, BindImageMemory) || LOAD_VK_DEV(vulkan, BindBufferMemory) ||
+	    LOAD_VK_DEV(vulkan, GetImageSubresourceLayout) ||
+	    LOAD_VK_DEV(vulkan, MapMemory) || LOAD_VK_DEV(vulkan, UnmapMemory) || LOAD_VK_DEV(vulkan, FlushMappedMemoryRanges) ||
+	    LOAD_VK_DEV(vulkan, InvalidateMappedMemoryRanges) ||
 	    LOAD_VK_DEV(vulkan, BeginCommandBuffer) || LOAD_VK_DEV(vulkan, EndCommandBuffer) || LOAD_VK_DEV(vulkan, ResetCommandBuffer) ||
-	    LOAD_VK_DEV(vulkan, CmdPipelineBarrier) || LOAD_VK_DEV(vulkan, CmdClearColorImage) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
+	    LOAD_VK_DEV(vulkan, CmdPipelineBarrier) || LOAD_VK_DEV(vulkan, CmdClearColorImage) || LOAD_VK_DEV(vulkan, CreateImageView) ||
+	    LOAD_VK_DEV(vulkan, DestroyImageView) || LOAD_VK_DEV(vulkan, CreateShaderModule) ||
+	    LOAD_VK_DEV(vulkan, DestroyShaderModule) || LOAD_VK_DEV(vulkan, CreateRenderPass) ||
+	    LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) ||
+	    LOAD_VK_DEV(vulkan, DestroyFramebuffer) || LOAD_VK_DEV(vulkan, CreatePipelineLayout) ||
+	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
+	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) ||
+	    LOAD_VK_DEV(vulkan, CmdEndRenderPass) || LOAD_VK_DEV(vulkan, CmdBindPipeline) ||
+	    LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdSetViewport) ||
+	    LOAD_VK_DEV(vulkan, CmdSetScissor) || LOAD_VK_DEV(vulkan, CmdDraw) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
 		return 1;
 	}
 	if (vulkan->swapchain_enabled && (LOAD_VK_DEV(vulkan, CreateSwapchainKHR) || LOAD_VK_DEV(vulkan, DestroySwapchainKHR) ||
@@ -1077,8 +1530,9 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to query Vulkan surface capabilities");
 		return 1;
 	}
-	if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT) == 0) {
-		log_error("cgfx", "gfx_vulkan", NULL, "Vulkan surface does not support transfer destination usage");
+	if ((caps.supportedUsageFlags & (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) !=
+	    (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
+		log_error("cgfx", "gfx_vulkan", NULL, "Vulkan surface does not support required image usage");
 		return 1;
 	}
 
@@ -1112,7 +1566,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		.imageColorSpace  = format.colorSpace,
 		.imageExtent	  = extent,
 		.imageArrayLayers = 1,
-		.imageUsage	  = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		.imageUsage	  = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		.preTransform	  = caps.currentTransform,
 		.compositeAlpha	  = composite_alpha_choose(caps.supportedCompositeAlpha),
@@ -1151,6 +1605,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		if (vulkan->DeviceWaitIdle != NULL) {
 			vulkan->DeviceWaitIdle(vulkan->device);
 		}
+		gfx_vulkan_swapchain_draw_targets_free(vulkan);
 		vulkan->DestroySwapchainKHR(vulkan->device, old_swapchain, NULL);
 	}
 	vulkan->swapchain = swapchain;
@@ -1204,7 +1659,7 @@ static int gfx_vulkan_set_memory_target(gfx_vulkan_t *vulkan, const gfx_target_t
 		.arrayLayers   = 1,
 		.samples       = VK_SAMPLE_COUNT_1_BIT,
 		.tiling	       = VK_IMAGE_TILING_LINEAR,
-		.usage	       = VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+		.usage	       = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 		.sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 	};
@@ -1263,12 +1718,14 @@ static int gfx_vulkan_set_target(gfx_t *gfx, const gfx_target_t *target)
 
 	gfx_vulkan_t *vulkan = gfx->data;
 	if (target->type == GFX_TARGET_NONE) {
+		gfx_vulkan_draw_free(vulkan);
 		gfx_vulkan_target_free(vulkan);
 		return 0;
 	}
 	if (!target_valid(target)) {
 		return 1;
 	}
+	gfx_vulkan_draw_free(vulkan);
 	if (target->type == GFX_TARGET_MEMORY) {
 		gfx_vulkan_target_free(vulkan);
 		return gfx_vulkan_set_memory_target(vulkan, target);
@@ -1543,6 +2000,476 @@ static int gfx_vulkan_clear(gfx_t *gfx, u32 buffers)
 	return 1;
 }
 
+typedef struct gfx_vulkan_vertex_2d_s {
+	float x;
+	float y;
+	float r;
+	float g;
+	float b;
+	float a;
+} gfx_vulkan_vertex_2d_t;
+
+static int gfx_vulkan_create_vertex_buffer(gfx_vulkan_t *vulkan)
+{
+	if (vulkan->vertex_buffer != 0) {
+		return 0;
+	}
+
+	VkBufferCreateInfo buffer = {
+		.sType	     = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size	     = sizeof(gfx_vulkan_vertex_2d_t) * 3,
+		.usage	     = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+	};
+	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &buffer, NULL, &vulkan->vertex_buffer))) {
+		return 1;
+	}
+
+	VkMemoryRequirements req = {0};
+	vulkan->GetBufferMemoryRequirements(vulkan->device, vulkan->vertex_buffer, &req);
+
+	u32 memory_type = 0;
+	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vulkan->vertex_memory_coherent)) {
+		gfx_vulkan_draw_free(vulkan);
+		return 1;
+	}
+
+	VkMemoryAllocateInfo memory = {
+		.sType		 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize	 = req.size,
+		.memoryTypeIndex = memory_type,
+	};
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vulkan->vertex_memory))) {
+		gfx_vulkan_draw_free(vulkan);
+		return 1;
+	}
+	vulkan->vertex_memory_size = req.size;
+
+	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, vulkan->vertex_buffer, vulkan->vertex_memory, 0))) {
+		gfx_vulkan_draw_free(vulkan);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int gfx_vulkan_upload_vertices(gfx_vulkan_t *vulkan, const gfx_vertex_2d_t vertices[3])
+{
+	gfx_vulkan_vertex_2d_t vk_vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		vk_vertices[i] = (gfx_vulkan_vertex_2d_t){
+			.x = vertices[i].x / (float)vulkan->target.width * 2.0f - 1.0f,
+			.y = vertices[i].y / (float)vulkan->target.height * 2.0f - 1.0f,
+			.r = vertices[i].r,
+			.g = vertices[i].g,
+			.b = vertices[i].b,
+			.a = vertices[i].a,
+		};
+	}
+
+	void *mapped = NULL;
+	if (!vk_ok(vulkan->MapMemory(vulkan->device, vulkan->vertex_memory, 0, sizeof(vk_vertices), 0, &mapped))) {
+		return 1;
+	}
+	mem_copy(mapped, sizeof(vk_vertices), vk_vertices, sizeof(vk_vertices));
+	if (!vulkan->vertex_memory_coherent) {
+		VkMappedMemoryRange range = {
+			.sType	= VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+			.memory = vulkan->vertex_memory,
+			.offset = 0,
+			.size	= sizeof(vk_vertices),
+		};
+		if (!vk_ok(vulkan->FlushMappedMemoryRanges(vulkan->device, 1, &range))) {
+			vulkan->UnmapMemory(vulkan->device, vulkan->vertex_memory);
+			return 1;
+		}
+	}
+	vulkan->UnmapMemory(vulkan->device, vulkan->vertex_memory);
+	return 0;
+}
+
+static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view)
+{
+	VkImageViewCreateInfo create = {
+		.sType	 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image	 = image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format	 = gfx_vulkan_format(vulkan->target.format),
+		.subresourceRange =
+			{
+				.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
+				.levelCount	= 1,
+				.layerCount	= 1,
+			},
+	};
+	return !vk_ok(vulkan->CreateImageView(vulkan->device, &create, NULL, view));
+}
+
+static int gfx_vulkan_create_render_pass(gfx_vulkan_t *vulkan)
+{
+	if (vulkan->render_pass != 0) {
+		return 0;
+	}
+
+	VkAttachmentDescription attachment = {
+		.format	       = gfx_vulkan_format(vulkan->target.format),
+		.samples       = VK_SAMPLE_COUNT_1_BIT,
+		.loadOp	       = VK_ATTACHMENT_LOAD_OP_LOAD,
+		.storeOp       = VK_ATTACHMENT_STORE_OP_STORE,
+		.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.finalLayout   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	};
+	VkAttachmentReference color = {
+		.attachment = 0,
+		.layout	   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	};
+	VkSubpassDescription subpass = {
+		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &color,
+	};
+	VkRenderPassCreateInfo create = {
+		.sType		 = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		.attachmentCount = 1,
+		.pAttachments	 = &attachment,
+		.subpassCount	 = 1,
+		.pSubpasses	 = &subpass,
+	};
+	return !vk_ok(vulkan->CreateRenderPass(vulkan->device, &create, NULL, &vulkan->render_pass));
+}
+
+static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, VkImageView view, VkFramebuffer *framebuffer)
+{
+	VkFramebufferCreateInfo create = {
+		.sType		 = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+		.renderPass	 = vulkan->render_pass,
+		.attachmentCount = 1,
+		.pAttachments	 = &view,
+		.width		 = vulkan->target.width,
+		.height		 = vulkan->target.height,
+		.layers		 = 1,
+	};
+	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, framebuffer));
+}
+
+static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
+{
+	static const u32 vertex_code[] = {
+		0x07230203, 0x00010000, 0x00000000, 0x0000001d, 0x00000000, 0x00020011, 0x00000001, 0x0003000e,
+		0x00000000, 0x00000001, 0x0009000f, 0x00000000, 0x00000004, 0x6e69616d, 0x00000000, 0x00000013,
+		0x00000009, 0x0000000c, 0x0000000e, 0x00030003, 0x00000002, 0x000001c2, 0x00050048, 0x00000011,
+		0x00000000, 0x0000000b, 0x00000000, 0x00030047, 0x00000011, 0x00000002, 0x00040047, 0x00000009,
+		0x0000001e, 0x00000000, 0x00040047, 0x0000000c, 0x0000001e, 0x00000000, 0x00040047, 0x0000000e,
+		0x0000001e, 0x00000001, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016,
+		0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008,
+		0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000009, 0x00000003, 0x00040017, 0x0000000a,
+		0x00000006, 0x00000002, 0x00040020, 0x0000000b, 0x00000001, 0x0000000a, 0x0004003b, 0x0000000b,
+		0x0000000c, 0x00000001, 0x00040020, 0x0000000d, 0x00000001, 0x00000007, 0x0004003b, 0x0000000d,
+		0x0000000e, 0x00000001, 0x0004002b, 0x00000006, 0x0000000f, 0x00000000, 0x0004002b, 0x00000006,
+		0x00000010, 0x3f800000, 0x0003001e, 0x00000011, 0x00000007, 0x00040020, 0x00000012, 0x00000003,
+		0x00000011, 0x0004003b, 0x00000012, 0x00000013, 0x00000003, 0x00040015, 0x00000014, 0x00000020,
+		0x00000001, 0x0004002b, 0x00000014, 0x00000015, 0x00000000, 0x00040020, 0x00000016, 0x00000003,
+		0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005,
+		0x0004003d, 0x0000000a, 0x00000017, 0x0000000c, 0x00050051, 0x00000006, 0x00000018, 0x00000017,
+		0x00000000, 0x00050051, 0x00000006, 0x00000019, 0x00000017, 0x00000001, 0x00070050, 0x00000007,
+		0x0000001a, 0x00000018, 0x00000019, 0x0000000f, 0x00000010, 0x00050041, 0x00000016, 0x0000001b,
+		0x00000013, 0x00000015, 0x0003003e, 0x0000001b, 0x0000001a, 0x0004003d, 0x00000007, 0x0000001c,
+		0x0000000e, 0x0003003e, 0x00000009, 0x0000001c, 0x000100fd, 0x00010038,
+	};
+	static const u32 fragment_code[] = {
+		0x07230203, 0x00010000, 0x00000000, 0x0000000d, 0x00000000, 0x00020011, 0x00000001, 0x0003000e,
+		0x00000000, 0x00000001, 0x0007000f, 0x00000004, 0x00000004, 0x6e69616d, 0x00000000, 0x00000009,
+		0x0000000a, 0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001c2, 0x00040047,
+		0x00000009, 0x0000001e, 0x00000000, 0x00040047, 0x0000000a, 0x0000001e, 0x00000000, 0x00020013,
+		0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017,
+		0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003, 0x00000007, 0x0004003b,
+		0x00000008, 0x00000009, 0x00000003, 0x00040020, 0x0000000b, 0x00000001, 0x00000007, 0x0004003b,
+		0x0000000b, 0x0000000a, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003,
+		0x000200f8, 0x00000005, 0x0004003d, 0x00000007, 0x0000000c, 0x0000000a, 0x0003003e, 0x00000009,
+		0x0000000c, 0x000100fd, 0x00010038,
+	};
+
+	if (vulkan->pipeline != 0) {
+		return 0;
+	}
+	if (gfx_vulkan_create_render_pass(vulkan)) {
+		return 1;
+	}
+
+	VkShaderModuleCreateInfo vertex_create = {
+		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = sizeof(vertex_code),
+		.pCode	  = vertex_code,
+	};
+	VkShaderModule vertex = 0;
+	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &vertex_create, NULL, &vertex))) {
+		return 1;
+	}
+	VkShaderModuleCreateInfo fragment_create = {
+		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = sizeof(fragment_code),
+		.pCode	  = fragment_code,
+	};
+	VkShaderModule fragment = 0;
+	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &fragment_create, NULL, &fragment))) {
+		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+		return 1;
+	}
+
+	VkPipelineLayoutCreateInfo layout = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+	};
+	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vulkan->pipeline_layout))) {
+		vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
+		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+		return 1;
+	}
+
+	VkPipelineShaderStageCreateInfo stages[2] = {
+		{
+			.sType	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.stage	= VK_SHADER_STAGE_VERTEX_BIT,
+			.module = vertex,
+			.pName	= "main",
+		},
+		{
+			.sType	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+			.stage	= VK_SHADER_STAGE_FRAGMENT_BIT,
+			.module = fragment,
+			.pName	= "main",
+		},
+	};
+	VkVertexInputBindingDescription binding = {
+		.binding   = 0,
+		.stride	   = sizeof(gfx_vulkan_vertex_2d_t),
+		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+	};
+	VkVertexInputAttributeDescription attributes[2] = {
+		{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 0},
+		{.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 2 * sizeof(float)},
+	};
+	VkPipelineVertexInputStateCreateInfo vertex_input = {
+		.sType			      = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		.vertexBindingDescriptionCount   = 1,
+		.pVertexBindingDescriptions      = &binding,
+		.vertexAttributeDescriptionCount = 2,
+		.pVertexAttributeDescriptions    = attributes,
+	};
+	VkPipelineInputAssemblyStateCreateInfo assembly = {
+		.sType	  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+		.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+	};
+	VkPipelineViewportStateCreateInfo viewport = {
+		.sType	       = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+		.viewportCount = 1,
+		.scissorCount  = 1,
+	};
+	VkPipelineRasterizationStateCreateInfo raster = {
+		.sType	     = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+		.polygonMode = VK_POLYGON_MODE_FILL,
+		.cullMode    = VK_CULL_MODE_NONE,
+		.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		.lineWidth   = 1.0f,
+	};
+	VkPipelineMultisampleStateCreateInfo multisample = {
+		.sType		      = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+		.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+	};
+	VkPipelineColorBlendAttachmentState blend_attachment = {
+		.srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+		.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+		.colorBlendOp	     = VK_BLEND_OP_ADD,
+		.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+		.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+		.alphaBlendOp	     = VK_BLEND_OP_ADD,
+		.colorWriteMask	     = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+				   VK_COLOR_COMPONENT_A_BIT,
+	};
+	VkPipelineColorBlendStateCreateInfo blend = {
+		.sType		 = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+		.attachmentCount = 1,
+		.pAttachments	 = &blend_attachment,
+	};
+	u32 dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+	VkPipelineDynamicStateCreateInfo dynamic = {
+		.sType		   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+		.dynamicStateCount = 2,
+		.pDynamicStates	   = dynamic_states,
+	};
+	VkGraphicsPipelineCreateInfo create = {
+		.sType		     = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+		.stageCount	     = 2,
+		.pStages	     = stages,
+		.pVertexInputState   = &vertex_input,
+		.pInputAssemblyState = &assembly,
+		.pViewportState	     = &viewport,
+		.pRasterizationState = &raster,
+		.pMultisampleState   = &multisample,
+		.pColorBlendState    = &blend,
+		.pDynamicState	     = &dynamic,
+		.layout		     = vulkan->pipeline_layout,
+		.renderPass	     = vulkan->render_pass,
+	};
+	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vulkan->pipeline));
+	vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
+	vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+	return failed;
+}
+
+static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view, VkFramebuffer *framebuffer, u32 old_layout,
+				  u32 final_layout)
+{
+	if (*view == 0 && gfx_vulkan_create_image_view(vulkan, image, view)) {
+		return 1;
+	}
+	if (*framebuffer == 0 && gfx_vulkan_create_framebuffer(vulkan, *view, framebuffer)) {
+		return 1;
+	}
+
+	VkImageSubresourceRange range = {
+		.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
+		.levelCount	= 1,
+		.layerCount	= 1,
+	};
+	VkImageMemoryBarrier to_color = {
+		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.dstAccessMask	     = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		.oldLayout	     = old_layout,
+		.newLayout	     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image		     = image,
+		.subresourceRange    = range,
+	};
+	VkImageMemoryBarrier from_color = {
+		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+		.srcAccessMask	     = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		.oldLayout	     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.newLayout	     = final_layout,
+		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+		.image		     = image,
+		.subresourceRange    = range,
+	};
+	VkCommandBufferBeginInfo begin = {
+		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+	};
+	if (!vk_ok(vulkan->ResetFences(vulkan->device, 1, &vulkan->fence)) ||
+	    !vk_ok(vulkan->ResetCommandBuffer(vulkan->command_buffer, 0)) ||
+	    !vk_ok(vulkan->BeginCommandBuffer(vulkan->command_buffer, &begin))) {
+		return 1;
+	}
+	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
+				   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+				   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+				   0,
+				   0,
+				   NULL,
+				   0,
+				   NULL,
+				   1,
+				   &to_color);
+	VkRenderPassBeginInfo render = {
+		.sType	     = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+		.renderPass  = vulkan->render_pass,
+		.framebuffer = *framebuffer,
+		.renderArea =
+			{
+				.extent = {.width = vulkan->target.width, .height = vulkan->target.height},
+			},
+	};
+	VkViewport viewport = {
+		.x	  = vulkan->viewport_x,
+		.y	  = vulkan->viewport_y,
+		.width	  = vulkan->viewport_width ? vulkan->viewport_width : vulkan->target.width,
+		.height	  = vulkan->viewport_height ? vulkan->viewport_height : vulkan->target.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	};
+	VkRect2D scissor = {
+		.offset = {.x = vulkan->viewport_x, .y = vulkan->viewport_y},
+		.extent =
+			{
+				.width	= vulkan->viewport_width ? vulkan->viewport_width : vulkan->target.width,
+				.height = vulkan->viewport_height ? vulkan->viewport_height : vulkan->target.height,
+			},
+	};
+	VkDeviceSize offset = 0;
+	vulkan->CmdBeginRenderPass(vulkan->command_buffer, &render, VK_SUBPASS_CONTENTS_INLINE);
+	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipeline);
+	vulkan->CmdBindVertexBuffers(vulkan->command_buffer, 0, 1, &vulkan->vertex_buffer, &offset);
+	vulkan->CmdSetViewport(vulkan->command_buffer, 0, 1, &viewport);
+	vulkan->CmdSetScissor(vulkan->command_buffer, 0, 1, &scissor);
+	vulkan->CmdDraw(vulkan->command_buffer, 3, 1, 0, 0);
+	vulkan->CmdEndRenderPass(vulkan->command_buffer);
+	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
+				   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+				   final_layout == VK_IMAGE_LAYOUT_GENERAL ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				   0,
+				   0,
+				   NULL,
+				   0,
+				   NULL,
+				   1,
+				   &from_color);
+	if (!vk_ok(vulkan->EndCommandBuffer(vulkan->command_buffer))) {
+		return 1;
+	}
+
+	VkSubmitInfo submit = {
+		.sType		    = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+		.commandBufferCount = 1,
+		.pCommandBuffers    = &vulkan->command_buffer,
+	};
+	return !vk_ok(vulkan->QueueSubmit(vulkan->queue, 1, &submit, vulkan->fence)) ||
+	       !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull));
+}
+
+static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan = gfx->data;
+	if (vulkan->target.type != GFX_TARGET_MEMORY && vulkan->target.type != GFX_TARGET_SURFACE) {
+		return 1;
+	}
+	if (gfx_vulkan_create_vertex_buffer(vulkan) || gfx_vulkan_upload_vertices(vulkan, vertices) || gfx_vulkan_create_pipeline(vulkan)) {
+		return 1;
+	}
+	if (vulkan->target.type == GFX_TARGET_MEMORY) {
+		if (gfx_vulkan_draw_target(vulkan, vulkan->image, &vulkan->image_view, &vulkan->framebuffer, VK_IMAGE_LAYOUT_UNDEFINED,
+					   VK_IMAGE_LAYOUT_GENERAL)) {
+			return 1;
+		}
+		return gfx_vulkan_copy_memory(vulkan);
+	}
+	if (vulkan->target.type == GFX_TARGET_SURFACE) {
+		if (gfx_vulkan_surface_target_refresh(vulkan) || gfx_vulkan_acquire_swapchain(vulkan)) {
+			return 1;
+		}
+		u32 i = vulkan->swapchain_image_index;
+		u32 old_layout =
+			vulkan->swapchain_image_layouts[i] != 0 ? vulkan->swapchain_image_layouts[i] : VK_IMAGE_LAYOUT_UNDEFINED;
+		if (gfx_vulkan_draw_target(vulkan,
+					   vulkan->swapchain_images[i],
+					   &vulkan->swapchain_image_views[i],
+					   &vulkan->swapchain_framebuffers[i],
+					   old_layout,
+					   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)) {
+			return 1;
+		}
+		vulkan->swapchain_image_layouts[i] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		return 0;
+	}
+
+	return 1;
+}
+
 static int gfx_vulkan_present(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -1582,6 +2509,7 @@ static gfx_driver_t gfx_vulkan = {
 	.viewport    = gfx_vulkan_viewport,
 	.clear_color = gfx_vulkan_clear_color,
 	.clear	     = gfx_vulkan_clear,
+	.draw_triangle_2d = gfx_vulkan_draw_triangle_2d,
 	.present     = gfx_vulkan_present,
 };
 
