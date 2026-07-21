@@ -119,12 +119,6 @@ static int symbol_missing(strv_t name)
 }
 
 #define LOAD_GL(_opengl, _name) load_symbol((_opengl), (_opengl)->gl_lib, (void **)&(_opengl)->_name, STRV("gl" #_name))
-#define LOAD_GL_PROC(_opengl, _name)                                                                                                       \
-	do {                                                                                                                               \
-		if (find_gl_symbol((_opengl), (void **)&(_opengl)->_name, STRV("gl" #_name))) {                                            \
-			return symbol_missing(STRV("gl" #_name));                                                                          \
-		}                                                                                                                          \
-	} while (0)
 
 static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl)
 {
@@ -176,9 +170,18 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 		return gfx_opengl_init_free(gfx, opengl);
 	}
 
-	if (LOAD_GL(opengl, ClearColor) || LOAD_GL(opengl, Clear) || LOAD_GL(opengl, GenTextures) || LOAD_GL(opengl, DeleteTextures) ||
+	if (LOAD_GL(opengl, ClearColor) || LOAD_GL(opengl, Clear) || LOAD_GL(opengl, GenFramebuffers) ||
+	    LOAD_GL(opengl, DeleteFramebuffers) || LOAD_GL(opengl, BindFramebuffer) || LOAD_GL(opengl, CheckFramebufferStatus) ||
+	    LOAD_GL(opengl, FramebufferTexture2D) || LOAD_GL(opengl, GenTextures) || LOAD_GL(opengl, DeleteTextures) ||
 	    LOAD_GL(opengl, BindTexture) || LOAD_GL(opengl, TexParameteri) || LOAD_GL(opengl, TexImage2D) || LOAD_GL(opengl, Viewport) ||
-	    LOAD_GL(opengl, ReadPixels)) {
+	    LOAD_GL(opengl, ReadPixels) || LOAD_GL(opengl, CreateShader) || LOAD_GL(opengl, ShaderSource) ||
+	    LOAD_GL(opengl, CompileShader) || LOAD_GL(opengl, GetShaderiv) || LOAD_GL(opengl, DeleteShader) ||
+	    LOAD_GL(opengl, CreateProgram) || LOAD_GL(opengl, AttachShader) || LOAD_GL(opengl, BindAttribLocation) ||
+	    LOAD_GL(opengl, LinkProgram) || LOAD_GL(opengl, GetProgramiv) || LOAD_GL(opengl, DeleteProgram) ||
+	    LOAD_GL(opengl, GenBuffers) || LOAD_GL(opengl, DeleteBuffers) || LOAD_GL(opengl, BindBuffer) || LOAD_GL(opengl, BufferData) ||
+	    LOAD_GL(opengl, UseProgram) || LOAD_GL(opengl, GetUniformLocation) || LOAD_GL(opengl, Uniform2f) ||
+	    LOAD_GL(opengl, EnableVertexAttribArray) || LOAD_GL(opengl, DisableVertexAttribArray) || LOAD_GL(opengl, VertexAttribPointer) ||
+	    LOAD_GL(opengl, DrawArrays)) {
 		return gfx_opengl_init_free(gfx, opengl);
 	}
 
@@ -264,27 +267,9 @@ static int surface_target_same(const gfx_opengl_t *opengl, const gfx_target_t *t
 	       opengl->target.surface == target->surface;
 }
 
-static int gfx_opengl_load_framebuffer(gfx_opengl_t *opengl)
-{
-	if (opengl->GenFramebuffers != NULL && opengl->DeleteFramebuffers != NULL && opengl->BindFramebuffer != NULL &&
-	    opengl->CheckFramebufferStatus != NULL && opengl->FramebufferTexture2D != NULL) {
-		return 0;
-	}
-
-	LOAD_GL_PROC(opengl, GenFramebuffers);
-	LOAD_GL_PROC(opengl, DeleteFramebuffers);
-	LOAD_GL_PROC(opengl, BindFramebuffer);
-	LOAD_GL_PROC(opengl, CheckFramebufferStatus);
-	LOAD_GL_PROC(opengl, FramebufferTexture2D);
-	return 0;
-}
-
 static int gfx_opengl_set_memory_target(gfx_opengl_t *opengl, const gfx_target_t *target)
 {
 	if (!memory_target_valid(target)) {
-		return 1;
-	}
-	if (gfx_opengl_load_framebuffer(opengl)) {
 		return 1;
 	}
 
@@ -327,10 +312,6 @@ static int gfx_opengl_set_surface_target(gfx_opengl_t *opengl, const gfx_target_
 	if (opengl->surface->ops->make_current(opengl->surface)) {
 		gfx_opengl_target_free(opengl);
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
-		return 1;
-	}
-	if (gfx_opengl_load_framebuffer(opengl)) {
-		gfx_opengl_target_free(opengl);
 		return 1;
 	}
 
@@ -403,43 +384,6 @@ static int gfx_opengl_bind_target(gfx_opengl_t *opengl)
 	return 1;
 }
 
-static int gfx_opengl_load_draw(gfx_opengl_t *opengl)
-{
-	if (opengl->CreateShader != NULL && opengl->ShaderSource != NULL && opengl->CompileShader != NULL && opengl->GetShaderiv != NULL &&
-	    opengl->DeleteShader != NULL && opengl->CreateProgram != NULL && opengl->AttachShader != NULL &&
-	    opengl->BindAttribLocation != NULL && opengl->LinkProgram != NULL && opengl->GetProgramiv != NULL &&
-	    opengl->DeleteProgram != NULL && opengl->GenBuffers != NULL && opengl->DeleteBuffers != NULL && opengl->BindBuffer != NULL &&
-	    opengl->BufferData != NULL && opengl->UseProgram != NULL && opengl->GetUniformLocation != NULL && opengl->Uniform2f != NULL &&
-	    opengl->EnableVertexAttribArray != NULL && opengl->DisableVertexAttribArray != NULL && opengl->VertexAttribPointer != NULL &&
-	    opengl->DrawArrays != NULL) {
-		return 0;
-	}
-
-	LOAD_GL_PROC(opengl, CreateShader);
-	LOAD_GL_PROC(opengl, ShaderSource);
-	LOAD_GL_PROC(opengl, CompileShader);
-	LOAD_GL_PROC(opengl, GetShaderiv);
-	LOAD_GL_PROC(opengl, DeleteShader);
-	LOAD_GL_PROC(opengl, CreateProgram);
-	LOAD_GL_PROC(opengl, AttachShader);
-	LOAD_GL_PROC(opengl, BindAttribLocation);
-	LOAD_GL_PROC(opengl, LinkProgram);
-	LOAD_GL_PROC(opengl, GetProgramiv);
-	LOAD_GL_PROC(opengl, DeleteProgram);
-	LOAD_GL_PROC(opengl, GenBuffers);
-	LOAD_GL_PROC(opengl, DeleteBuffers);
-	LOAD_GL_PROC(opengl, BindBuffer);
-	LOAD_GL_PROC(opengl, BufferData);
-	LOAD_GL_PROC(opengl, UseProgram);
-	LOAD_GL_PROC(opengl, GetUniformLocation);
-	LOAD_GL_PROC(opengl, Uniform2f);
-	LOAD_GL_PROC(opengl, EnableVertexAttribArray);
-	LOAD_GL_PROC(opengl, DisableVertexAttribArray);
-	LOAD_GL_PROC(opengl, VertexAttribPointer);
-	LOAD_GL_PROC(opengl, DrawArrays);
-	return 0;
-}
-
 static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int type, const char *source)
 {
 	unsigned int shader = opengl->CreateShader(type);
@@ -461,23 +405,21 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 
 static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
 {
-	static const char *vertex_source =
-		"#version 120\n"
-		"attribute vec2 a_pos;\n"
-		"attribute vec4 a_color;\n"
-		"uniform vec2 u_target_size;\n"
-		"varying vec4 v_color;\n"
-		"void main(void) {\n"
-		"    vec2 p = a_pos / u_target_size * 2.0 - 1.0;\n"
-		"    gl_Position = vec4(p.x, -p.y, 0.0, 1.0);\n"
-		"    v_color = a_color;\n"
-		"}\n";
-	static const char *fragment_source =
-		"#version 120\n"
-		"varying vec4 v_color;\n"
-		"void main(void) {\n"
-		"    gl_FragColor = v_color;\n"
-		"}\n";
+	static const char *vertex_source   = "#version 120\n"
+					     "attribute vec2 a_pos;\n"
+					     "attribute vec4 a_color;\n"
+					     "uniform vec2 u_target_size;\n"
+					     "varying vec4 v_color;\n"
+					     "void main(void) {\n"
+					     "    vec2 p = a_pos / u_target_size * 2.0 - 1.0;\n"
+					     "    gl_Position = vec4(p.x, -p.y, 0.0, 1.0);\n"
+					     "    v_color = a_color;\n"
+					     "}\n";
+	static const char *fragment_source = "#version 120\n"
+					     "varying vec4 v_color;\n"
+					     "void main(void) {\n"
+					     "    gl_FragColor = v_color;\n"
+					     "}\n";
 
 	if (opengl->triangle_program != 0 && opengl->triangle_buffer != 0) {
 		return 0;
@@ -522,8 +464,8 @@ static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
 		return 1;
 	}
 
-	opengl->triangle_program	    = program;
-	opengl->triangle_buffer	    = buffer;
+	opengl->triangle_program     = program;
+	opengl->triangle_buffer	     = buffer;
 	opengl->triangle_target_size = opengl->GetUniformLocation(program, "u_target_size");
 	if (opengl->triangle_target_size < 0) {
 		gfx_opengl_draw_free(opengl);
@@ -539,9 +481,6 @@ static int gfx_opengl_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertice
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	if (gfx_opengl_load_draw(opengl)) {
-		return 1;
-	}
 	if (gfx_opengl_bind_target(opengl)) {
 		return 1;
 	}
@@ -626,17 +565,17 @@ static int gfx_opengl_present(gfx_t *gfx)
 }
 
 static gfx_driver_t gfx_opengl = {
-	.name	     = "opengl",
-	.api	     = GFX_API_OPENGL,
-	.init	     = gfx_opengl_init,
-	.free	     = gfx_opengl_free,
-	.proc	     = gfx_opengl_proc,
-	.set_target  = gfx_opengl_set_target,
-	.viewport    = gfx_opengl_viewport,
-	.clear_color = gfx_opengl_clear_color,
-	.clear	     = gfx_opengl_clear,
+	.name		  = "opengl",
+	.api		  = GFX_API_OPENGL,
+	.init		  = gfx_opengl_init,
+	.free		  = gfx_opengl_free,
+	.proc		  = gfx_opengl_proc,
+	.set_target	  = gfx_opengl_set_target,
+	.viewport	  = gfx_opengl_viewport,
+	.clear_color	  = gfx_opengl_clear_color,
+	.clear		  = gfx_opengl_clear,
 	.draw_triangle_2d = gfx_opengl_draw_triangle_2d,
-	.present     = gfx_opengl_present,
+	.present	  = gfx_opengl_present,
 };
 
 GFX_DRIVER(gfx_opengl, &gfx_opengl);

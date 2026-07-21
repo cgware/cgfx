@@ -1,7 +1,10 @@
 #include "gfx_driver.h"
 
+#include "buf.h"
 #include "log.h"
 #include "mem.h"
+
+#include <stdarg.h>
 
 typedef u64 VkDeviceSize;
 typedef u32 VkBool32;
@@ -34,100 +37,100 @@ typedef enum VkResult_e {
 } VkResult;
 
 enum {
-	VK_QUEUE_GRAPHICS_BIT				= 0x00000001,
-	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT		= 0x00000002,
-	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT		= 0x00000004,
-	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT		= 0x00000080,
-	VK_IMAGE_USAGE_TRANSFER_DST_BIT			= 0x00000002,
-	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT		= 0x00000010,
-	VK_FORMAT_FEATURE_TRANSFER_DST_BIT		= 0x00004000,
-	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT		= 0x00000080,
-	VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT = 0x00000002,
-	VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT	= 0x00000001,
-	VK_IMAGE_ASPECT_COLOR_BIT			= 0x00000001,
-	VK_ACCESS_TRANSFER_WRITE_BIT			= 0x00001000,
-	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT		= 0x00000100,
-	VK_ACCESS_HOST_READ_BIT				= 0x00002000,
-	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT		= 0x00000001,
-	VK_PIPELINE_STAGE_TRANSFER_BIT			= 0x00001000,
-	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT	= 0x00000400,
-	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT		= 0x00002000,
-	VK_PIPELINE_STAGE_HOST_BIT			= 0x00004000,
-	VK_FENCE_CREATE_SIGNALED_BIT			= 0x00000001,
-	VK_STRUCTURE_TYPE_APPLICATION_INFO		= 0,
-	VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO		= 1,
-	VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO	= 2,
-	VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO		= 3,
-	VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO		= 14,
-	VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO		= 12,
-	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO		= 5,
-	VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO	= 39,
-	VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO	= 40,
-	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO	= 42,
-	VK_STRUCTURE_TYPE_SUBMIT_INFO			= 4,
-	VK_STRUCTURE_TYPE_FENCE_CREATE_INFO		= 8,
-	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE		= 6,
-	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER		= 44,
-	VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO		= 15,
-	VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO	= 16,
-	VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO	= 38,
-	VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO	= 37,
-	VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO = 18,
-	VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO = 19,
+	VK_QUEUE_GRAPHICS_BIT					    = 0x00000001,
+	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT			    = 0x00000002,
+	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT			    = 0x00000004,
+	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT			    = 0x00000080,
+	VK_IMAGE_USAGE_TRANSFER_DST_BIT				    = 0x00000002,
+	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT			    = 0x00000010,
+	VK_FORMAT_FEATURE_TRANSFER_DST_BIT			    = 0x00004000,
+	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT			    = 0x00000080,
+	VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT		    = 0x00000002,
+	VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT		    = 0x00000001,
+	VK_IMAGE_ASPECT_COLOR_BIT				    = 0x00000001,
+	VK_ACCESS_TRANSFER_WRITE_BIT				    = 0x00001000,
+	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT			    = 0x00000100,
+	VK_ACCESS_HOST_READ_BIT					    = 0x00002000,
+	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT			    = 0x00000001,
+	VK_PIPELINE_STAGE_TRANSFER_BIT				    = 0x00001000,
+	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT		    = 0x00000400,
+	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT			    = 0x00002000,
+	VK_PIPELINE_STAGE_HOST_BIT				    = 0x00004000,
+	VK_FENCE_CREATE_SIGNALED_BIT				    = 0x00000001,
+	VK_STRUCTURE_TYPE_APPLICATION_INFO			    = 0,
+	VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO			    = 1,
+	VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO		    = 2,
+	VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO			    = 3,
+	VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO			    = 14,
+	VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO			    = 12,
+	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO			    = 5,
+	VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO		    = 39,
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO		    = 40,
+	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO		    = 42,
+	VK_STRUCTURE_TYPE_SUBMIT_INFO				    = 4,
+	VK_STRUCTURE_TYPE_FENCE_CREATE_INFO			    = 8,
+	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE			    = 6,
+	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER			    = 44,
+	VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO		    = 15,
+	VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO		    = 16,
+	VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO		    = 38,
+	VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO		    = 37,
+	VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO	    = 18,
+	VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO   = 19,
 	VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO = 20,
-	VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO = 22,
-	VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO = 23,
-	VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO = 24,
-	VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO = 26,
-	VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO = 27,
-	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO	= 30,
-	VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO = 28,
-	VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO		= 43,
-	VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR	= 1000001000,
-	VK_STRUCTURE_TYPE_PRESENT_INFO_KHR		= 1000001001,
-	VK_IMAGE_TYPE_2D				= 0,
-	VK_FORMAT_R8G8B8A8_UNORM			= 37,
-	VK_FORMAT_R8G8B8A8_SRGB				= 43,
-	VK_FORMAT_B8G8R8A8_UNORM			= 44,
-	VK_FORMAT_B8G8R8A8_SRGB				= 50,
-	VK_IMAGE_TILING_LINEAR				= 1,
-	VK_IMAGE_LAYOUT_UNDEFINED			= 0,
-	VK_IMAGE_LAYOUT_GENERAL				= 1,
-	VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL		= 2,
-	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL		= 7,
-	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR			= 1000001002,
-	VK_SHARING_MODE_EXCLUSIVE			= 0,
-	VK_SAMPLE_COUNT_1_BIT				= 1,
-	VK_COMMAND_BUFFER_LEVEL_PRIMARY			= 0,
-	VK_IMAGE_VIEW_TYPE_2D				= 1,
-	VK_ATTACHMENT_LOAD_OP_LOAD			= 0,
-	VK_ATTACHMENT_STORE_OP_STORE			= 0,
-	VK_ATTACHMENT_LOAD_OP_DONT_CARE			= 2,
-	VK_ATTACHMENT_STORE_OP_DONT_CARE		= 1,
-	VK_PIPELINE_BIND_POINT_GRAPHICS			= 0,
-	VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST		= 3,
-	VK_POLYGON_MODE_FILL				= 0,
-	VK_CULL_MODE_NONE				= 0,
-	VK_FRONT_FACE_COUNTER_CLOCKWISE			= 1,
-	VK_BLEND_FACTOR_ONE				= 1,
-	VK_BLEND_FACTOR_ZERO				= 0,
-	VK_BLEND_OP_ADD					= 0,
-	VK_COLOR_COMPONENT_R_BIT			= 0x00000001,
-	VK_COLOR_COMPONENT_G_BIT			= 0x00000002,
-	VK_COLOR_COMPONENT_B_BIT			= 0x00000004,
-	VK_COLOR_COMPONENT_A_BIT			= 0x00000008,
-	VK_DYNAMIC_STATE_VIEWPORT			= 0,
-	VK_DYNAMIC_STATE_SCISSOR			= 1,
-	VK_VERTEX_INPUT_RATE_VERTEX			= 0,
-	VK_FORMAT_R32G32_SFLOAT				= 103,
-	VK_FORMAT_R32G32B32A32_SFLOAT			= 109,
-	VK_SHADER_STAGE_VERTEX_BIT			= 0x00000001,
-	VK_SHADER_STAGE_FRAGMENT_BIT			= 0x00000010,
-	VK_SUBPASS_CONTENTS_INLINE			= 0,
-	VK_API_VERSION_1_0				= 1u << 22,
-	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR		= 0,
-	VK_PRESENT_MODE_FIFO_KHR			= 2,
-	VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR		= 0x00000001,
+	VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO	    = 22,
+	VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO  = 23,
+	VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO    = 24,
+	VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO    = 26,
+	VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO	    = 27,
+	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO		    = 30,
+	VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO		    = 28,
+	VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO		    = 43,
+	VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR		    = 1000001000,
+	VK_STRUCTURE_TYPE_PRESENT_INFO_KHR			    = 1000001001,
+	VK_IMAGE_TYPE_2D					    = 0,
+	VK_FORMAT_R8G8B8A8_UNORM				    = 37,
+	VK_FORMAT_R8G8B8A8_SRGB					    = 43,
+	VK_FORMAT_B8G8R8A8_UNORM				    = 44,
+	VK_FORMAT_B8G8R8A8_SRGB					    = 50,
+	VK_IMAGE_TILING_LINEAR					    = 1,
+	VK_IMAGE_LAYOUT_UNDEFINED				    = 0,
+	VK_IMAGE_LAYOUT_GENERAL					    = 1,
+	VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL		    = 2,
+	VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL			    = 7,
+	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR				    = 1000001002,
+	VK_SHARING_MODE_EXCLUSIVE				    = 0,
+	VK_SAMPLE_COUNT_1_BIT					    = 1,
+	VK_COMMAND_BUFFER_LEVEL_PRIMARY				    = 0,
+	VK_IMAGE_VIEW_TYPE_2D					    = 1,
+	VK_ATTACHMENT_LOAD_OP_LOAD				    = 0,
+	VK_ATTACHMENT_STORE_OP_STORE				    = 0,
+	VK_ATTACHMENT_LOAD_OP_DONT_CARE				    = 2,
+	VK_ATTACHMENT_STORE_OP_DONT_CARE			    = 1,
+	VK_PIPELINE_BIND_POINT_GRAPHICS				    = 0,
+	VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST			    = 3,
+	VK_POLYGON_MODE_FILL					    = 0,
+	VK_CULL_MODE_NONE					    = 0,
+	VK_FRONT_FACE_COUNTER_CLOCKWISE				    = 1,
+	VK_BLEND_FACTOR_ONE					    = 1,
+	VK_BLEND_FACTOR_ZERO					    = 0,
+	VK_BLEND_OP_ADD						    = 0,
+	VK_COLOR_COMPONENT_R_BIT				    = 0x00000001,
+	VK_COLOR_COMPONENT_G_BIT				    = 0x00000002,
+	VK_COLOR_COMPONENT_B_BIT				    = 0x00000004,
+	VK_COLOR_COMPONENT_A_BIT				    = 0x00000008,
+	VK_DYNAMIC_STATE_VIEWPORT				    = 0,
+	VK_DYNAMIC_STATE_SCISSOR				    = 1,
+	VK_VERTEX_INPUT_RATE_VERTEX				    = 0,
+	VK_FORMAT_R32G32_SFLOAT					    = 103,
+	VK_FORMAT_R32G32B32A32_SFLOAT				    = 109,
+	VK_SHADER_STAGE_VERTEX_BIT				    = 0x00000001,
+	VK_SHADER_STAGE_FRAGMENT_BIT				    = 0x00000010,
+	VK_SUBPASS_CONTENTS_INLINE				    = 0,
+	VK_API_VERSION_1_0					    = 1u << 22,
+	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR			    = 0,
+	VK_PRESENT_MODE_FIFO_KHR				    = 2,
+	VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR			    = 0x00000001,
 };
 
 #define VK_QUEUE_FAMILY_IGNORED ((u32)~0u)
@@ -1087,7 +1090,8 @@ static int gfx_vulkan_pick_device(gfx_vulkan_t *vulkan)
 			if (queues[q].queueCount != 0 && (queues[q].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
 				VkFormatProperties props = {0};
 				vulkan->GetPhysicalDeviceFormatProperties(devices[i], VK_FORMAT_R8G8B8A8_UNORM, &props);
-				if ((props.linearTilingFeatures & (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) !=
+				if ((props.linearTilingFeatures &
+				     (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) !=
 				    (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
 					continue;
 				}
@@ -1157,19 +1161,16 @@ static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan
 	    LOAD_VK_DEV(vulkan, DestroyImage) || LOAD_VK_DEV(vulkan, GetImageMemoryRequirements) || LOAD_VK_DEV(vulkan, CreateBuffer) ||
 	    LOAD_VK_DEV(vulkan, DestroyBuffer) || LOAD_VK_DEV(vulkan, GetBufferMemoryRequirements) || LOAD_VK_DEV(vulkan, AllocateMemory) ||
 	    LOAD_VK_DEV(vulkan, FreeMemory) || LOAD_VK_DEV(vulkan, BindImageMemory) || LOAD_VK_DEV(vulkan, BindBufferMemory) ||
-	    LOAD_VK_DEV(vulkan, GetImageSubresourceLayout) ||
-	    LOAD_VK_DEV(vulkan, MapMemory) || LOAD_VK_DEV(vulkan, UnmapMemory) || LOAD_VK_DEV(vulkan, FlushMappedMemoryRanges) ||
-	    LOAD_VK_DEV(vulkan, InvalidateMappedMemoryRanges) ||
+	    LOAD_VK_DEV(vulkan, GetImageSubresourceLayout) || LOAD_VK_DEV(vulkan, MapMemory) || LOAD_VK_DEV(vulkan, UnmapMemory) ||
+	    LOAD_VK_DEV(vulkan, FlushMappedMemoryRanges) || LOAD_VK_DEV(vulkan, InvalidateMappedMemoryRanges) ||
 	    LOAD_VK_DEV(vulkan, BeginCommandBuffer) || LOAD_VK_DEV(vulkan, EndCommandBuffer) || LOAD_VK_DEV(vulkan, ResetCommandBuffer) ||
 	    LOAD_VK_DEV(vulkan, CmdPipelineBarrier) || LOAD_VK_DEV(vulkan, CmdClearColorImage) || LOAD_VK_DEV(vulkan, CreateImageView) ||
-	    LOAD_VK_DEV(vulkan, DestroyImageView) || LOAD_VK_DEV(vulkan, CreateShaderModule) ||
-	    LOAD_VK_DEV(vulkan, DestroyShaderModule) || LOAD_VK_DEV(vulkan, CreateRenderPass) ||
-	    LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) ||
+	    LOAD_VK_DEV(vulkan, DestroyImageView) || LOAD_VK_DEV(vulkan, CreateShaderModule) || LOAD_VK_DEV(vulkan, DestroyShaderModule) ||
+	    LOAD_VK_DEV(vulkan, CreateRenderPass) || LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) ||
 	    LOAD_VK_DEV(vulkan, DestroyFramebuffer) || LOAD_VK_DEV(vulkan, CreatePipelineLayout) ||
 	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
-	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) ||
-	    LOAD_VK_DEV(vulkan, CmdEndRenderPass) || LOAD_VK_DEV(vulkan, CmdBindPipeline) ||
-	    LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdSetViewport) ||
+	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) || LOAD_VK_DEV(vulkan, CmdEndRenderPass) ||
+	    LOAD_VK_DEV(vulkan, CmdBindPipeline) || LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdSetViewport) ||
 	    LOAD_VK_DEV(vulkan, CmdSetScissor) || LOAD_VK_DEV(vulkan, CmdDraw) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
 		return 1;
 	}
@@ -2091,15 +2092,15 @@ static int gfx_vulkan_upload_vertices(gfx_vulkan_t *vulkan, const gfx_vertex_2d_
 static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view)
 {
 	VkImageViewCreateInfo create = {
-		.sType	 = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-		.image	 = image,
+		.sType	  = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image	  = image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format	 = gfx_vulkan_format(vulkan->target.format),
+		.format	  = gfx_vulkan_format(vulkan->target.format),
 		.subresourceRange =
 			{
-				.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
-				.levelCount	= 1,
-				.layerCount	= 1,
+				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+				.levelCount = 1,
+				.layerCount = 1,
 			},
 	};
 	return !vk_ok(vulkan->CreateImageView(vulkan->device, &create, NULL, view));
@@ -2112,23 +2113,23 @@ static int gfx_vulkan_create_render_pass(gfx_vulkan_t *vulkan)
 	}
 
 	VkAttachmentDescription attachment = {
-		.format	       = gfx_vulkan_format(vulkan->target.format),
-		.samples       = VK_SAMPLE_COUNT_1_BIT,
-		.loadOp	       = VK_ATTACHMENT_LOAD_OP_LOAD,
-		.storeOp       = VK_ATTACHMENT_STORE_OP_STORE,
-		.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		.format		= gfx_vulkan_format(vulkan->target.format),
+		.samples	= VK_SAMPLE_COUNT_1_BIT,
+		.loadOp		= VK_ATTACHMENT_LOAD_OP_LOAD,
+		.storeOp	= VK_ATTACHMENT_STORE_OP_STORE,
+		.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
 		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.finalLayout   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.initialLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.finalLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	};
 	VkAttachmentReference color = {
 		.attachment = 0,
-		.layout	   = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.layout	    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	};
 	VkSubpassDescription subpass = {
-		.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+		.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
 		.colorAttachmentCount = 1,
-		.pColorAttachments = &color,
+		.pColorAttachments    = &color,
 	};
 	VkRenderPassCreateInfo create = {
 		.sType		 = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
@@ -2154,43 +2155,426 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, VkImageView view,
 	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, framebuffer));
 }
 
+enum {
+	GFX_VULKAN_SPV_MAGIC	      = 0x07230203,
+	GFX_VULKAN_SPV_VERSION	      = 0x00010000,
+	GFX_VULKAN_SPV_GENERATOR      = 0,
+	GFX_VULKAN_SPV_SCHEMA	      = 0,
+	GFX_VULKAN_SPV_WORD_MAIN      = 0x6e69616d,
+	GFX_VULKAN_SPV_WORD_ZERO      = 0,
+	GFX_VULKAN_SPV_WORD_FLOAT_ONE = 0x3f800000,
+	GFX_VULKAN_SPV_VERTEX_WORDS   = 158,
+	GFX_VULKAN_SPV_FRAGMENT_WORDS = 75,
+};
+
+enum {
+	GFX_VULKAN_SPV_OP_SOURCE	      = 3,
+	GFX_VULKAN_SPV_OP_MEMORY_MODEL	      = 14,
+	GFX_VULKAN_SPV_OP_ENTRY_POINT	      = 15,
+	GFX_VULKAN_SPV_OP_EXECUTION_MODE      = 16,
+	GFX_VULKAN_SPV_OP_CAPABILITY	      = 17,
+	GFX_VULKAN_SPV_OP_TYPE_VOID	      = 19,
+	GFX_VULKAN_SPV_OP_TYPE_INT	      = 21,
+	GFX_VULKAN_SPV_OP_TYPE_FLOAT	      = 22,
+	GFX_VULKAN_SPV_OP_TYPE_VECTOR	      = 23,
+	GFX_VULKAN_SPV_OP_TYPE_STRUCT	      = 30,
+	GFX_VULKAN_SPV_OP_TYPE_POINTER	      = 32,
+	GFX_VULKAN_SPV_OP_TYPE_FUNCTION	      = 33,
+	GFX_VULKAN_SPV_OP_CONSTANT	      = 43,
+	GFX_VULKAN_SPV_OP_FUNCTION	      = 54,
+	GFX_VULKAN_SPV_OP_FUNCTION_END	      = 56,
+	GFX_VULKAN_SPV_OP_VARIABLE	      = 59,
+	GFX_VULKAN_SPV_OP_LOAD		      = 61,
+	GFX_VULKAN_SPV_OP_STORE		      = 62,
+	GFX_VULKAN_SPV_OP_ACCESS_CHAIN	      = 65,
+	GFX_VULKAN_SPV_OP_DECORATE	      = 71,
+	GFX_VULKAN_SPV_OP_MEMBER_DECORATE     = 72,
+	GFX_VULKAN_SPV_OP_COMPOSITE_CONSTRUCT = 80,
+	GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT   = 81,
+	GFX_VULKAN_SPV_OP_LABEL		      = 248,
+	GFX_VULKAN_SPV_OP_RETURN	      = 253,
+};
+
+enum {
+	GFX_VULKAN_SPV_CAPABILITY_SHADER		= 1,
+	GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL		= 0,
+	GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450		= 1,
+	GFX_VULKAN_SPV_EXECUTION_MODEL_VERTEX		= 0,
+	GFX_VULKAN_SPV_EXECUTION_MODEL_FRAGMENT		= 4,
+	GFX_VULKAN_SPV_EXECUTION_MODE_ORIGIN_UPPER_LEFT = 7,
+	GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL		= 2,
+	GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450		= 450,
+	GFX_VULKAN_SPV_DECORATION_BUILT_IN		= 11,
+	GFX_VULKAN_SPV_DECORATION_BLOCK			= 2,
+	GFX_VULKAN_SPV_DECORATION_LOCATION		= 30,
+	GFX_VULKAN_SPV_BUILT_IN_POSITION		= 0,
+	GFX_VULKAN_SPV_STORAGE_INPUT			= 1,
+	GFX_VULKAN_SPV_STORAGE_OUTPUT			= 3,
+	GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE		= 0,
+	GFX_VULKAN_SPV_WIDTH_32				= 32,
+	GFX_VULKAN_SPV_SIGNED				= 1,
+	GFX_VULKAN_SPV_VEC2				= 2,
+	GFX_VULKAN_SPV_VEC4				= 4,
+	GFX_VULKAN_SPV_LOCATION_POSITION		= 0,
+	GFX_VULKAN_SPV_LOCATION_COLOR			= 1,
+};
+
+enum {
+	GFX_VULKAN_VERTEX_ID_VOID		      = 2,
+	GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE	      = 3,
+	GFX_VULKAN_VERTEX_ID_MAIN		      = 4,
+	GFX_VULKAN_VERTEX_ID_LABEL		      = 5,
+	GFX_VULKAN_VERTEX_ID_FLOAT		      = 6,
+	GFX_VULKAN_VERTEX_ID_VEC4		      = 7,
+	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4	      = 8,
+	GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR	      = 9,
+	GFX_VULKAN_VERTEX_ID_VEC2		      = 10,
+	GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2	      = 11,
+	GFX_VULKAN_VERTEX_ID_INPUT_POSITION	      = 12,
+	GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4	      = 13,
+	GFX_VULKAN_VERTEX_ID_INPUT_COLOR	      = 14,
+	GFX_VULKAN_VERTEX_ID_FLOAT_ZERO		      = 15,
+	GFX_VULKAN_VERTEX_ID_FLOAT_ONE		      = 16,
+	GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX	      = 17,
+	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX = 18,
+	GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR	      = 19,
+	GFX_VULKAN_VERTEX_ID_INT		      = 20,
+	GFX_VULKAN_VERTEX_ID_INT_ZERO		      = 21,
+	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION      = 22,
+	GFX_VULKAN_VERTEX_ID_LOADED_POSITION	      = 23,
+	GFX_VULKAN_VERTEX_ID_POSITION_X		      = 24,
+	GFX_VULKAN_VERTEX_ID_POSITION_Y		      = 25,
+	GFX_VULKAN_VERTEX_ID_POSITION		      = 26,
+	GFX_VULKAN_VERTEX_ID_POSITION_PTR	      = 27,
+	GFX_VULKAN_VERTEX_ID_LOADED_COLOR	      = 28,
+	GFX_VULKAN_VERTEX_ID_BOUND		      = 29,
+};
+
+enum {
+	GFX_VULKAN_FRAGMENT_ID_VOID	       = 2,
+	GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE   = 3,
+	GFX_VULKAN_FRAGMENT_ID_MAIN	       = 4,
+	GFX_VULKAN_FRAGMENT_ID_LABEL	       = 5,
+	GFX_VULKAN_FRAGMENT_ID_FLOAT	       = 6,
+	GFX_VULKAN_FRAGMENT_ID_VEC4	       = 7,
+	GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4 = 8,
+	GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR    = 9,
+	GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR     = 10,
+	GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4  = 11,
+	GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR    = 12,
+	GFX_VULKAN_FRAGMENT_ID_BOUND	       = 13,
+};
+
+static int gfx_vulkan_spv_write(buf_t *code, u32 word)
+{
+	return buf_write_u32le(code, word);
+}
+
+static int gfx_vulkan_spv_inst(buf_t *code, u32 op, u32 word_count, ...)
+{
+	if (gfx_vulkan_spv_write(code, (word_count << 16) | op)) {
+		return 1;
+	}
+
+	va_list args;
+	va_start(args, word_count);
+	for (u32 i = 1; i < word_count; i++) {
+		u32 word = va_arg(args, u32);
+		if (gfx_vulkan_spv_write(code, word)) {
+			va_end(args);
+			return 1;
+		}
+	}
+	va_end(args);
+	return 0;
+}
+
+static int gfx_vulkan_spv_header(buf_t *code, u32 bound)
+{
+	return gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_MAGIC) || gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_VERSION) ||
+	       gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_GENERATOR) || gfx_vulkan_spv_write(code, bound) ||
+	       gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_SCHEMA);
+}
+
+static int gfx_vulkan_spv_vertex(buf_t *code)
+{
+	if (buf_init(code, GFX_VULKAN_SPV_VERTEX_WORDS * sizeof(u32), ALLOC_STD) == NULL) {
+		return 1;
+	}
+
+	int ret = 0;
+	ret |= gfx_vulkan_spv_header(code, GFX_VULKAN_VERTEX_ID_BOUND);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_CAPABILITY, 2, GFX_VULKAN_SPV_CAPABILITY_SHADER);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_MEMORY_MODEL, 3, GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL, GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_ENTRY_POINT,
+				   9,
+				   GFX_VULKAN_SPV_EXECUTION_MODEL_VERTEX,
+				   GFX_VULKAN_VERTEX_ID_MAIN,
+				   GFX_VULKAN_SPV_WORD_MAIN,
+				   GFX_VULKAN_SPV_WORD_ZERO,
+				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
+				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
+				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_SOURCE, 3, GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL, GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_MEMBER_DECORATE,
+				   5,
+				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX,
+				   0,
+				   GFX_VULKAN_SPV_DECORATION_BUILT_IN,
+				   GFX_VULKAN_SPV_BUILT_IN_POSITION);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_DECORATE, 3, GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX, GFX_VULKAN_SPV_DECORATION_BLOCK);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_DECORATE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_SPV_DECORATION_LOCATION,
+				   GFX_VULKAN_SPV_LOCATION_POSITION);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_DECORATE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
+				   GFX_VULKAN_SPV_DECORATION_LOCATION,
+				   GFX_VULKAN_SPV_LOCATION_POSITION);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_DECORATE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR,
+				   GFX_VULKAN_SPV_DECORATION_LOCATION,
+				   GFX_VULKAN_SPV_LOCATION_COLOR);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_VOID, 2, GFX_VULKAN_VERTEX_ID_VOID);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FUNCTION, 3, GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE, GFX_VULKAN_VERTEX_ID_VOID);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FLOAT, 3, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_WIDTH_32);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_VERTEX_ID_VEC4, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
+				   GFX_VULKAN_VERTEX_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4,
+				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_VERTEX_ID_VEC2, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_VEC2);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2,
+				   GFX_VULKAN_SPV_STORAGE_INPUT,
+				   GFX_VULKAN_VERTEX_ID_VEC2);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2,
+				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
+				   GFX_VULKAN_SPV_STORAGE_INPUT);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4,
+				   GFX_VULKAN_SPV_STORAGE_INPUT,
+				   GFX_VULKAN_VERTEX_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4,
+				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR,
+				   GFX_VULKAN_SPV_STORAGE_INPUT);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_CONSTANT, 4, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_VERTEX_ID_FLOAT_ZERO, GFX_VULKAN_SPV_WORD_ZERO);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_CONSTANT,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_FLOAT,
+				   GFX_VULKAN_VERTEX_ID_FLOAT_ONE,
+				   GFX_VULKAN_SPV_WORD_FLOAT_ONE);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_STRUCT, 3, GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX, GFX_VULKAN_VERTEX_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
+				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX,
+				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_TYPE_INT, 4, GFX_VULKAN_VERTEX_ID_INT, GFX_VULKAN_SPV_WIDTH_32, GFX_VULKAN_SPV_SIGNED);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_CONSTANT, 4, GFX_VULKAN_VERTEX_ID_INT, GFX_VULKAN_VERTEX_ID_INT_ZERO, GFX_VULKAN_SPV_WORD_ZERO);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
+				   GFX_VULKAN_VERTEX_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_FUNCTION,
+				   5,
+				   GFX_VULKAN_VERTEX_ID_VOID,
+				   GFX_VULKAN_VERTEX_ID_MAIN,
+				   GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE,
+				   GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_LABEL, 2, GFX_VULKAN_VERTEX_ID_LABEL);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_LOAD,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_VEC2,
+				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
+				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT,
+				   5,
+				   GFX_VULKAN_VERTEX_ID_FLOAT,
+				   GFX_VULKAN_VERTEX_ID_POSITION_X,
+				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
+				   0);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT,
+				   5,
+				   GFX_VULKAN_VERTEX_ID_FLOAT,
+				   GFX_VULKAN_VERTEX_ID_POSITION_Y,
+				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
+				   1);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_COMPOSITE_CONSTRUCT,
+				   7,
+				   GFX_VULKAN_VERTEX_ID_VEC4,
+				   GFX_VULKAN_VERTEX_ID_POSITION,
+				   GFX_VULKAN_VERTEX_ID_POSITION_X,
+				   GFX_VULKAN_VERTEX_ID_POSITION_Y,
+				   GFX_VULKAN_VERTEX_ID_FLOAT_ZERO,
+				   GFX_VULKAN_VERTEX_ID_FLOAT_ONE);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_ACCESS_CHAIN,
+				   5,
+				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION,
+				   GFX_VULKAN_VERTEX_ID_POSITION_PTR,
+				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
+				   GFX_VULKAN_VERTEX_ID_INT_ZERO);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_VERTEX_ID_POSITION_PTR, GFX_VULKAN_VERTEX_ID_POSITION);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_LOAD,
+				   4,
+				   GFX_VULKAN_VERTEX_ID_VEC4,
+				   GFX_VULKAN_VERTEX_ID_LOADED_COLOR,
+				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR, GFX_VULKAN_VERTEX_ID_LOADED_COLOR);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_RETURN, 1);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_FUNCTION_END, 1);
+	if (ret || code->used != GFX_VULKAN_SPV_VERTEX_WORDS * sizeof(u32)) {
+		buf_free(code);
+		return 1;
+	}
+	return 0;
+}
+
+static int gfx_vulkan_spv_fragment(buf_t *code)
+{
+	if (buf_init(code, GFX_VULKAN_SPV_FRAGMENT_WORDS * sizeof(u32), ALLOC_STD) == NULL) {
+		return 1;
+	}
+
+	int ret = 0;
+	ret |= gfx_vulkan_spv_header(code, GFX_VULKAN_FRAGMENT_ID_BOUND);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_CAPABILITY, 2, GFX_VULKAN_SPV_CAPABILITY_SHADER);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_MEMORY_MODEL, 3, GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL, GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_ENTRY_POINT,
+				   7,
+				   GFX_VULKAN_SPV_EXECUTION_MODEL_FRAGMENT,
+				   GFX_VULKAN_FRAGMENT_ID_MAIN,
+				   GFX_VULKAN_SPV_WORD_MAIN,
+				   GFX_VULKAN_SPV_WORD_ZERO,
+				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_EXECUTION_MODE, 3, GFX_VULKAN_FRAGMENT_ID_MAIN, GFX_VULKAN_SPV_EXECUTION_MODE_ORIGIN_UPPER_LEFT);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_SOURCE, 3, GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL, GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_DECORATE,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_SPV_DECORATION_LOCATION,
+				   GFX_VULKAN_SPV_LOCATION_POSITION);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_DECORATE,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR,
+				   GFX_VULKAN_SPV_DECORATION_LOCATION,
+				   GFX_VULKAN_SPV_LOCATION_POSITION);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_VOID, 2, GFX_VULKAN_FRAGMENT_ID_VOID);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_TYPE_FUNCTION, 3, GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE, GFX_VULKAN_FRAGMENT_ID_VOID);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FLOAT, 3, GFX_VULKAN_FRAGMENT_ID_FLOAT, GFX_VULKAN_SPV_WIDTH_32);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_FRAGMENT_ID_VEC4, GFX_VULKAN_FRAGMENT_ID_FLOAT, GFX_VULKAN_SPV_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
+				   GFX_VULKAN_FRAGMENT_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4,
+				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
+				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4,
+				   GFX_VULKAN_SPV_STORAGE_INPUT,
+				   GFX_VULKAN_FRAGMENT_ID_VEC4);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_VARIABLE,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4,
+				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR,
+				   GFX_VULKAN_SPV_STORAGE_INPUT);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_FUNCTION,
+				   5,
+				   GFX_VULKAN_FRAGMENT_ID_VOID,
+				   GFX_VULKAN_FRAGMENT_ID_MAIN,
+				   GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE,
+				   GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_LABEL, 2, GFX_VULKAN_FRAGMENT_ID_LABEL);
+	ret |= gfx_vulkan_spv_inst(code,
+				   GFX_VULKAN_SPV_OP_LOAD,
+				   4,
+				   GFX_VULKAN_FRAGMENT_ID_VEC4,
+				   GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR,
+				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR);
+	ret |= gfx_vulkan_spv_inst(
+		code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR, GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_RETURN, 1);
+	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_FUNCTION_END, 1);
+	if (ret || code->used != GFX_VULKAN_SPV_FRAGMENT_WORDS * sizeof(u32)) {
+		buf_free(code);
+		return 1;
+	}
+	return 0;
+}
+
 static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
 {
-	static const u32 vertex_code[] = {
-		0x07230203, 0x00010000, 0x00000000, 0x0000001d, 0x00000000, 0x00020011, 0x00000001, 0x0003000e,
-		0x00000000, 0x00000001, 0x0009000f, 0x00000000, 0x00000004, 0x6e69616d, 0x00000000, 0x00000013,
-		0x00000009, 0x0000000c, 0x0000000e, 0x00030003, 0x00000002, 0x000001c2, 0x00050048, 0x00000011,
-		0x00000000, 0x0000000b, 0x00000000, 0x00030047, 0x00000011, 0x00000002, 0x00040047, 0x00000009,
-		0x0000001e, 0x00000000, 0x00040047, 0x0000000c, 0x0000001e, 0x00000000, 0x00040047, 0x0000000e,
-		0x0000001e, 0x00000001, 0x00020013, 0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016,
-		0x00000006, 0x00000020, 0x00040017, 0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008,
-		0x00000003, 0x00000007, 0x0004003b, 0x00000008, 0x00000009, 0x00000003, 0x00040017, 0x0000000a,
-		0x00000006, 0x00000002, 0x00040020, 0x0000000b, 0x00000001, 0x0000000a, 0x0004003b, 0x0000000b,
-		0x0000000c, 0x00000001, 0x00040020, 0x0000000d, 0x00000001, 0x00000007, 0x0004003b, 0x0000000d,
-		0x0000000e, 0x00000001, 0x0004002b, 0x00000006, 0x0000000f, 0x00000000, 0x0004002b, 0x00000006,
-		0x00000010, 0x3f800000, 0x0003001e, 0x00000011, 0x00000007, 0x00040020, 0x00000012, 0x00000003,
-		0x00000011, 0x0004003b, 0x00000012, 0x00000013, 0x00000003, 0x00040015, 0x00000014, 0x00000020,
-		0x00000001, 0x0004002b, 0x00000014, 0x00000015, 0x00000000, 0x00040020, 0x00000016, 0x00000003,
-		0x00000007, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003, 0x000200f8, 0x00000005,
-		0x0004003d, 0x0000000a, 0x00000017, 0x0000000c, 0x00050051, 0x00000006, 0x00000018, 0x00000017,
-		0x00000000, 0x00050051, 0x00000006, 0x00000019, 0x00000017, 0x00000001, 0x00070050, 0x00000007,
-		0x0000001a, 0x00000018, 0x00000019, 0x0000000f, 0x00000010, 0x00050041, 0x00000016, 0x0000001b,
-		0x00000013, 0x00000015, 0x0003003e, 0x0000001b, 0x0000001a, 0x0004003d, 0x00000007, 0x0000001c,
-		0x0000000e, 0x0003003e, 0x00000009, 0x0000001c, 0x000100fd, 0x00010038,
-	};
-	static const u32 fragment_code[] = {
-		0x07230203, 0x00010000, 0x00000000, 0x0000000d, 0x00000000, 0x00020011, 0x00000001, 0x0003000e,
-		0x00000000, 0x00000001, 0x0007000f, 0x00000004, 0x00000004, 0x6e69616d, 0x00000000, 0x00000009,
-		0x0000000a, 0x00030010, 0x00000004, 0x00000007, 0x00030003, 0x00000002, 0x000001c2, 0x00040047,
-		0x00000009, 0x0000001e, 0x00000000, 0x00040047, 0x0000000a, 0x0000001e, 0x00000000, 0x00020013,
-		0x00000002, 0x00030021, 0x00000003, 0x00000002, 0x00030016, 0x00000006, 0x00000020, 0x00040017,
-		0x00000007, 0x00000006, 0x00000004, 0x00040020, 0x00000008, 0x00000003, 0x00000007, 0x0004003b,
-		0x00000008, 0x00000009, 0x00000003, 0x00040020, 0x0000000b, 0x00000001, 0x00000007, 0x0004003b,
-		0x0000000b, 0x0000000a, 0x00000001, 0x00050036, 0x00000002, 0x00000004, 0x00000000, 0x00000003,
-		0x000200f8, 0x00000005, 0x0004003d, 0x00000007, 0x0000000c, 0x0000000a, 0x0003003e, 0x00000009,
-		0x0000000c, 0x000100fd, 0x00010038,
-	};
-
 	if (vulkan->pipeline != 0) {
 		return 0;
 	}
@@ -2198,25 +2582,39 @@ static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
 		return 1;
 	}
 
+	buf_t vertex_code   = {0};
+	buf_t fragment_code = {0};
+	if (gfx_vulkan_spv_vertex(&vertex_code) || gfx_vulkan_spv_fragment(&fragment_code)) {
+		buf_free(&vertex_code);
+		buf_free(&fragment_code);
+		return 1;
+	}
+
 	VkShaderModuleCreateInfo vertex_create = {
 		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = sizeof(vertex_code),
-		.pCode	  = vertex_code,
+		.codeSize = vertex_code.used,
+		.pCode	  = vertex_code.data,
 	};
 	VkShaderModule vertex = 0;
 	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &vertex_create, NULL, &vertex))) {
+		buf_free(&fragment_code);
+		buf_free(&vertex_code);
 		return 1;
 	}
 	VkShaderModuleCreateInfo fragment_create = {
 		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = sizeof(fragment_code),
-		.pCode	  = fragment_code,
+		.codeSize = fragment_code.used,
+		.pCode	  = fragment_code.data,
 	};
 	VkShaderModule fragment = 0;
 	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &fragment_create, NULL, &fragment))) {
 		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+		buf_free(&fragment_code);
+		buf_free(&vertex_code);
 		return 1;
 	}
+	buf_free(&fragment_code);
+	buf_free(&vertex_code);
 
 	VkPipelineLayoutCreateInfo layout = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
@@ -2251,11 +2649,11 @@ static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
 		{.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 2 * sizeof(float)},
 	};
 	VkPipelineVertexInputStateCreateInfo vertex_input = {
-		.sType			      = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-		.vertexBindingDescriptionCount   = 1,
-		.pVertexBindingDescriptions      = &binding,
+		.sType				 = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+		.vertexBindingDescriptionCount	 = 1,
+		.pVertexBindingDescriptions	 = &binding,
 		.vertexAttributeDescriptionCount = 2,
-		.pVertexAttributeDescriptions    = attributes,
+		.pVertexAttributeDescriptions	 = attributes,
 	};
 	VkPipelineInputAssemblyStateCreateInfo assembly = {
 		.sType	  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -2284,15 +2682,14 @@ static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
 		.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
 		.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
 		.alphaBlendOp	     = VK_BLEND_OP_ADD,
-		.colorWriteMask	     = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
-				   VK_COLOR_COMPONENT_A_BIT,
+		.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
 	};
 	VkPipelineColorBlendStateCreateInfo blend = {
 		.sType		 = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
 		.attachmentCount = 1,
 		.pAttachments	 = &blend_attachment,
 	};
-	u32 dynamic_states[2] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+	u32 dynamic_states[2]			 = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 	VkPipelineDynamicStateCreateInfo dynamic = {
 		.sType		   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
 		.dynamicStateCount = 2,
@@ -2329,9 +2726,9 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	}
 
 	VkImageSubresourceRange range = {
-		.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
-		.levelCount	= 1,
-		.layerCount	= 1,
+		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		.levelCount = 1,
+		.layerCount = 1,
 	};
 	VkImageMemoryBarrier to_color = {
 		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -2407,7 +2804,8 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	vulkan->CmdEndRenderPass(vulkan->command_buffer);
 	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
 				   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-				   final_layout == VK_IMAGE_LAYOUT_GENERAL ? VK_PIPELINE_STAGE_HOST_BIT : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				   final_layout == VK_IMAGE_LAYOUT_GENERAL ? VK_PIPELINE_STAGE_HOST_BIT
+									   : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
 				   0,
 				   0,
 				   NULL,
@@ -2442,7 +2840,11 @@ static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertice
 		return 1;
 	}
 	if (vulkan->target.type == GFX_TARGET_MEMORY) {
-		if (gfx_vulkan_draw_target(vulkan, vulkan->image, &vulkan->image_view, &vulkan->framebuffer, VK_IMAGE_LAYOUT_UNDEFINED,
+		if (gfx_vulkan_draw_target(vulkan,
+					   vulkan->image,
+					   &vulkan->image_view,
+					   &vulkan->framebuffer,
+					   VK_IMAGE_LAYOUT_UNDEFINED,
 					   VK_IMAGE_LAYOUT_GENERAL)) {
 			return 1;
 		}
@@ -2452,9 +2854,8 @@ static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertice
 		if (gfx_vulkan_surface_target_refresh(vulkan) || gfx_vulkan_acquire_swapchain(vulkan)) {
 			return 1;
 		}
-		u32 i = vulkan->swapchain_image_index;
-		u32 old_layout =
-			vulkan->swapchain_image_layouts[i] != 0 ? vulkan->swapchain_image_layouts[i] : VK_IMAGE_LAYOUT_UNDEFINED;
+		u32 i	       = vulkan->swapchain_image_index;
+		u32 old_layout = vulkan->swapchain_image_layouts[i] != 0 ? vulkan->swapchain_image_layouts[i] : VK_IMAGE_LAYOUT_UNDEFINED;
 		if (gfx_vulkan_draw_target(vulkan,
 					   vulkan->swapchain_images[i],
 					   &vulkan->swapchain_image_views[i],
@@ -2499,18 +2900,18 @@ static int gfx_vulkan_present(gfx_t *gfx)
 }
 
 static gfx_driver_t gfx_vulkan = {
-	.name	     = "vulkan",
-	.api	     = GFX_API_VULKAN,
-	.init	     = gfx_vulkan_init,
-	.free	     = gfx_vulkan_free,
-	.native	     = gfx_vulkan_native,
-	.proc	     = gfx_vulkan_proc,
-	.set_target  = gfx_vulkan_set_target,
-	.viewport    = gfx_vulkan_viewport,
-	.clear_color = gfx_vulkan_clear_color,
-	.clear	     = gfx_vulkan_clear,
+	.name		  = "vulkan",
+	.api		  = GFX_API_VULKAN,
+	.init		  = gfx_vulkan_init,
+	.free		  = gfx_vulkan_free,
+	.native		  = gfx_vulkan_native,
+	.proc		  = gfx_vulkan_proc,
+	.set_target	  = gfx_vulkan_set_target,
+	.viewport	  = gfx_vulkan_viewport,
+	.clear_color	  = gfx_vulkan_clear_color,
+	.clear		  = gfx_vulkan_clear,
 	.draw_triangle_2d = gfx_vulkan_draw_triangle_2d,
-	.present     = gfx_vulkan_present,
+	.present	  = gfx_vulkan_present,
 };
 
 GFX_DRIVER(gfx_vulkan, &gfx_vulkan);
