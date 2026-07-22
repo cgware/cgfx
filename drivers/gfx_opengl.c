@@ -89,39 +89,45 @@ typedef struct gfx_opengl_s {
 	void (*DrawArrays)(unsigned int, int, int);
 } gfx_opengl_t;
 
-static int load_symbol(gfx_opengl_t *opengl, void *lib, void **sym, strv_t name)
-{
-	if (proc_dlsym(opengl->proc, lib, name, sym) == 0) {
-		return 0;
-	}
-
-	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
-	return 1;
-}
-
-static int find_gl_symbol(gfx_opengl_t *opengl, void **sym, strv_t name)
+static int find_gl_symbol(gfx_opengl_t *opengl, gfx_surface_t *surface, void **sym, strv_t name)
 {
 	if (opengl->gl_lib != NULL && proc_dlsym(opengl->proc, opengl->gl_lib, name, sym) == 0) {
 		return 0;
 	}
-	if (opengl->surface != NULL && opengl->surface->ops != NULL && opengl->surface->ops->proc != NULL) {
-		if (opengl->surface->ops->proc(opengl->surface, name, sym) == 0) {
+	if (surface != NULL && surface->ops != NULL && surface->ops->proc != NULL) {
+		if (surface->ops->proc(surface, name, sym) == 0) {
 			return 0;
 		}
 	}
 	return 1;
 }
 
-static int symbol_missing(strv_t name)
+static int load_symbol(gfx_opengl_t *opengl, gfx_surface_t *surface, void **sym, strv_t name)
 {
+	if (find_gl_symbol(opengl, surface, sym, name) == 0) {
+		return 0;
+	}
+
 	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
 	return 1;
 }
 
-#define LOAD_GL(_opengl, _name) load_symbol((_opengl), (_opengl)->gl_lib, (void **)&(_opengl)->_name, STRV("gl" #_name))
+#define LOAD_GL(_opengl, _surface, _name) load_symbol((_opengl), (_surface), (void **)&(_opengl)->_name, STRV("gl" #_name))
 
-static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl)
+static int gfx_opengl_clear_surface(gfx_surface_t *surface)
 {
+	if (surface == NULL) {
+		return 0;
+	}
+	if (surface->ops == NULL || surface->ops->clear_current == NULL) {
+		return 1;
+	}
+	return surface->ops->clear_current(surface);
+}
+
+static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl, gfx_surface_t *surface)
+{
+	gfx_opengl_clear_surface(surface);
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(opengl->proc, opengl->gl_lib);
 	}
@@ -149,6 +155,38 @@ static int gfx_opengl_load_gl(gfx_opengl_t *opengl)
 	return 1;
 }
 
+static int gfx_opengl_surface_valid(gfx_surface_t *surface)
+{
+	return surface != NULL && surface->api == GFX_API_OPENGL && surface->ops != NULL && surface->ops->proc != NULL &&
+	       surface->ops->make_current != NULL;
+}
+
+static int gfx_opengl_load_symbols(gfx_opengl_t *opengl, gfx_surface_t *surface)
+{
+	if (opengl == NULL) {
+		return 1;
+	}
+
+	if (LOAD_GL(opengl, surface, ClearColor) || LOAD_GL(opengl, surface, Clear) || LOAD_GL(opengl, surface, GenFramebuffers) ||
+	    LOAD_GL(opengl, surface, DeleteFramebuffers) || LOAD_GL(opengl, surface, BindFramebuffer) ||
+	    LOAD_GL(opengl, surface, CheckFramebufferStatus) || LOAD_GL(opengl, surface, FramebufferTexture2D) ||
+	    LOAD_GL(opengl, surface, GenTextures) || LOAD_GL(opengl, surface, DeleteTextures) || LOAD_GL(opengl, surface, BindTexture) ||
+	    LOAD_GL(opengl, surface, TexParameteri) || LOAD_GL(opengl, surface, TexImage2D) || LOAD_GL(opengl, surface, Viewport) ||
+	    LOAD_GL(opengl, surface, ReadPixels) || LOAD_GL(opengl, surface, CreateShader) || LOAD_GL(opengl, surface, ShaderSource) ||
+	    LOAD_GL(opengl, surface, CompileShader) || LOAD_GL(opengl, surface, GetShaderiv) || LOAD_GL(opengl, surface, DeleteShader) ||
+	    LOAD_GL(opengl, surface, CreateProgram) || LOAD_GL(opengl, surface, AttachShader) ||
+	    LOAD_GL(opengl, surface, BindAttribLocation) || LOAD_GL(opengl, surface, LinkProgram) ||
+	    LOAD_GL(opengl, surface, GetProgramiv) || LOAD_GL(opengl, surface, DeleteProgram) || LOAD_GL(opengl, surface, GenBuffers) ||
+	    LOAD_GL(opengl, surface, DeleteBuffers) || LOAD_GL(opengl, surface, BindBuffer) || LOAD_GL(opengl, surface, BufferData) ||
+	    LOAD_GL(opengl, surface, UseProgram) || LOAD_GL(opengl, surface, GetUniformLocation) || LOAD_GL(opengl, surface, Uniform2f) ||
+	    LOAD_GL(opengl, surface, EnableVertexAttribArray) || LOAD_GL(opengl, surface, DisableVertexAttribArray) ||
+	    LOAD_GL(opengl, surface, VertexAttribPointer) || LOAD_GL(opengl, surface, DrawArrays)) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 {
 	if (gfx == NULL || config == NULL || config->proc == NULL || config->alloc.alloc == NULL) {
@@ -167,22 +205,23 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 	gfx->data = opengl;
 
 	if (gfx_opengl_load_gl(opengl)) {
-		return gfx_opengl_init_free(gfx, opengl);
+		return gfx_opengl_init_free(gfx, opengl, NULL);
 	}
-
-	if (LOAD_GL(opengl, ClearColor) || LOAD_GL(opengl, Clear) || LOAD_GL(opengl, GenFramebuffers) ||
-	    LOAD_GL(opengl, DeleteFramebuffers) || LOAD_GL(opengl, BindFramebuffer) || LOAD_GL(opengl, CheckFramebufferStatus) ||
-	    LOAD_GL(opengl, FramebufferTexture2D) || LOAD_GL(opengl, GenTextures) || LOAD_GL(opengl, DeleteTextures) ||
-	    LOAD_GL(opengl, BindTexture) || LOAD_GL(opengl, TexParameteri) || LOAD_GL(opengl, TexImage2D) || LOAD_GL(opengl, Viewport) ||
-	    LOAD_GL(opengl, ReadPixels) || LOAD_GL(opengl, CreateShader) || LOAD_GL(opengl, ShaderSource) ||
-	    LOAD_GL(opengl, CompileShader) || LOAD_GL(opengl, GetShaderiv) || LOAD_GL(opengl, DeleteShader) ||
-	    LOAD_GL(opengl, CreateProgram) || LOAD_GL(opengl, AttachShader) || LOAD_GL(opengl, BindAttribLocation) ||
-	    LOAD_GL(opengl, LinkProgram) || LOAD_GL(opengl, GetProgramiv) || LOAD_GL(opengl, DeleteProgram) ||
-	    LOAD_GL(opengl, GenBuffers) || LOAD_GL(opengl, DeleteBuffers) || LOAD_GL(opengl, BindBuffer) || LOAD_GL(opengl, BufferData) ||
-	    LOAD_GL(opengl, UseProgram) || LOAD_GL(opengl, GetUniformLocation) || LOAD_GL(opengl, Uniform2f) ||
-	    LOAD_GL(opengl, EnableVertexAttribArray) || LOAD_GL(opengl, DisableVertexAttribArray) || LOAD_GL(opengl, VertexAttribPointer) ||
-	    LOAD_GL(opengl, DrawArrays)) {
-		return gfx_opengl_init_free(gfx, opengl);
+	if (config->surface != NULL) {
+		if (!gfx_opengl_surface_valid(config->surface)) {
+			return gfx_opengl_init_free(gfx, opengl, NULL);
+		}
+		if (config->surface->ops->make_current(config->surface)) {
+			log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
+			return gfx_opengl_init_free(gfx, opengl, NULL);
+		}
+	}
+	if (gfx_opengl_load_symbols(opengl, config->surface)) {
+		return gfx_opengl_init_free(gfx, opengl, config->surface);
+	}
+	if (gfx_opengl_clear_surface(config->surface)) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to clear the current OpenGL surface");
+		return gfx_opengl_init_free(gfx, opengl, NULL);
 	}
 
 	return 0;
@@ -193,11 +232,11 @@ static void gfx_opengl_target_free(gfx_opengl_t *opengl)
 	if (opengl->surface != NULL && opengl->surface->ops != NULL && opengl->surface->ops->clear_current != NULL) {
 		opengl->surface->ops->clear_current(opengl->surface);
 	}
-	if (opengl->framebuffer != 0) {
+	if (opengl->framebuffer != 0 && opengl->DeleteFramebuffers != NULL) {
 		opengl->DeleteFramebuffers(1, &opengl->framebuffer);
 		opengl->framebuffer = 0;
 	}
-	if (opengl->texture != 0) {
+	if (opengl->texture != 0 && opengl->DeleteTextures != NULL) {
 		opengl->DeleteTextures(1, &opengl->texture);
 		opengl->texture = 0;
 	}
@@ -242,10 +281,11 @@ static int gfx_opengl_proc(gfx_t *gfx, strv_t name, void **proc)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	if (find_gl_symbol(opengl, proc, name) == 0) {
+	if (find_gl_symbol(opengl, opengl->surface, proc, name) == 0) {
 		return 0;
 	}
-	return symbol_missing(name);
+	log_error("cgfx", "gfx_opengl", NULL, "failed to load OpenGL symbol: %.*s", name.len, name.data);
+	return 1;
 }
 
 static int memory_target_valid(const gfx_target_t *target)

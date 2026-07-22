@@ -83,6 +83,7 @@ typedef struct gfx_config_s {
 	proc_t *proc;
 	alloc_t alloc;
 	const gfx_plan_t *plan;
+	gfx_surface_t *surface;
 } gfx_config_t;
 
 typedef struct gfx_s {

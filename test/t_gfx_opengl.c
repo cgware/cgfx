@@ -409,6 +409,72 @@ static void *t_gfx_opengl_surface_symbol(strv_t name)
 	if (strv_eq(name, STRV("glFramebufferTexture2D"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFramebufferTexture2D);
 	}
+	if (strv_eq(name, STRV("glCreateShader"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCreateShader);
+	}
+	if (strv_eq(name, STRV("glShaderSource"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glShaderSource);
+	}
+	if (strv_eq(name, STRV("glCompileShader"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCompileShader);
+	}
+	if (strv_eq(name, STRV("glGetShaderiv"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetShaderiv);
+	}
+	if (strv_eq(name, STRV("glDeleteShader"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteShader);
+	}
+	if (strv_eq(name, STRV("glCreateProgram"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCreateProgram);
+	}
+	if (strv_eq(name, STRV("glAttachShader"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glAttachShader);
+	}
+	if (strv_eq(name, STRV("glBindAttribLocation"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindAttribLocation);
+	}
+	if (strv_eq(name, STRV("glLinkProgram"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glLinkProgram);
+	}
+	if (strv_eq(name, STRV("glGetProgramiv"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetProgramiv);
+	}
+	if (strv_eq(name, STRV("glDeleteProgram"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteProgram);
+	}
+	if (strv_eq(name, STRV("glGenBuffers"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenBuffers);
+	}
+	if (strv_eq(name, STRV("glDeleteBuffers"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteBuffers);
+	}
+	if (strv_eq(name, STRV("glBindBuffer"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindBuffer);
+	}
+	if (strv_eq(name, STRV("glBufferData"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBufferData);
+	}
+	if (strv_eq(name, STRV("glUseProgram"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glUseProgram);
+	}
+	if (strv_eq(name, STRV("glGetUniformLocation"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetUniformLocation);
+	}
+	if (strv_eq(name, STRV("glUniform2f"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glUniform2f);
+	}
+	if (strv_eq(name, STRV("glEnableVertexAttribArray"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnableVertexAttribArray);
+	}
+	if (strv_eq(name, STRV("glDisableVertexAttribArray"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDisableVertexAttribArray);
+	}
+	if (strv_eq(name, STRV("glVertexAttribPointer"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glVertexAttribPointer);
+	}
+	if (strv_eq(name, STRV("glDrawArrays"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDrawArrays);
+	}
 	return NULL;
 }
 
@@ -762,21 +828,22 @@ TEST(gfx_opengl_init_windows_library_name)
 {
 	START;
 
+	t_gfx_opengl_reset();
 	proc_t proc = {0};
 	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_gl_symbols(&proc, STRV("opengl32.dll"));
+	t_gfx_opengl_core_symbols(&proc, STRV("opengl32.dll"));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .surface = &t_gfx_opengl_surface}), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_init_missing_clear)
+TEST(gfx_opengl_init_missing_clear_symbol)
 {
 	START;
 
@@ -809,6 +876,26 @@ TEST(gfx_opengl_init_success)
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
 
 	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_free_does_not_use_init_surface)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_core_symbols(&proc, STRV("opengl32.dll"));
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .surface = &t_gfx_opengl_surface}), &gfx);
+
+	t_gfx_opengl_surface.ops = (const gfx_surface_ops_t *)(uintptr_t)0xFFFFFFFFFFFFFFEF;
+	gfx_free(&gfx);
+
 	proc_free(&proc);
 	END;
 }
@@ -1043,6 +1130,14 @@ TEST(gfx_opengl_init_missing_draw_symbol)
 	proc_t proc = {0};
 	proc_init(&proc, 0, 1, ALLOC_STD);
 	t_gfx_opengl_core_symbols(&proc, STRV("libGL.so.1"));
+	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glGenFramebuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenFramebuffers));
+	proc_setdlsym(
+		&proc, STRV("libGL.so.1"), STRV("glDeleteFramebuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteFramebuffers));
+	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glBindFramebuffer"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindFramebuffer));
+	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glCheckFramebufferStatus"),
+		      t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCheckFramebufferStatus));
+	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glFramebufferTexture2D"),
+		      t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFramebufferTexture2D));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
@@ -2539,8 +2634,9 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_init_fallback_library);
 	RUN(gfx_opengl_init_glvnd_libraries);
 	RUN(gfx_opengl_init_windows_library_name);
-	RUN(gfx_opengl_init_missing_clear);
+	RUN(gfx_opengl_init_missing_clear_symbol);
 	RUN(gfx_opengl_init_success);
+	RUN(gfx_opengl_free_does_not_use_init_surface);
 	RUN(gfx_opengl_free_null_data);
 	RUN(gfx_opengl_clear_color_calls_gl);
 	RUN(gfx_opengl_clear_color_null_data);
