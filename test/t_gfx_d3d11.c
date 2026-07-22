@@ -13,6 +13,8 @@ enum {
 	S_OK			   = 0,
 	T_D3D_DRIVER_TYPE_HARDWARE = 1,
 	T_D3D11_SDK_VERSION	   = 7,
+	T_D3D11_BIND_VERTEX_BUFFER = 0x00000001,
+	T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
 };
 
 typedef struct GUID_s {
@@ -34,51 +36,108 @@ typedef struct D3D11_VIEWPORT_s {
 	float MaxDepth;
 } D3D11_VIEWPORT;
 
+typedef struct D3D11_BUFFER_DESC_s {
+	UINT ByteWidth;
+	UINT Usage;
+	UINT BindFlags;
+	UINT CPUAccessFlags;
+	UINT MiscFlags;
+	UINT StructureByteStride;
+} D3D11_BUFFER_DESC;
+
+typedef struct D3D11_INPUT_ELEMENT_DESC_s {
+	const char *SemanticName;
+	UINT SemanticIndex;
+	UINT Format;
+	UINT InputSlot;
+	UINT AlignedByteOffset;
+	UINT InputSlotClass;
+	UINT InstanceDataStepRate;
+} D3D11_INPUT_ELEMENT_DESC;
+
+typedef struct t_d3d11_vertex_2d_s {
+	float x;
+	float y;
+	float r;
+	float g;
+	float b;
+	float a;
+} t_d3d11_vertex_2d_t;
+
+typedef struct t_d3d_blob_s t_d3d_blob_t;
+typedef struct t_d3d11_buffer_s t_d3d11_buffer_t;
 typedef struct t_d3d11_device_s t_d3d11_device_t;
 typedef struct t_d3d11_context_s t_d3d11_context_t;
+typedef struct t_d3d11_input_layout_s t_d3d11_input_layout_t;
+typedef struct t_d3d11_pixel_shader_s t_d3d11_pixel_shader_t;
 typedef struct t_d3d11_view_s t_d3d11_view_t;
 typedef struct t_d3d11_texture_s t_d3d11_texture_t;
+typedef struct t_d3d11_vertex_shader_s t_d3d11_vertex_shader_t;
 typedef struct t_dxgi_swapchain_s t_dxgi_swapchain_t;
+
+typedef struct t_d3d_blob_vtbl_s {
+	HRESULT (*QueryInterface)(void);
+	ULONG (*AddRef)(void);
+	ULONG (*Release)(t_d3d_blob_t *self);
+	void *(*GetBufferPointer)(t_d3d_blob_t *self);
+	size_t (*GetBufferSize)(t_d3d_blob_t *self);
+} t_d3d_blob_vtbl_t;
+
+typedef struct t_d3d11_buffer_vtbl_s {
+	HRESULT (*QueryInterface)(void);
+	ULONG (*AddRef)(void);
+	ULONG (*Release)(t_d3d11_buffer_t *self);
+} t_d3d11_buffer_vtbl_t;
 
 typedef struct t_d3d11_device_vtbl_s {
 	HRESULT (*QueryInterface)(void);
 	ULONG (*AddRef)(void);
 	ULONG (*Release)(t_d3d11_device_t *self);
-	HRESULT (*CreateBuffer)(void);
+	HRESULT (*CreateBuffer)(t_d3d11_device_t *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, t_d3d11_buffer_t **buffer);
 	HRESULT (*CreateTexture1D)(void);
 	HRESULT (*CreateTexture2D)(void);
 	HRESULT (*CreateTexture3D)(void);
 	HRESULT (*CreateShaderResourceView)(void);
 	HRESULT (*CreateUnorderedAccessView)(void);
 	HRESULT (*CreateRenderTargetView)(t_d3d11_device_t *self, void *resource, const void *desc, t_d3d11_view_t **view);
+	HRESULT (*CreateDepthStencilView)(void);
+	HRESULT (*CreateInputLayout)(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count,
+				     const void *shader_bytecode, size_t bytecode_length, t_d3d11_input_layout_t **input_layout);
+	HRESULT (*CreateVertexShader)(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				      t_d3d11_vertex_shader_t **shader);
+	HRESULT (*CreateGeometryShader)(void);
+	HRESULT (*CreateGeometryShaderWithStreamOutput)(void);
+	HRESULT (*CreatePixelShader)(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				     t_d3d11_pixel_shader_t **shader);
 } t_d3d11_device_vtbl_t;
 
 typedef struct t_d3d11_context_vtbl_s {
 	HRESULT (*QueryInterface)(void);
 	ULONG (*AddRef)(void);
 	ULONG (*Release)(t_d3d11_context_t *self);
-	void (*unused_03)(void);
-	void (*unused_04)(void);
-	void (*unused_05)(void);
-	void (*unused_06)(void);
+	void (*GetDevice)(void);
+	void (*GetPrivateData)(void);
+	void (*SetPrivateData)(void);
+	void (*SetPrivateDataInterface)(void);
 	void (*unused_07)(void);
 	void (*unused_08)(void);
-	void (*unused_09)(void);
+	void (*PSSetShader)(t_d3d11_context_t *self, t_d3d11_pixel_shader_t *shader, void *const *class_instances, UINT class_instance_count);
 	void (*unused_10)(void);
-	void (*unused_11)(void);
+	void (*VSSetShader)(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shader, void *const *class_instances, UINT class_instance_count);
 	void (*unused_12)(void);
-	void (*unused_13)(void);
+	void (*Draw)(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location);
 	void (*unused_14)(void);
 	void (*unused_15)(void);
 	void (*unused_16)(void);
-	void (*unused_17)(void);
-	void (*unused_18)(void);
+	void (*IASetInputLayout)(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout);
+	void (*IASetVertexBuffers)(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
+				   const UINT *strides, const UINT *offsets);
 	void (*unused_19)(void);
 	void (*unused_20)(void);
 	void (*unused_21)(void);
 	void (*unused_22)(void);
 	void (*unused_23)(void);
-	void (*unused_24)(void);
+	void (*IASetPrimitiveTopology)(t_d3d11_context_t *self, UINT topology);
 	void (*unused_25)(void);
 	void (*unused_26)(void);
 	void (*unused_27)(void);
@@ -87,7 +146,7 @@ typedef struct t_d3d11_context_vtbl_s {
 	void (*unused_30)(void);
 	void (*unused_31)(void);
 	void (*unused_32)(void);
-	void (*unused_33)(void);
+	void (*OMSetRenderTargets)(t_d3d11_context_t *self, UINT num_views, t_d3d11_view_t *const *views, void *depth_stencil_view);
 	void (*unused_34)(void);
 	void (*unused_35)(void);
 	void (*unused_36)(void);
@@ -102,10 +161,23 @@ typedef struct t_d3d11_context_vtbl_s {
 	void (*unused_45)(void);
 	void (*unused_46)(void);
 	void (*unused_47)(void);
-	void (*unused_48)(void);
+	void (*UpdateSubresource)(t_d3d11_context_t *self, t_d3d11_buffer_t *resource, UINT subresource, const void *box, const void *data,
+				  UINT row_pitch, UINT depth_pitch);
 	void (*unused_49)(void);
 	void (*ClearRenderTargetView)(t_d3d11_context_t *self, t_d3d11_view_t *view, const float color[4]);
 } t_d3d11_context_vtbl_t;
+
+typedef struct t_d3d11_input_layout_vtbl_s {
+	HRESULT (*QueryInterface)(void);
+	ULONG (*AddRef)(void);
+	ULONG (*Release)(t_d3d11_input_layout_t *self);
+} t_d3d11_input_layout_vtbl_t;
+
+typedef struct t_d3d11_pixel_shader_vtbl_s {
+	HRESULT (*QueryInterface)(void);
+	ULONG (*AddRef)(void);
+	ULONG (*Release)(t_d3d11_pixel_shader_t *self);
+} t_d3d11_pixel_shader_vtbl_t;
 
 typedef struct t_d3d11_view_vtbl_s {
 	HRESULT (*QueryInterface)(void);
@@ -118,6 +190,12 @@ typedef struct t_d3d11_texture_vtbl_s {
 	ULONG (*AddRef)(void);
 	ULONG (*Release)(t_d3d11_texture_t *self);
 } t_d3d11_texture_vtbl_t;
+
+typedef struct t_d3d11_vertex_shader_vtbl_s {
+	HRESULT (*QueryInterface)(void);
+	ULONG (*AddRef)(void);
+	ULONG (*Release)(t_d3d11_vertex_shader_t *self);
+} t_d3d11_vertex_shader_vtbl_t;
 
 typedef struct t_dxgi_swapchain_vtbl_s {
 	HRESULT (*QueryInterface)(void);
@@ -136,6 +214,16 @@ typedef struct t_dxgi_swapchain_vtbl_s {
 	HRESULT (*ResizeBuffers)(t_dxgi_swapchain_t *self, UINT buffer_count, UINT width, UINT height, UINT format, UINT flags);
 } t_dxgi_swapchain_vtbl_t;
 
+struct t_d3d_blob_s {
+	t_d3d_blob_vtbl_t *vtbl;
+	const void *data;
+	size_t size;
+};
+
+struct t_d3d11_buffer_s {
+	t_d3d11_buffer_vtbl_t *vtbl;
+};
+
 struct t_d3d11_device_s {
 	t_d3d11_device_vtbl_t *vtbl;
 };
@@ -144,12 +232,24 @@ struct t_d3d11_context_s {
 	t_d3d11_context_vtbl_t *vtbl;
 };
 
+struct t_d3d11_input_layout_s {
+	t_d3d11_input_layout_vtbl_t *vtbl;
+};
+
+struct t_d3d11_pixel_shader_s {
+	t_d3d11_pixel_shader_vtbl_t *vtbl;
+};
+
 struct t_d3d11_view_s {
 	t_d3d11_view_vtbl_t *vtbl;
 };
 
 struct t_d3d11_texture_s {
 	t_d3d11_texture_vtbl_t *vtbl;
+};
+
+struct t_d3d11_vertex_shader_s {
+	t_d3d11_vertex_shader_vtbl_t *vtbl;
 };
 
 struct t_dxgi_swapchain_s {
@@ -161,27 +261,68 @@ static int t_release_device_calls;
 static int t_release_context_calls;
 static int t_release_view_calls;
 static int t_release_texture_calls;
+static int t_release_buffer_calls;
+static int t_release_input_layout_calls;
+static int t_release_pixel_shader_calls;
+static int t_release_vertex_shader_calls;
+static int t_release_blob_calls;
 static int t_create_render_target_view_calls;
+static int t_create_buffer_calls;
+static int t_create_input_layout_calls;
+static int t_create_vertex_shader_calls;
+static int t_create_pixel_shader_calls;
 static int t_get_buffer_calls;
 static int t_resize_buffers_calls;
+static int t_d3d_compile_calls;
 static int t_clear_render_target_view_calls;
+static int t_om_set_render_targets_calls;
+static int t_ia_set_input_layout_calls;
+static int t_ia_set_vertex_buffers_calls;
+static int t_ia_set_primitive_topology_calls;
+static int t_vs_set_shader_calls;
+static int t_ps_set_shader_calls;
+static int t_update_subresource_calls;
+static int t_draw_calls;
 static int t_rs_set_viewports_calls;
 static int t_surface_present_calls;
+static UINT t_create_buffer_bytes;
+static UINT t_create_buffer_bind_flags;
 static UINT t_create_driver_type;
 static UINT t_create_sdk_version;
 static UINT t_resize_width;
 static UINT t_resize_height;
+static UINT t_input_element_count;
+static UINT t_render_target_count;
+static UINT t_vertex_buffer_start_slot;
+static UINT t_vertex_buffer_count;
+static UINT t_vertex_buffer_stride;
+static UINT t_vertex_buffer_offset;
+static UINT t_primitive_topology;
+static UINT t_draw_vertex_count;
+static UINT t_draw_start_vertex;
 static UINT t_viewport_count;
+static t_d3d11_vertex_2d_t t_uploaded_vertices[3];
 static D3D11_VIEWPORT t_viewport;
 static float t_clear_color[4];
 static HRESULT t_create_device_ret;
+static HRESULT t_d3d_compile_ret;
+static HRESULT t_create_buffer_ret;
+static HRESULT t_create_input_layout_ret;
+static HRESULT t_create_vertex_shader_ret;
+static HRESULT t_create_pixel_shader_ret;
 static HRESULT t_get_buffer_ret;
 static HRESULT t_create_render_target_view_ret;
 static HRESULT t_resize_buffers_ret;
+static t_d3d_blob_t t_vertex_blob;
+static t_d3d_blob_t t_pixel_blob;
+static t_d3d11_buffer_t t_buffer;
 static t_d3d11_device_t t_device;
 static t_d3d11_context_t t_context;
+static t_d3d11_input_layout_t t_input_layout;
+static t_d3d11_pixel_shader_t t_pixel_shader;
 static t_d3d11_view_t t_view;
 static t_d3d11_texture_t t_texture;
+static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
 
@@ -230,6 +371,62 @@ static ULONG t_texture_release(t_d3d11_texture_t *self)
 	return 0;
 }
 
+static ULONG t_buffer_release(t_d3d11_buffer_t *self)
+{
+	(void)self;
+	t_release_buffer_calls++;
+	return 0;
+}
+
+static ULONG t_input_layout_release(t_d3d11_input_layout_t *self)
+{
+	(void)self;
+	t_release_input_layout_calls++;
+	return 0;
+}
+
+static ULONG t_pixel_shader_release(t_d3d11_pixel_shader_t *self)
+{
+	(void)self;
+	t_release_pixel_shader_calls++;
+	return 0;
+}
+
+static ULONG t_vertex_shader_release(t_d3d11_vertex_shader_t *self)
+{
+	(void)self;
+	t_release_vertex_shader_calls++;
+	return 0;
+}
+
+static ULONG t_blob_release(t_d3d_blob_t *self)
+{
+	(void)self;
+	t_release_blob_calls++;
+	return 0;
+}
+
+static void *t_blob_GetBufferPointer(t_d3d_blob_t *self)
+{
+	return (void *)self->data;
+}
+
+static size_t t_blob_GetBufferSize(t_d3d_blob_t *self)
+{
+	return self->size;
+}
+
+static HRESULT t_CreateBuffer(t_d3d11_device_t *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, t_d3d11_buffer_t **buffer)
+{
+	(void)self;
+	(void)initial_data;
+	t_create_buffer_calls++;
+	t_create_buffer_bytes	 = desc->ByteWidth;
+	t_create_buffer_bind_flags = desc->BindFlags;
+	*buffer			 = &t_buffer;
+	return t_create_buffer_ret;
+}
+
 static HRESULT t_CreateRenderTargetView(t_d3d11_device_t *self, void *resource, const void *desc, t_d3d11_view_t **view)
 {
 	(void)self;
@@ -238,6 +435,120 @@ static HRESULT t_CreateRenderTargetView(t_d3d11_device_t *self, void *resource, 
 	t_create_render_target_view_calls++;
 	*view = &t_view;
 	return t_create_render_target_view_ret;
+}
+
+static HRESULT t_CreateInputLayout(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count,
+				   const void *shader_bytecode, size_t bytecode_length, t_d3d11_input_layout_t **input_layout)
+{
+	(void)self;
+	(void)elements;
+	(void)shader_bytecode;
+	(void)bytecode_length;
+	t_create_input_layout_calls++;
+	t_input_element_count = element_count;
+	*input_layout	      = &t_input_layout;
+	return t_create_input_layout_ret;
+}
+
+static HRESULT t_CreateVertexShader(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				    t_d3d11_vertex_shader_t **shader)
+{
+	(void)self;
+	(void)shader_bytecode;
+	(void)bytecode_length;
+	(void)class_linkage;
+	t_create_vertex_shader_calls++;
+	*shader = &t_vertex_shader;
+	return t_create_vertex_shader_ret;
+}
+
+static HRESULT t_CreatePixelShader(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				   t_d3d11_pixel_shader_t **shader)
+{
+	(void)self;
+	(void)shader_bytecode;
+	(void)bytecode_length;
+	(void)class_linkage;
+	t_create_pixel_shader_calls++;
+	*shader = &t_pixel_shader;
+	return t_create_pixel_shader_ret;
+}
+
+static void t_OMSetRenderTargets(t_d3d11_context_t *self, UINT num_views, t_d3d11_view_t *const *views, void *depth_stencil_view)
+{
+	(void)self;
+	(void)views;
+	(void)depth_stencil_view;
+	t_om_set_render_targets_calls++;
+	t_render_target_count = num_views;
+}
+
+static void t_IASetInputLayout(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout)
+{
+	(void)self;
+	(void)input_layout;
+	t_ia_set_input_layout_calls++;
+}
+
+static void t_IASetVertexBuffers(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
+				 const UINT *strides, const UINT *offsets)
+{
+	(void)self;
+	(void)buffers;
+	t_ia_set_vertex_buffers_calls++;
+	t_vertex_buffer_start_slot = start_slot;
+	t_vertex_buffer_count	    = num_buffers;
+	t_vertex_buffer_stride	    = strides[0];
+	t_vertex_buffer_offset	    = offsets[0];
+}
+
+static void t_IASetPrimitiveTopology(t_d3d11_context_t *self, UINT topology)
+{
+	(void)self;
+	t_ia_set_primitive_topology_calls++;
+	t_primitive_topology = topology;
+}
+
+static void t_VSSetShader(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shader, void *const *class_instances, UINT class_instance_count)
+{
+	(void)self;
+	(void)shader;
+	(void)class_instances;
+	(void)class_instance_count;
+	t_vs_set_shader_calls++;
+}
+
+static void t_PSSetShader(t_d3d11_context_t *self, t_d3d11_pixel_shader_t *shader, void *const *class_instances, UINT class_instance_count)
+{
+	(void)self;
+	(void)shader;
+	(void)class_instances;
+	(void)class_instance_count;
+	t_ps_set_shader_calls++;
+}
+
+static void t_UpdateSubresource(t_d3d11_context_t *self, t_d3d11_buffer_t *resource, UINT subresource, const void *box, const void *data,
+				UINT row_pitch, UINT depth_pitch)
+{
+	(void)self;
+	(void)resource;
+	(void)subresource;
+	(void)box;
+	(void)row_pitch;
+	(void)depth_pitch;
+	t_update_subresource_calls++;
+	const t_d3d11_vertex_2d_t *vertices = data;
+	t_uploaded_vertices[0]	      = vertices[0];
+	t_uploaded_vertices[1]	      = vertices[1];
+	t_uploaded_vertices[2]	      = vertices[2];
+}
+
+static void t_Draw(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location)
+{
+	(void)self;
+	t_draw_calls++;
+	t_draw_vertex_count = vertex_count;
+	t_draw_start_vertex = start_vertex_location;
 }
 
 static void t_ClearRenderTargetView(t_d3d11_context_t *self, t_d3d11_view_t *view, const float color[4])
@@ -306,15 +617,66 @@ static HRESULT t_D3D11CreateDevice(void *adapter, UINT driver_type, HMODULE soft
 	return t_create_device_ret;
 }
 
+static HRESULT t_D3DCompile(const void *src_data, size_t src_data_size, const char *source_name, const void *defines, void *include,
+			    const char *entrypoint, const char *target, UINT flags1, UINT flags2, t_d3d_blob_t **code, t_d3d_blob_t **error_msgs)
+{
+	(void)src_data;
+	(void)src_data_size;
+	(void)source_name;
+	(void)defines;
+	(void)include;
+	(void)entrypoint;
+	(void)flags1;
+	(void)flags2;
+	t_d3d_compile_calls++;
+	if (target[0] == 'v') {
+		*code = &t_vertex_blob;
+	} else {
+		*code = &t_pixel_blob;
+	}
+	*error_msgs = NULL;
+	return t_d3d_compile_ret;
+}
+
+static t_d3d_blob_vtbl_t t_blob_vtbl = {
+	.Release		 = t_blob_release,
+	.GetBufferPointer = t_blob_GetBufferPointer,
+	.GetBufferSize	 = t_blob_GetBufferSize,
+};
+
+static t_d3d11_buffer_vtbl_t t_buffer_vtbl = {
+	.Release = t_buffer_release,
+};
+
 static t_d3d11_device_vtbl_t t_device_vtbl = {
 	.Release		= t_device_release,
+	.CreateBuffer		= t_CreateBuffer,
 	.CreateRenderTargetView = t_CreateRenderTargetView,
+	.CreateInputLayout	= t_CreateInputLayout,
+	.CreateVertexShader	= t_CreateVertexShader,
+	.CreatePixelShader	= t_CreatePixelShader,
 };
 
 static t_d3d11_context_vtbl_t t_context_vtbl = {
 	.Release	       = t_context_release,
+	.PSSetShader	       = t_PSSetShader,
+	.VSSetShader	       = t_VSSetShader,
+	.Draw		       = t_Draw,
+	.IASetInputLayout      = t_IASetInputLayout,
+	.IASetVertexBuffers    = t_IASetVertexBuffers,
+	.IASetPrimitiveTopology = t_IASetPrimitiveTopology,
+	.OMSetRenderTargets    = t_OMSetRenderTargets,
 	.RSSetViewports	       = t_RSSetViewports,
+	.UpdateSubresource     = t_UpdateSubresource,
 	.ClearRenderTargetView = t_ClearRenderTargetView,
+};
+
+static t_d3d11_input_layout_vtbl_t t_input_layout_vtbl = {
+	.Release = t_input_layout_release,
+};
+
+static t_d3d11_pixel_shader_vtbl_t t_pixel_shader_vtbl = {
+	.Release = t_pixel_shader_release,
 };
 
 static t_d3d11_view_vtbl_t t_view_vtbl = {
@@ -323,6 +685,10 @@ static t_d3d11_view_vtbl_t t_view_vtbl = {
 
 static t_d3d11_texture_vtbl_t t_texture_vtbl = {
 	.Release = t_texture_release,
+};
+
+static t_d3d11_vertex_shader_vtbl_t t_vertex_shader_vtbl = {
+	.Release = t_vertex_shader_release,
 };
 
 static t_dxgi_swapchain_vtbl_t t_swapchain_vtbl = {
@@ -341,30 +707,73 @@ static void t_gfx_d3d11_reset(void)
 	t_release_context_calls		  = 0;
 	t_release_view_calls		  = 0;
 	t_release_texture_calls		  = 0;
+	t_release_buffer_calls		  = 0;
+	t_release_input_layout_calls	  = 0;
+	t_release_pixel_shader_calls	  = 0;
+	t_release_vertex_shader_calls	  = 0;
+	t_release_blob_calls		  = 0;
 	t_create_render_target_view_calls = 0;
+	t_create_buffer_calls		  = 0;
+	t_create_input_layout_calls	  = 0;
+	t_create_vertex_shader_calls	  = 0;
+	t_create_pixel_shader_calls	  = 0;
 	t_get_buffer_calls		  = 0;
 	t_resize_buffers_calls		  = 0;
+	t_d3d_compile_calls		  = 0;
 	t_clear_render_target_view_calls  = 0;
-	t_rs_set_viewports_calls	  = 0;
+	t_om_set_render_targets_calls	  = 0;
+	t_ia_set_input_layout_calls	  = 0;
+	t_ia_set_vertex_buffers_calls	  = 0;
+	t_ia_set_primitive_topology_calls = 0;
+	t_vs_set_shader_calls		  = 0;
+	t_ps_set_shader_calls		  = 0;
+	t_update_subresource_calls	  = 0;
+	t_draw_calls			  = 0;
+	t_rs_set_viewports_calls		  = 0;
 	t_surface_present_calls		  = 0;
+	t_create_buffer_bytes		  = 0;
+	t_create_buffer_bind_flags	  = 0;
 	t_create_driver_type		  = 0;
 	t_create_sdk_version		  = 0;
 	t_resize_width			  = 0;
 	t_resize_height			  = 0;
+	t_input_element_count		  = 0;
+	t_render_target_count		  = 0;
+	t_vertex_buffer_start_slot	  = 0;
+	t_vertex_buffer_count		  = 0;
+	t_vertex_buffer_stride		  = 0;
+	t_vertex_buffer_offset		  = 0;
+	t_primitive_topology		  = 0;
+	t_draw_vertex_count		  = 0;
+	t_draw_start_vertex		  = 0;
 	t_viewport_count		  = 0;
+	t_uploaded_vertices[0]		  = (t_d3d11_vertex_2d_t){0};
+	t_uploaded_vertices[1]		  = (t_d3d11_vertex_2d_t){0};
+	t_uploaded_vertices[2]		  = (t_d3d11_vertex_2d_t){0};
 	t_viewport			  = (D3D11_VIEWPORT){0};
 	t_clear_color[0]		  = 0.0f;
 	t_clear_color[1]		  = 0.0f;
 	t_clear_color[2]		  = 0.0f;
 	t_clear_color[3]		  = 0.0f;
 	t_create_device_ret		  = S_OK;
+	t_d3d_compile_ret		  = S_OK;
+	t_create_buffer_ret		  = S_OK;
+	t_create_input_layout_ret	  = S_OK;
+	t_create_vertex_shader_ret	  = S_OK;
+	t_create_pixel_shader_ret	  = S_OK;
 	t_get_buffer_ret		  = S_OK;
 	t_create_render_target_view_ret	  = S_OK;
 	t_resize_buffers_ret		  = S_OK;
+	t_vertex_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "vertex", .size = 6};
+	t_pixel_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "pixel", .size = 5};
+	t_buffer.vtbl			  = &t_buffer_vtbl;
 	t_device.vtbl			  = &t_device_vtbl;
 	t_context.vtbl			  = &t_context_vtbl;
+	t_input_layout.vtbl		  = &t_input_layout_vtbl;
+	t_pixel_shader.vtbl		  = &t_pixel_shader_vtbl;
 	t_view.vtbl			  = &t_view_vtbl;
 	t_texture.vtbl			  = &t_texture_vtbl;
+	t_vertex_shader.vtbl		  = &t_vertex_shader_vtbl;
 	t_swapchain.vtbl		  = &t_swapchain_vtbl;
 
 	t_surface = (gfx_surface_t){
@@ -382,6 +791,7 @@ static gfx_driver_t *t_gfx_d3d11_driver(void)
 static void t_gfx_d3d11_symbols(proc_t *proc)
 {
 	proc_setdlsym(proc, STRV("d3d11.dll"), STRV("D3D11CreateDevice"), t_gfx_d3d11_symbol((t_gfx_d3d11_symbol_t)t_D3D11CreateDevice));
+	proc_setdlsym(proc, STRV("d3dcompiler_47.dll"), STRV("D3DCompile"), t_gfx_d3d11_symbol((t_gfx_d3d11_symbol_t)t_D3DCompile));
 }
 
 static int t_gfx_d3d11_init_gfx(gfx_t *gfx, proc_t *proc)
@@ -1186,7 +1596,7 @@ TEST(gfx_d3d11_draw_triangle_2d_null_vertices)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_unsupported)
+TEST(gfx_d3d11_draw_triangle_2d_without_target)
 {
 	START;
 
@@ -1196,6 +1606,185 @@ TEST(gfx_d3d11_draw_triangle_2d_unsupported)
 	gfx_vertex_2d_t vertices[3] = {0};
 
 	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_success)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_compiles_shaders)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_d3d_compile_calls, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_creates_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_create_buffer_calls, 1);
+	EXPECT_EQ(t_create_buffer_bytes, sizeof(t_d3d11_vertex_2d_t) * 3);
+	EXPECT_EQ(t_create_buffer_bind_flags, T_D3D11_BIND_VERTEX_BUFFER);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_create_input_layout_calls, 1);
+	EXPECT_EQ(t_input_element_count, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_binds_render_target)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_om_set_render_targets_calls, 1);
+	EXPECT_EQ(t_render_target_count, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_ia_set_vertex_buffers_calls, 1);
+	EXPECT_EQ(t_vertex_buffer_start_slot, 0);
+	EXPECT_EQ(t_vertex_buffer_count, 1);
+	EXPECT_EQ(t_vertex_buffer_stride, sizeof(t_d3d11_vertex_2d_t));
+	EXPECT_EQ(t_vertex_buffer_offset, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_uses_triangle_list)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
+	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_draws_three_vertices)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_draw_calls, 1);
+	EXPECT_EQ(t_draw_vertex_count, 3);
+	EXPECT_EQ(t_draw_start_vertex, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_triangle_2d_uploads_first_vertex)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx  = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 200, 100);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 50.0f, .y = 25.0f, .r = 0.25f, .g = 0.5f, .b = 0.75f, .a = 1.0f},
+		{.x = 0.0f, .y = 0.0f},
+		{.x = 0.0f, .y = 0.0f},
+	};
+	gfx_draw_triangle_2d(&gfx, vertices);
+
+	EXPECT_EQ(t_update_subresource_calls, 1);
+	EXPECT_EQ(t_uploaded_vertices[0].x, -0.5f);
+	EXPECT_EQ(t_uploaded_vertices[0].y, 0.5f);
+	EXPECT_EQ(t_uploaded_vertices[0].r, 0.25f);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1327,7 +1916,16 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_clear_uses_red);
 	RUN(gfx_d3d11_draw_triangle_2d_null_data);
 	RUN(gfx_d3d11_draw_triangle_2d_null_vertices);
-	RUN(gfx_d3d11_draw_triangle_2d_unsupported);
+	RUN(gfx_d3d11_draw_triangle_2d_without_target);
+	RUN(gfx_d3d11_draw_triangle_2d_success);
+	RUN(gfx_d3d11_draw_triangle_2d_compiles_shaders);
+	RUN(gfx_d3d11_draw_triangle_2d_creates_buffer);
+	RUN(gfx_d3d11_draw_triangle_2d_creates_input_layout);
+	RUN(gfx_d3d11_draw_triangle_2d_binds_render_target);
+	RUN(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer);
+	RUN(gfx_d3d11_draw_triangle_2d_uses_triangle_list);
+	RUN(gfx_d3d11_draw_triangle_2d_draws_three_vertices);
+	RUN(gfx_d3d11_draw_triangle_2d_uploads_first_vertex);
 	RUN(gfx_d3d11_present_null_data);
 	RUN(gfx_d3d11_present_without_target);
 	RUN(gfx_d3d11_present_calls_surface);
