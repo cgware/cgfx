@@ -78,14 +78,14 @@ static int gfx_none_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[
 }
 
 static gfx_driver_t gfx_none = {
-	.name	     = "none",
-	.api	     = GFX_API_NONE,
-	.init	     = gfx_none_init,
-	.free	     = gfx_none_free,
-	.set_target  = gfx_none_set_target,
-	.viewport    = gfx_none_viewport,
-	.clear_color = gfx_none_clear_color,
-	.clear	     = gfx_none_clear,
+	.name		  = "none",
+	.api		  = GFX_API_NONE,
+	.init		  = gfx_none_init,
+	.free		  = gfx_none_free,
+	.set_target	  = gfx_none_set_target,
+	.viewport	  = gfx_none_viewport,
+	.clear_color	  = gfx_none_clear_color,
+	.clear		  = gfx_none_clear,
 	.draw_triangle_2d = gfx_none_draw_triangle_2d,
 };
 

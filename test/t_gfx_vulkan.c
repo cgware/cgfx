@@ -29,36 +29,36 @@ typedef u64 VkPipeline;
 typedef u32 VkColorSpaceKHR;
 
 enum {
-	VK_SUCCESS			       = 0,
-	VK_SUBOPTIMAL_KHR		       = 1000001003,
-	VK_ERROR_OUT_OF_DATE_KHR	       = -1000001004,
-	VK_QUEUE_GRAPHICS_BIT		       = 0x00000001,
-	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT    = 0x00000002,
-	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT   = 0x00000004,
-	VK_FORMAT_FEATURE_TRANSFER_DST_BIT     = 0x00004000,
-	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT = 0x00000080,
-	VK_IMAGE_LAYOUT_GENERAL		       = 1,
-	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR	       = 1000001002,
-	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE  = 6,
-	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER = 44,
-	VK_IMAGE_ASPECT_COLOR_BIT	       = 0x00000001,
-	VK_ACCESS_TRANSFER_WRITE_BIT	       = 0x00001000,
-	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT   = 0x00000100,
-	VK_ACCESS_HOST_READ_BIT		       = 0x00002000,
-	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT      = 0x00000001,
-	VK_PIPELINE_STAGE_TRANSFER_BIT	       = 0x00001000,
+	VK_SUCCESS				      = 0,
+	VK_SUBOPTIMAL_KHR			      = 1000001003,
+	VK_ERROR_OUT_OF_DATE_KHR		      = -1000001004,
+	VK_QUEUE_GRAPHICS_BIT			      = 0x00000001,
+	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT	      = 0x00000002,
+	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT	      = 0x00000004,
+	VK_FORMAT_FEATURE_TRANSFER_DST_BIT	      = 0x00004000,
+	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT	      = 0x00000080,
+	VK_IMAGE_LAYOUT_GENERAL			      = 1,
+	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR		      = 1000001002,
+	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE	      = 6,
+	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER	      = 44,
+	VK_IMAGE_ASPECT_COLOR_BIT		      = 0x00000001,
+	VK_ACCESS_TRANSFER_WRITE_BIT		      = 0x00001000,
+	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT	      = 0x00000100,
+	VK_ACCESS_HOST_READ_BIT			      = 0x00002000,
+	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT	      = 0x00000001,
+	VK_PIPELINE_STAGE_TRANSFER_BIT		      = 0x00001000,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT = 0x00000400,
-	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT   = 0x00002000,
-	VK_PIPELINE_STAGE_HOST_BIT	       = 0x00004000,
-	VK_API_VERSION_1_0		       = 1u << 22,
-	VK_FORMAT_R8G8B8A8_UNORM	       = 37,
-	VK_FORMAT_R8G8B8A8_SRGB		       = 43,
-	VK_FORMAT_B8G8R8A8_UNORM	       = 44,
-	VK_FORMAT_B8G8R8A8_SRGB		       = 50,
-	VK_IMAGE_USAGE_TRANSFER_DST_BIT	       = 0x00000002,
-	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT    = 0x00000010,
-	VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR      = 0x00000001,
-	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR      = 0,
+	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT	      = 0x00002000,
+	VK_PIPELINE_STAGE_HOST_BIT		      = 0x00004000,
+	VK_API_VERSION_1_0			      = 1u << 22,
+	VK_FORMAT_R8G8B8A8_UNORM		      = 37,
+	VK_FORMAT_R8G8B8A8_SRGB			      = 43,
+	VK_FORMAT_B8G8R8A8_UNORM		      = 44,
+	VK_FORMAT_B8G8R8A8_SRGB			      = 50,
+	VK_IMAGE_USAGE_TRANSFER_DST_BIT		      = 0x00000002,
+	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT	      = 0x00000010,
+	VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR	      = 0x00000001,
+	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR	      = 0,
 };
 
 typedef struct VkExtent2D_s {
@@ -952,7 +952,7 @@ static void t_vkCmdDraw(VkCommandBuffer buffer, u32 vertex_count, u32 instance_c
 	(void)first_vertex;
 	(void)first_instance;
 	t_vk_draw_calls++;
-	t_vk_draw_vertex_count   = vertex_count;
+	t_vk_draw_vertex_count	 = vertex_count;
 	t_vk_draw_instance_count = instance_count;
 }
 
@@ -1079,7 +1079,7 @@ static void t_vkReset(void)
 	t_vk_bind_image_memory_calls		   = 0;
 	t_vk_bind_buffer_memory_calls		   = 0;
 	t_vk_clear_color_image_calls		   = 0;
-	t_vk_flush_mapped_memory_ranges_calls   = 0;
+	t_vk_flush_mapped_memory_ranges_calls	   = 0;
 	t_vk_queue_submit_calls			   = 0;
 	t_vk_wait_for_fences_calls		   = 0;
 	t_vk_invalidate_mapped_memory_ranges_calls = 0;
@@ -1108,12 +1108,12 @@ static void t_vkReset(void)
 	t_vk_queue_present_calls		   = 0;
 	t_vk_create_image_view_calls		   = 0;
 	t_vk_destroy_image_view_calls		   = 0;
-	t_vk_create_shader_module_calls	   = 0;
+	t_vk_create_shader_module_calls		   = 0;
 	t_vk_destroy_shader_module_calls	   = 0;
 	t_vk_create_render_pass_calls		   = 0;
-	t_vk_destroy_render_pass_calls	   = 0;
+	t_vk_destroy_render_pass_calls		   = 0;
 	t_vk_create_framebuffer_calls		   = 0;
-	t_vk_destroy_framebuffer_calls	   = 0;
+	t_vk_destroy_framebuffer_calls		   = 0;
 	t_vk_create_pipeline_layout_calls	   = 0;
 	t_vk_destroy_pipeline_layout_calls	   = 0;
 	t_vk_create_graphics_pipelines_calls	   = 0;
@@ -1121,10 +1121,10 @@ static void t_vkReset(void)
 	t_vk_begin_render_pass_calls		   = 0;
 	t_vk_end_render_pass_calls		   = 0;
 	t_vk_bind_pipeline_calls		   = 0;
-	t_vk_bind_vertex_buffers_calls	   = 0;
-	t_vk_set_viewport_calls		   = 0;
+	t_vk_bind_vertex_buffers_calls		   = 0;
+	t_vk_set_viewport_calls			   = 0;
 	t_vk_set_scissor_calls			   = 0;
-	t_vk_draw_calls			   = 0;
+	t_vk_draw_calls				   = 0;
 	t_vk_physical_device_count		   = 1;
 	t_vk_queue_count			   = 1;
 	t_vk_linear_features			   = VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
@@ -1137,7 +1137,7 @@ static void t_vkReset(void)
 	t_vk_flush_range			   = (VkMappedMemoryRange){0};
 	t_vk_last_barrier			   = (VkImageMemoryBarrier){0};
 	t_vk_bound_vertex_buffer		   = 0;
-	t_vk_draw_vertex_count		   = 0;
+	t_vk_draw_vertex_count			   = 0;
 	t_vk_draw_instance_count		   = 0;
 	t_vk_vertex_first_x			   = 0;
 	t_vk_vertex_last_y			   = 0;
@@ -1164,7 +1164,7 @@ static void t_vkReset(void)
 	t_vk_create_shader_module_ret		   = VK_SUCCESS;
 	t_vk_create_render_pass_ret		   = VK_SUCCESS;
 	t_vk_create_framebuffer_ret		   = VK_SUCCESS;
-	t_vk_create_pipeline_layout_ret	   = VK_SUCCESS;
+	t_vk_create_pipeline_layout_ret		   = VK_SUCCESS;
 	t_vk_create_graphics_pipelines_ret	   = VK_SUCCESS;
 	t_vk_map_memory_ret			   = VK_SUCCESS;
 	t_vk_flush_mapped_memory_ranges_ret	   = VK_SUCCESS;
@@ -4054,8 +4054,8 @@ TEST(gfx_vulkan_draw_triangle_2d_success)
 	START;
 
 	u8 pixels[8] = {0};
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
@@ -4072,8 +4072,8 @@ TEST(gfx_vulkan_draw_triangle_2d_creates_pipeline)
 	START;
 
 	u8 pixels[8] = {0};
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
@@ -4092,8 +4092,8 @@ TEST(gfx_vulkan_draw_triangle_2d_binds_vertex_buffer)
 	START;
 
 	u8 pixels[8] = {0};
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
@@ -4112,8 +4112,8 @@ TEST(gfx_vulkan_draw_triangle_2d_draws_three_vertices)
 	START;
 
 	u8 pixels[8] = {0};
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
@@ -4132,8 +4132,8 @@ TEST(gfx_vulkan_draw_triangle_2d_passes_first_vertex_x)
 	START;
 
 	u8 pixels[8] = {0};
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {
@@ -4162,7 +4162,7 @@ TEST(gfx_vulkan_draw_triangle_2d_recreates_swapchain_draw_targets_after_resize)
 	gfx_vertex_2d_t vertices[3] = {0};
 	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
 
-	t_vk_swapchain = 12;
+	t_vk_swapchain				= 12;
 	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
 	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
 

@@ -1130,13 +1130,21 @@ TEST(gfx_opengl_init_missing_draw_symbol)
 	proc_t proc = {0};
 	proc_init(&proc, 0, 1, ALLOC_STD);
 	t_gfx_opengl_core_symbols(&proc, STRV("libGL.so.1"));
-	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glGenFramebuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenFramebuffers));
 	proc_setdlsym(
-		&proc, STRV("libGL.so.1"), STRV("glDeleteFramebuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteFramebuffers));
-	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glBindFramebuffer"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindFramebuffer));
-	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glCheckFramebufferStatus"),
+		&proc, STRV("libGL.so.1"), STRV("glGenFramebuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenFramebuffers));
+	proc_setdlsym(&proc,
+		      STRV("libGL.so.1"),
+		      STRV("glDeleteFramebuffers"),
+		      t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteFramebuffers));
+	proc_setdlsym(
+		&proc, STRV("libGL.so.1"), STRV("glBindFramebuffer"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindFramebuffer));
+	proc_setdlsym(&proc,
+		      STRV("libGL.so.1"),
+		      STRV("glCheckFramebufferStatus"),
 		      t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCheckFramebufferStatus));
-	proc_setdlsym(&proc, STRV("libGL.so.1"), STRV("glFramebufferTexture2D"),
+	proc_setdlsym(&proc,
+		      STRV("libGL.so.1"),
+		      STRV("glFramebufferTexture2D"),
 		      t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFramebufferTexture2D));
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_opengl_driver();

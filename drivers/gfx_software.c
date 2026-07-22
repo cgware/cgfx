@@ -76,7 +76,7 @@ static int gfx_software_set_target(gfx_t *gfx, const gfx_target_t *target)
 	if (!target_valid(target)) {
 		return 1;
 	}
-	render->target = *target;
+	render->target		= *target;
 	render->viewport_x	= 0;
 	render->viewport_y	= 0;
 	render->viewport_width	= target->width;
@@ -219,14 +219,14 @@ static int gfx_software_clear(gfx_t *gfx, u32 buffers)
 }
 
 static gfx_driver_t gfx_software = {
-	.name	     = "software",
-	.api	     = GFX_API_SOFTWARE,
-	.init	     = gfx_software_init,
-	.free	     = gfx_software_free,
-	.set_target  = gfx_software_set_target,
-	.viewport    = gfx_software_viewport,
-	.clear_color = gfx_software_clear_color,
-	.clear	     = gfx_software_clear,
+	.name		  = "software",
+	.api		  = GFX_API_SOFTWARE,
+	.init		  = gfx_software_init,
+	.free		  = gfx_software_free,
+	.set_target	  = gfx_software_set_target,
+	.viewport	  = gfx_software_viewport,
+	.clear_color	  = gfx_software_clear_color,
+	.clear		  = gfx_software_clear,
 	.draw_triangle_2d = gfx_software_draw_triangle_2d,
 };
 

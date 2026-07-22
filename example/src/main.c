@@ -86,16 +86,15 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to initialize gfx driver: %s", driver->name);
 		ret = 1;
 	}
-
-	if (ret == 0 && gfx_set_target(&gfx,
-				       &(gfx_target_t){
-					       .type   = GFX_TARGET_MEMORY,
-					       .format = GFX_FORMAT_RGBA8,
-					       .data   = pixels,
-					       .width  = WIDTH,
-					       .height = HEIGHT,
-					       .stride = WIDTH * 4,
-				       })) {
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= WIDTH,
+		.height = HEIGHT,
+		.stride = WIDTH * 4,
+	};
+	if (ret == 0 && gfx_set_target(&gfx, &target)) {
 		log_error("cgfx_example", "main", NULL, "failed to set memory render target");
 		ret = 1;
 	}
@@ -111,27 +110,27 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
 		ret = 1;
 	}
-	if (ret == 0 && gfx_draw_triangle_2d(&gfx,
-					      (gfx_vertex_2d_t[3]){
-						      {
-							      .x = WIDTH * 0.5f,
-							      .y = HEIGHT * 0.15f,
-							      .r = 1.0f,
-							      .a = 1.0f,
-						      },
-						      {
-							      .x = WIDTH * 0.85f,
-							      .y = HEIGHT * 0.85f,
-							      .g = 1.0f,
-							      .a = 1.0f,
-						      },
-						      {
-							      .x = WIDTH * 0.15f,
-							      .y = HEIGHT * 0.85f,
-							      .b = 1.0f,
-							      .a = 1.0f,
-						      },
-					      })) {
+	gfx_vertex_2d_t vertices[3] = {
+		{
+			.x = WIDTH * 0.5f,
+			.y = HEIGHT * 0.15f,
+			.r = 1.0f,
+			.a = 1.0f,
+		},
+		{
+			.x = WIDTH * 0.85f,
+			.y = HEIGHT * 0.85f,
+			.g = 1.0f,
+			.a = 1.0f,
+		},
+		{
+			.x = WIDTH * 0.15f,
+			.y = HEIGHT * 0.85f,
+			.b = 1.0f,
+			.a = 1.0f,
+		},
+	};
+	if (ret == 0 && gfx_draw_triangle_2d(&gfx, vertices)) {
 		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
 		ret = 1;
 	}
