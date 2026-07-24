@@ -1,4 +1,5 @@
 #include "gfx_driver.h"
+#include "gfx_shader_compiler.h"
 
 #include "log.h"
 #include "test.h"
@@ -594,10 +595,10 @@ static void t_gfx_opengl_reset(void)
 	t_gl_uniform_location_ret	       = 7;
 	t_surface_make_current_ret	       = 1;
 	t_gfx_opengl_surface		       = (gfx_surface_t){
-				  .api	  = GFX_API_OPENGL,
-				  .handle = 0x4321,
-				  .ops	  = &t_gfx_opengl_surface_ops,
-	  };
+		.api	= GFX_API_OPENGL,
+		.handle = 0x4321,
+		.ops	= &t_gfx_opengl_surface_ops,
+	};
 }
 
 static gfx_driver_t *t_gfx_opengl_driver(void)
@@ -675,13 +676,63 @@ static void t_gfx_opengl_glvnd_symbols(proc_t *proc)
 	t_gfx_opengl_gl_symbols(proc, STRV("libOpenGL.so.0"));
 }
 
-static int t_gfx_opengl_init_gfx(gfx_t *gfx, proc_t *proc)
+static int t_gfx_opengl_init_gfx_configured(gfx_t *gfx, proc_t *proc)
 {
-	t_gfx_opengl_reset();
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_opengl_symbols(proc);
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+}
+
+static int t_gfx_opengl_init_gfx(gfx_t *gfx, proc_t *proc)
+{
+	t_gfx_opengl_reset();
+	return t_gfx_opengl_init_gfx_configured(gfx, proc);
+}
+
+static int t_gfx_opengl_shader(gfx_t *gfx, gfx_shader_t *shader)
+{
+	gfx_shader_compiler_t compiler = {0};
+	gfx_shader_compiler_init(&compiler, ALLOC_STD);
+	const char *triangle_src = "vs_in 0 VertexIn {\n"
+				   "\tvec2f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "vs_out VertexOut {\n"
+				   "\tvec4f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_in FragmentIn {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_out FragmentOut {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "VertexOut vertex(VertexIn input) {\n"
+				   "\tVertexOut output;\n"
+				   "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n"
+				   "FragmentOut fragment(FragmentIn input) {\n"
+				   "\tFragmentOut output;\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n";
+	int ret = gfx_shader_init(shader, gfx, &(gfx_shader_config_t){.compiler = &compiler, .source = strv_cstr(triangle_src)}) != shader;
+	gfx_shader_compiler_free(&compiler);
+	return ret;
+}
+
+static int t_gfx_opengl_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	gfx_shader_t shader = {0};
+	if (t_gfx_opengl_shader(gfx, &shader)) {
+		return 1;
+	}
+	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_shader_free(&shader);
+	return ret;
 }
 
 static gfx_target_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height, size_t stride)
@@ -1085,8 +1136,9 @@ TEST(gfx_opengl_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -1099,7 +1151,7 @@ TEST(gfx_opengl_draw_triangle_2d_null_vertices)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, NULL), 1);
+	EXPECT_EQ(t_gfx_opengl_draw(&gfx, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1115,7 +1167,7 @@ TEST(gfx_opengl_draw_triangle_2d_without_target)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(t_gfx_opengl_draw(&gfx, vertices), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1170,7 +1222,7 @@ TEST(gfx_opengl_draw_triangle_2d_memory_binds_framebuffer)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_opengl_draw(&gfx, vertices), 0);
 	EXPECT_EQ(t_gl_framebuffer, 22);
 
 	gfx_free(&gfx);
@@ -1189,7 +1241,7 @@ TEST(gfx_opengl_draw_triangle_2d_surface_binds_default_framebuffer)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_opengl_draw(&gfx, vertices), 0);
 	EXPECT_EQ(t_gl_framebuffer, 0);
 
 	gfx_free(&gfx);
@@ -1209,7 +1261,7 @@ TEST(gfx_opengl_draw_triangle_2d_creates_shaders)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_create_shader_calls, 2);
 
@@ -1230,7 +1282,7 @@ TEST(gfx_opengl_draw_triangle_2d_compiles_shaders)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_compile_shader_calls, 2);
 
@@ -1251,7 +1303,7 @@ TEST(gfx_opengl_draw_triangle_2d_links_program)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_link_program_calls, 1);
 
@@ -1272,7 +1324,7 @@ TEST(gfx_opengl_draw_triangle_2d_creates_buffer)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_gen_buffers_calls, 1);
 
@@ -1293,7 +1345,7 @@ TEST(gfx_opengl_draw_triangle_2d_uses_program)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_use_program_calls, 2);
 
@@ -1314,7 +1366,7 @@ TEST(gfx_opengl_draw_triangle_2d_sets_target_width_uniform)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_uniform_x, 3.0f);
 
@@ -1335,7 +1387,7 @@ TEST(gfx_opengl_draw_triangle_2d_sets_target_height_uniform)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_uniform_y, 3.0f);
 
@@ -1356,7 +1408,7 @@ TEST(gfx_opengl_draw_triangle_2d_uploads_vertices)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_buffer_data_calls, 1);
 
@@ -1377,7 +1429,7 @@ TEST(gfx_opengl_draw_triangle_2d_uploads_vertex_bytes)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_buffer_data_size, 72);
 
@@ -1402,7 +1454,7 @@ TEST(gfx_opengl_draw_triangle_2d_passes_first_vertex_x)
 		{.x = 0.0f},
 	};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_buffer_first_x, 7.0f);
 
@@ -1427,7 +1479,7 @@ TEST(gfx_opengl_draw_triangle_2d_passes_last_vertex_y)
 		{.y = 8.0f},
 	};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_buffer_last_y, 8.0f);
 
@@ -1448,7 +1500,7 @@ TEST(gfx_opengl_draw_triangle_2d_sets_vertex_attributes)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_vertex_attrib_pointer_calls, 2);
 
@@ -1469,7 +1521,7 @@ TEST(gfx_opengl_draw_triangle_2d_draws_arrays)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_draw_arrays_calls, 1);
 
@@ -1490,7 +1542,7 @@ TEST(gfx_opengl_draw_triangle_2d_uses_triangles)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_draw_mode, 4);
 
@@ -1511,7 +1563,7 @@ TEST(gfx_opengl_draw_triangle_2d_draws_three_vertices)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_draw_count, 3);
 
@@ -1531,12 +1583,15 @@ TEST(gfx_opengl_draw_triangle_2d_reuses_program)
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 0);
 
-	gfx_draw_triangle_2d(&gfx, vertices);
-	gfx_draw_triangle_2d(&gfx, vertices);
+	gfx_draw_triangle_2d(&shader, vertices);
+	gfx_draw_triangle_2d(&shader, vertices);
 
 	EXPECT_EQ(t_gl_create_program_calls, 1);
 
+	gfx_shader_free(&shader);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -1553,7 +1608,7 @@ TEST(gfx_opengl_draw_triangle_2d_free_deletes_buffer)
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	gfx_free(&gfx);
 
@@ -1574,7 +1629,7 @@ TEST(gfx_opengl_draw_triangle_2d_free_deletes_program)
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	gfx_free(&gfx);
 
@@ -1588,16 +1643,13 @@ TEST(gfx_opengl_draw_triangle_2d_create_shader_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_create_shader_ret	    = 0;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_create_shader_ret = 0;
+	proc_t proc	       = {0};
+	gfx_t gfx	       = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1608,16 +1660,13 @@ TEST(gfx_opengl_draw_triangle_2d_vertex_compile_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_shader_fail_call	    = 1;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_shader_fail_call = 1;
+	proc_t proc	      = {0};
+	gfx_t gfx	      = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1628,16 +1677,13 @@ TEST(gfx_opengl_draw_triangle_2d_fragment_compile_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_shader_fail_call	    = 2;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_shader_fail_call = 2;
+	proc_t proc	      = {0};
+	gfx_t gfx	      = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1648,16 +1694,13 @@ TEST(gfx_opengl_draw_triangle_2d_create_program_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_create_program_ret	    = 0;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_create_program_ret = 0;
+	proc_t proc		= {0};
+	gfx_t gfx		= {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1668,16 +1711,13 @@ TEST(gfx_opengl_draw_triangle_2d_link_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_program_status	    = 0;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_program_status = 0;
+	proc_t proc	    = {0};
+	gfx_t gfx	    = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1688,17 +1728,20 @@ TEST(gfx_opengl_draw_triangle_2d_create_buffer_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_reset();
+	t_gl_gen_buffer_ret = 0;
+	proc_t proc	    = {0};
+	gfx_t gfx	    = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
 	u8 pixels[4]	    = {0};
 	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 	gfx_set_target(&gfx, &target);
-	t_gl_gen_buffer_ret	    = 0;
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 0);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
-
+	gfx_shader_free(&shader);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -1708,16 +1751,13 @@ TEST(gfx_opengl_draw_triangle_2d_uniform_failure)
 {
 	START;
 
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_uniform_location_ret   = -1;
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	t_gfx_opengl_reset();
+	t_gl_uniform_location_ret = -1;
+	proc_t proc		  = {0};
+	gfx_t gfx		  = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1736,7 +1776,7 @@ TEST(gfx_opengl_draw_triangle_2d_memory_reads_pixels)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_opengl_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_gl_read_pixels_calls, 1);
 
@@ -2542,8 +2582,8 @@ TEST(gfx_opengl_set_target_none_clears_surface_current)
 	gfx_set_target(&gfx, &surface_target);
 	t_surface_clear_current_calls = 0;
 	gfx_target_t target	      = {
-			  .type = GFX_TARGET_NONE,
-	  };
+		.type = GFX_TARGET_NONE,
+	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_surface_clear_current_calls, 1);

@@ -68,12 +68,22 @@ static int gfx_none_clear(gfx_t *gfx, u32 buffers)
 	return 0;
 }
 
-static int gfx_none_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static int gfx_none_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
-	if (gfx == NULL || vertices == NULL) {
-		return 1;
-	}
+	(void)shader;
+	(void)config;
+	return 0;
+}
 
+static void gfx_none_shader_free(gfx_shader_t *shader)
+{
+	(void)shader;
+}
+
+static int gfx_none_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+{
+	(void)shader;
+	(void)vertices;
 	return 0;
 }
 
@@ -86,6 +96,8 @@ static gfx_driver_t gfx_none = {
 	.viewport	  = gfx_none_viewport,
 	.clear_color	  = gfx_none_clear_color,
 	.clear		  = gfx_none_clear,
+	.shader_init	  = gfx_none_shader_init,
+	.shader_free	  = gfx_none_shader_free,
 	.draw_triangle_2d = gfx_none_draw_triangle_2d,
 };
 

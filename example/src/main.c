@@ -71,10 +71,11 @@ int main(void)
 	};
 
 	static u8 pixels[WIDTH * HEIGHT * 4];
-	fs_t fs		   = {0};
-	gfx_t gfx	   = {0};
-	int ret		   = 0;
-	strv_t driver_name = STRV("software");
+	fs_t fs		    = {0};
+	gfx_t gfx	    = {0};
+	gfx_shader_t shader = {0};
+	int ret		    = 0;
+	strv_t driver_name  = STRV("software");
 
 	fs_init(&fs, 0, 0, ALLOC_STD);
 	gfx_driver_t *driver = gfx_driver_find(driver_name);
@@ -84,6 +85,37 @@ int main(void)
 	}
 	if (ret == 0 && gfx_init(&gfx, driver, &(gfx_config_t){.alloc = ALLOC_STD}) == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to initialize gfx driver: %s", driver->name);
+		ret = 1;
+	}
+
+	const char *triangle_src = "vs_in 0 VertexIn {\n"
+				   "\tvec2f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "vs_out VertexOut {\n"
+				   "\tvec4f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_in FragmentIn {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_out FragmentOut {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "VertexOut vertex(VertexIn input) {\n"
+				   "\tVertexOut output;\n"
+				   "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n"
+				   "FragmentOut fragment(FragmentIn input) {\n"
+				   "\tFragmentOut output;\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n";
+
+	if (ret == 0 && gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = strv_cstr(triangle_src)}) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize triangle shader");
 		ret = 1;
 	}
 	gfx_target_t target = {
@@ -130,7 +162,7 @@ int main(void)
 			.a = 1.0f,
 		},
 	};
-	if (ret == 0 && gfx_draw_triangle_2d(&gfx, vertices)) {
+	if (ret == 0 && gfx_draw_triangle_2d(&shader, vertices)) {
 		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
 		ret = 1;
 	}
@@ -144,6 +176,7 @@ int main(void)
 		ret = 1;
 	}
 
+	gfx_shader_free(&shader);
 	gfx_free(&gfx);
 	fs_free(&fs);
 	return ret;

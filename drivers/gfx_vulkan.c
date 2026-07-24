@@ -1,4 +1,5 @@
 #include "gfx_driver.h"
+#include "gfx_shader_compiler.h"
 
 #include "buf.h"
 #include "log.h"
@@ -750,8 +751,6 @@ typedef struct gfx_vulkan_s {
 	VkImageView image_view;
 	VkRenderPass render_pass;
 	VkFramebuffer framebuffer;
-	VkPipelineLayout pipeline_layout;
-	VkPipeline pipeline;
 	VkSwapchainKHR swapchain;
 	VkImage swapchain_images[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
 	VkImageView swapchain_image_views[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
@@ -835,6 +834,11 @@ typedef struct gfx_vulkan_s {
 	PFN_vkAcquireNextImageKHR AcquireNextImageKHR;
 	PFN_vkQueuePresentKHR QueuePresentKHR;
 } gfx_vulkan_t;
+
+typedef struct gfx_vulkan_shader_s {
+	VkPipelineLayout pipeline_layout;
+	VkPipeline pipeline;
+} gfx_vulkan_shader_t;
 
 static int load_lib_symbol(gfx_vulkan_t *vulkan, void **sym, strv_t name)
 {
@@ -970,22 +974,10 @@ static void gfx_vulkan_swapchain_draw_targets_free(gfx_vulkan_t *vulkan)
 	}
 }
 
-static void gfx_vulkan_draw_free(gfx_vulkan_t *vulkan)
+static void gfx_vulkan_draw_resources_free(gfx_vulkan_t *vulkan)
 {
 	gfx_vulkan_draw_target_free(vulkan);
 	gfx_vulkan_swapchain_draw_targets_free(vulkan);
-	if (vulkan->pipeline != 0) {
-		vulkan->DestroyPipeline(vulkan->device, vulkan->pipeline, NULL);
-		vulkan->pipeline = 0;
-	}
-	if (vulkan->pipeline_layout != 0) {
-		vulkan->DestroyPipelineLayout(vulkan->device, vulkan->pipeline_layout, NULL);
-		vulkan->pipeline_layout = 0;
-	}
-	if (vulkan->render_pass != 0) {
-		vulkan->DestroyRenderPass(vulkan->device, vulkan->render_pass, NULL);
-		vulkan->render_pass = 0;
-	}
 	if (vulkan->vertex_buffer != 0) {
 		vulkan->DestroyBuffer(vulkan->device, vulkan->vertex_buffer, NULL);
 		vulkan->vertex_buffer = 0;
@@ -996,6 +988,15 @@ static void gfx_vulkan_draw_free(gfx_vulkan_t *vulkan)
 	}
 	vulkan->vertex_memory_size     = 0;
 	vulkan->vertex_memory_coherent = 0;
+}
+
+static void gfx_vulkan_draw_free(gfx_vulkan_t *vulkan)
+{
+	gfx_vulkan_draw_resources_free(vulkan);
+	if (vulkan->render_pass != 0) {
+		vulkan->DestroyRenderPass(vulkan->device, vulkan->render_pass, NULL);
+		vulkan->render_pass = 0;
+	}
 }
 
 static void gfx_vulkan_target_free(gfx_vulkan_t *vulkan)
@@ -1719,14 +1720,14 @@ static int gfx_vulkan_set_target(gfx_t *gfx, const gfx_target_t *target)
 
 	gfx_vulkan_t *vulkan = gfx->data;
 	if (target->type == GFX_TARGET_NONE) {
-		gfx_vulkan_draw_free(vulkan);
+		gfx_vulkan_draw_resources_free(vulkan);
 		gfx_vulkan_target_free(vulkan);
 		return 0;
 	}
 	if (!target_valid(target)) {
 		return 1;
 	}
-	gfx_vulkan_draw_free(vulkan);
+	gfx_vulkan_draw_resources_free(vulkan);
 	if (target->type == GFX_TARGET_MEMORY) {
 		gfx_vulkan_target_free(vulkan);
 		return gfx_vulkan_set_memory_target(vulkan, target);
@@ -2031,7 +2032,7 @@ static int gfx_vulkan_create_vertex_buffer(gfx_vulkan_t *vulkan)
 
 	u32 memory_type = 0;
 	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vulkan->vertex_memory_coherent)) {
-		gfx_vulkan_draw_free(vulkan);
+		gfx_vulkan_draw_resources_free(vulkan);
 		return 1;
 	}
 
@@ -2041,13 +2042,13 @@ static int gfx_vulkan_create_vertex_buffer(gfx_vulkan_t *vulkan)
 		.memoryTypeIndex = memory_type,
 	};
 	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vulkan->vertex_memory))) {
-		gfx_vulkan_draw_free(vulkan);
+		gfx_vulkan_draw_resources_free(vulkan);
 		return 1;
 	}
 	vulkan->vertex_memory_size = req.size;
 
 	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, vulkan->vertex_buffer, vulkan->vertex_memory, 0))) {
-		gfx_vulkan_draw_free(vulkan);
+		gfx_vulkan_draw_resources_free(vulkan);
 		return 1;
 	}
 
@@ -2155,6 +2156,7 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, VkImageView view,
 	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, framebuffer));
 }
 
+#if 0
 enum {
 	GFX_VULKAN_SPV_MAGIC	      = 0x07230203,
 	GFX_VULKAN_SPV_VERSION	      = 0x00010000,
@@ -2572,56 +2574,75 @@ static int gfx_vulkan_spv_fragment(buf_t *code)
 	}
 	return 0;
 }
+#endif
 
-static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
+static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
-	if (vulkan->pipeline != 0) {
-		return 0;
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan = shader->gfx->data;
+	if (config->compiler == NULL) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to initialize Vulkan shader: shader compiler is unavailable");
+		return 1;
 	}
 	if (gfx_vulkan_create_render_pass(vulkan)) {
 		return 1;
 	}
 
-	buf_t vertex_code   = {0};
-	buf_t fragment_code = {0};
-	if (gfx_vulkan_spv_vertex(&vertex_code) || gfx_vulkan_spv_fragment(&fragment_code)) {
-		buf_free(&vertex_code);
-		buf_free(&fragment_code);
+	gfx_shader_code_t vertex_shader	  = {0};
+	gfx_shader_code_t fragment_shader = {0};
+	if (gfx_shader_compiler_transpile(
+		    config->compiler, config->source, GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &vertex_shader) ||
+	    gfx_shader_compiler_transpile(
+		    config->compiler, config->source, GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_SPIRV, &fragment_shader)) {
+		gfx_shader_code_free(&vertex_shader);
+		gfx_shader_code_free(&fragment_shader);
 		return 1;
 	}
 
 	VkShaderModuleCreateInfo vertex_create = {
 		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = vertex_code.used,
-		.pCode	  = vertex_code.data,
+		.codeSize = vertex_shader.code.used,
+		.pCode	  = vertex_shader.code.data,
 	};
 	VkShaderModule vertex = 0;
 	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &vertex_create, NULL, &vertex))) {
-		buf_free(&fragment_code);
-		buf_free(&vertex_code);
+		gfx_shader_code_free(&fragment_shader);
+		gfx_shader_code_free(&vertex_shader);
 		return 1;
 	}
 	VkShaderModuleCreateInfo fragment_create = {
 		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = fragment_code.used,
-		.pCode	  = fragment_code.data,
+		.codeSize = fragment_shader.code.used,
+		.pCode	  = fragment_shader.code.data,
 	};
 	VkShaderModule fragment = 0;
 	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &fragment_create, NULL, &fragment))) {
 		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
-		buf_free(&fragment_code);
-		buf_free(&vertex_code);
+		gfx_shader_code_free(&fragment_shader);
+		gfx_shader_code_free(&vertex_shader);
 		return 1;
 	}
-	buf_free(&fragment_code);
-	buf_free(&vertex_code);
+	gfx_shader_code_free(&fragment_shader);
+	gfx_shader_code_free(&vertex_shader);
+
+	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&vulkan->alloc, sizeof(*vk_shader));
+	if (vk_shader == NULL) {
+		vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
+		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+		return 1;
+	}
+	*vk_shader = (gfx_vulkan_shader_t){0};
 
 	VkPipelineLayoutCreateInfo layout = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 	};
-	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vulkan->pipeline_layout))) {
+	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_shader->pipeline_layout))) {
 		vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
 		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+		alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
 		return 1;
 	}
 
@@ -2706,17 +2727,40 @@ static int gfx_vulkan_create_pipeline(gfx_vulkan_t *vulkan)
 		.pMultisampleState   = &multisample,
 		.pColorBlendState    = &blend,
 		.pDynamicState	     = &dynamic,
-		.layout		     = vulkan->pipeline_layout,
+		.layout		     = vk_shader->pipeline_layout,
 		.renderPass	     = vulkan->render_pass,
 	};
-	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vulkan->pipeline));
+	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_shader->pipeline));
 	vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
 	vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
-	return failed;
+	if (failed) {
+		vulkan->DestroyPipelineLayout(vulkan->device, vk_shader->pipeline_layout, NULL);
+		alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+		return 1;
+	}
+	shader->data = vk_shader;
+	return 0;
+}
+
+static void gfx_vulkan_shader_free(gfx_shader_t *shader)
+{
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
+		return;
+	}
+	gfx_vulkan_t *vulkan	       = shader->gfx->data;
+	gfx_vulkan_shader_t *vk_shader = shader->data;
+	if (vk_shader->pipeline != 0) {
+		vulkan->DestroyPipeline(vulkan->device, vk_shader->pipeline, NULL);
+	}
+	if (vk_shader->pipeline_layout != 0) {
+		vulkan->DestroyPipelineLayout(vulkan->device, vk_shader->pipeline_layout, NULL);
+	}
+	alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+	shader->data = NULL;
 }
 
 static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view, VkFramebuffer *framebuffer, u32 old_layout,
-				  u32 final_layout)
+				  u32 final_layout, const gfx_vulkan_shader_t *shader)
 {
 	if (*view == 0 && gfx_vulkan_create_image_view(vulkan, image, view)) {
 		return 1;
@@ -2796,7 +2840,7 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	};
 	VkDeviceSize offset = 0;
 	vulkan->CmdBeginRenderPass(vulkan->command_buffer, &render, VK_SUBPASS_CONTENTS_INLINE);
-	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan->pipeline);
+	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline);
 	vulkan->CmdBindVertexBuffers(vulkan->command_buffer, 0, 1, &vulkan->vertex_buffer, &offset);
 	vulkan->CmdSetViewport(vulkan->command_buffer, 0, 1, &viewport);
 	vulkan->CmdSetScissor(vulkan->command_buffer, 0, 1, &scissor);
@@ -2826,17 +2870,18 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	       !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull));
 }
 
-static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static int gfx_vulkan_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
 {
-	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan = gfx->data;
+	gfx_vulkan_t *vulkan	       = shader->gfx->data;
+	gfx_vulkan_shader_t *vk_shader = shader->data;
 	if (vulkan->target.type != GFX_TARGET_MEMORY && vulkan->target.type != GFX_TARGET_SURFACE) {
 		return 1;
 	}
-	if (gfx_vulkan_create_vertex_buffer(vulkan) || gfx_vulkan_upload_vertices(vulkan, vertices) || gfx_vulkan_create_pipeline(vulkan)) {
+	if (gfx_vulkan_create_vertex_buffer(vulkan) || gfx_vulkan_upload_vertices(vulkan, vertices)) {
 		return 1;
 	}
 	if (vulkan->target.type == GFX_TARGET_MEMORY) {
@@ -2845,7 +2890,8 @@ static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertice
 					   &vulkan->image_view,
 					   &vulkan->framebuffer,
 					   VK_IMAGE_LAYOUT_UNDEFINED,
-					   VK_IMAGE_LAYOUT_GENERAL)) {
+					   VK_IMAGE_LAYOUT_GENERAL,
+					   vk_shader)) {
 			return 1;
 		}
 		return gfx_vulkan_copy_memory(vulkan);
@@ -2861,7 +2907,8 @@ static int gfx_vulkan_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertice
 					   &vulkan->swapchain_image_views[i],
 					   &vulkan->swapchain_framebuffers[i],
 					   old_layout,
-					   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)) {
+					   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+					   vk_shader)) {
 			return 1;
 		}
 		vulkan->swapchain_image_layouts[i] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -2910,6 +2957,8 @@ static gfx_driver_t gfx_vulkan = {
 	.viewport	  = gfx_vulkan_viewport,
 	.clear_color	  = gfx_vulkan_clear_color,
 	.clear		  = gfx_vulkan_clear,
+	.shader_init	  = gfx_vulkan_shader_init,
+	.shader_free	  = gfx_vulkan_shader_free,
 	.draw_triangle_2d = gfx_vulkan_draw_triangle_2d,
 	.present	  = gfx_vulkan_present,
 };

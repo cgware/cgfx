@@ -10,8 +10,6 @@ gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *
 
 	gfx->drv = drv;
 	if (gfx->drv->init(gfx, config)) {
-		gfx->drv  = NULL;
-		gfx->data = NULL;
 		return NULL;
 	}
 
@@ -20,15 +18,11 @@ gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *
 
 void gfx_free(gfx_t *gfx)
 {
-	if (gfx == NULL || gfx->drv == NULL) {
+	if (gfx == NULL || gfx->drv == NULL || gfx->drv->free == NULL) {
 		return;
 	}
 
-	if (gfx->drv->free != NULL) {
-		gfx->drv->free(gfx);
-	}
-	gfx->drv  = NULL;
-	gfx->data = NULL;
+	gfx->drv->free(gfx);
 }
 
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc)
@@ -90,15 +84,6 @@ int gfx_clear(gfx_t *gfx, u32 buffers)
 	}
 
 	return gfx->drv->clear(gfx, buffers);
-}
-
-int gfx_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
-{
-	if (gfx == NULL || gfx->drv == NULL || gfx->drv->draw_triangle_2d == NULL || vertices == NULL) {
-		return 1;
-	}
-
-	return gfx->drv->draw_triangle_2d(gfx, vertices);
 }
 
 int gfx_present(gfx_t *gfx)

@@ -83,14 +83,14 @@ typedef struct ID3D11DeviceVTable_s {
 	HRESULT (*CreateUnorderedAccessView)(void);
 	HRESULT (*CreateRenderTargetView)(ID3D11Device *self, void *resource, const void *desc, ID3D11RenderTargetView **view);
 	HRESULT (*CreateDepthStencilView)(void);
-	HRESULT (*CreateInputLayout)
+	HRESULT(*CreateInputLayout)
 	(ID3D11Device *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count, const void *shader_bytecode,
 	 size_t bytecode_length, ID3D11InputLayout **input_layout);
-	HRESULT (*CreateVertexShader)
+	HRESULT(*CreateVertexShader)
 	(ID3D11Device *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage, ID3D11VertexShader **shader);
 	HRESULT (*CreateGeometryShader)(void);
 	HRESULT (*CreateGeometryShaderWithStreamOutput)(void);
-	HRESULT (*CreatePixelShader)
+	HRESULT(*CreatePixelShader)
 	(ID3D11Device *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage, ID3D11PixelShader **shader);
 } ID3D11DeviceVTable;
 
@@ -238,14 +238,17 @@ typedef struct gfx_d3d11_s {
 	ID3D11DeviceContext *context;
 	IDXGISwapChain *swapchain;
 	ID3D11RenderTargetView *render_target;
-	ID3D11InputLayout *triangle_input_layout;
-	ID3D11VertexShader *triangle_vertex_shader;
-	ID3D11PixelShader *triangle_pixel_shader;
 	ID3D11Buffer *triangle_buffer;
 	float color[4];
 	PFN_D3D11CreateDevice D3D11CreateDevice;
 	PFN_D3DCompile D3DCompile;
 } gfx_d3d11_t;
+
+typedef struct gfx_d3d11_shader_s {
+	ID3D11InputLayout *input_layout;
+	ID3D11VertexShader *vertex_shader;
+	ID3D11PixelShader *pixel_shader;
+} gfx_d3d11_shader_t;
 
 static int hresult_ok(HRESULT hr)
 {
@@ -273,19 +276,7 @@ static void gfx_d3d11_draw_free(gfx_d3d11_t *d3d11)
 	if (d3d11->triangle_buffer != NULL) {
 		d3d11_release(d3d11->triangle_buffer);
 	}
-	if (d3d11->triangle_pixel_shader != NULL) {
-		d3d11_release(d3d11->triangle_pixel_shader);
-	}
-	if (d3d11->triangle_vertex_shader != NULL) {
-		d3d11_release(d3d11->triangle_vertex_shader);
-	}
-	if (d3d11->triangle_input_layout != NULL) {
-		d3d11_release(d3d11->triangle_input_layout);
-	}
-	d3d11->triangle_buffer	      = NULL;
-	d3d11->triangle_pixel_shader  = NULL;
-	d3d11->triangle_vertex_shader = NULL;
-	d3d11->triangle_input_layout  = NULL;
+	d3d11->triangle_buffer = NULL;
 }
 
 static int gfx_d3d11_init_free(gfx_t *gfx, gfx_d3d11_t *d3d11)
@@ -588,66 +579,111 @@ static int gfx_d3d11_compile_shader(gfx_d3d11_t *d3d11, const char *source, cons
 
 static int gfx_d3d11_create_draw_state(gfx_d3d11_t *d3d11)
 {
-	static const char *vertex_source = "struct VSIn {\n"
-					   "    float2 position : POSITION;\n"
-					   "    float4 color : COLOR0;\n"
-					   "};\n"
-					   "struct VSOut {\n"
-					   "    float4 position : SV_POSITION;\n"
-					   "    float4 color : COLOR0;\n"
-					   "};\n"
-					   "VSOut main(VSIn input) {\n"
-					   "    VSOut output;\n"
-					   "    output.position = float4(input.position, 0.0, 1.0);\n"
-					   "    output.color = input.color;\n"
-					   "    return output;\n"
-					   "}\n";
-	static const char *pixel_source	 = "struct PSIn {\n"
-					   "    float4 position : SV_POSITION;\n"
-					   "    float4 color : COLOR0;\n"
-					   "};\n"
-					   "float4 main(PSIn input) : SV_TARGET {\n"
-					   "    return input.color;\n"
-					   "}\n";
-
-	if (d3d11->triangle_input_layout != NULL && d3d11->triangle_vertex_shader != NULL && d3d11->triangle_pixel_shader != NULL &&
-	    d3d11->triangle_buffer != NULL) {
+	if (d3d11->triangle_buffer != NULL) {
 		return 0;
+	}
+
+	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
+	if (device->CreateBuffer == NULL) {
+		return 1;
+	}
+
+	D3D11_BUFFER_DESC buffer = {
+		.ByteWidth = (UINT)(sizeof(gfx_d3d11_vertex_2d_t) * 3),
+		.Usage	   = D3D11_USAGE_DEFAULT,
+		.BindFlags = D3D11_BIND_VERTEX_BUFFER,
+	};
+	if (!hresult_ok(device->CreateBuffer(d3d11->device, &buffer, NULL, &d3d11->triangle_buffer)) || d3d11->triangle_buffer == NULL) {
+		gfx_d3d11_draw_free(d3d11);
+		return 1;
+	}
+	return 0;
+}
+
+static void gfx_d3d11_shader_data_free(gfx_d3d11_t *d3d11, gfx_d3d11_shader_t *shader)
+{
+	if (shader == NULL) {
+		return;
+	}
+	if (shader->pixel_shader != NULL) {
+		d3d11_release(shader->pixel_shader);
+	}
+	if (shader->vertex_shader != NULL) {
+		d3d11_release(shader->vertex_shader);
+	}
+	if (shader->input_layout != NULL) {
+		d3d11_release(shader->input_layout);
+	}
+	alloc_free(&d3d11->alloc, shader, sizeof(*shader));
+}
+
+static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
+{
+	if (shader == NULL || shader->gfx || shader->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11 = shader->gfx->data;
+	if (config->compiler == NULL) {
+		log_error("cgfx", "gfx_d3d11", NULL, "failed to initialize D3D11 shader: shader compiler is unavailable");
+		return 1;
 	}
 	if (gfx_d3d11_load_compiler(d3d11)) {
 		return 1;
 	}
-
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
-	if (device->CreateInputLayout == NULL || device->CreateVertexShader == NULL || device->CreatePixelShader == NULL ||
-	    device->CreateBuffer == NULL) {
+	if (device->CreateInputLayout == NULL || device->CreateVertexShader == NULL || device->CreatePixelShader == NULL) {
+		return 1;
+	}
+
+	gfx_shader_code_t vertex   = {0};
+	gfx_shader_code_t fragment = {0};
+	if (gfx_shader_compiler_transpile(config->compiler, config->source, GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &vertex) ||
+	    gfx_shader_compiler_transpile(
+		    config->compiler, config->source, GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &fragment)) {
+		gfx_shader_code_free(&fragment);
+		gfx_shader_code_free(&vertex);
 		return 1;
 	}
 
 	ID3DBlob *vertex_code = NULL;
 	ID3DBlob *pixel_code  = NULL;
-	if (gfx_d3d11_compile_shader(d3d11, vertex_source, "vs_4_0", &vertex_code)) {
+	if (gfx_d3d11_compile_shader(d3d11, vertex.text, "vs_4_0", &vertex_code)) {
+		gfx_shader_code_free(&fragment);
+		gfx_shader_code_free(&vertex);
 		return 1;
 	}
-	if (gfx_d3d11_compile_shader(d3d11, pixel_source, "ps_4_0", &pixel_code)) {
+	if (gfx_d3d11_compile_shader(d3d11, fragment.text, "ps_4_0", &pixel_code)) {
 		d3d11_release(vertex_code);
+		gfx_shader_code_free(&fragment);
+		gfx_shader_code_free(&vertex);
 		return 1;
 	}
+	gfx_shader_code_free(&fragment);
+	gfx_shader_code_free(&vertex);
 
-	HRESULT hr = device->CreateVertexShader(
-		d3d11->device, d3d11_blob_data(vertex_code), d3d11_blob_size(vertex_code), NULL, &d3d11->triangle_vertex_shader);
-	if (!hresult_ok(hr) || d3d11->triangle_vertex_shader == NULL) {
+	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&d3d11->alloc, sizeof(*d3d_shader));
+	if (d3d_shader == NULL) {
 		d3d11_release(pixel_code);
 		d3d11_release(vertex_code);
-		gfx_d3d11_draw_free(d3d11);
+		return 1;
+	}
+	*d3d_shader = (gfx_d3d11_shader_t){0};
+
+	HRESULT hr = device->CreateVertexShader(
+		d3d11->device, d3d11_blob_data(vertex_code), d3d11_blob_size(vertex_code), NULL, &d3d_shader->vertex_shader);
+	if (!hresult_ok(hr) || d3d_shader->vertex_shader == NULL) {
+		d3d11_release(pixel_code);
+		d3d11_release(vertex_code);
+		gfx_d3d11_shader_data_free(d3d11, d3d_shader);
 		return 1;
 	}
 	hr = device->CreatePixelShader(
-		d3d11->device, d3d11_blob_data(pixel_code), d3d11_blob_size(pixel_code), NULL, &d3d11->triangle_pixel_shader);
+		d3d11->device, d3d11_blob_data(pixel_code), d3d11_blob_size(pixel_code), NULL, &d3d_shader->pixel_shader);
 	d3d11_release(pixel_code);
-	if (!hresult_ok(hr) || d3d11->triangle_pixel_shader == NULL) {
+	if (!hresult_ok(hr) || d3d_shader->pixel_shader == NULL) {
 		d3d11_release(vertex_code);
-		gfx_d3d11_draw_free(d3d11);
+		gfx_d3d11_shader_data_free(d3d11, d3d_shader);
 		return 1;
 	}
 
@@ -665,33 +701,33 @@ static int gfx_d3d11_create_draw_state(gfx_d3d11_t *d3d11)
 		},
 	};
 	hr = device->CreateInputLayout(
-		d3d11->device, elements, 2, d3d11_blob_data(vertex_code), d3d11_blob_size(vertex_code), &d3d11->triangle_input_layout);
+		d3d11->device, elements, 2, d3d11_blob_data(vertex_code), d3d11_blob_size(vertex_code), &d3d_shader->input_layout);
 	d3d11_release(vertex_code);
-	if (!hresult_ok(hr) || d3d11->triangle_input_layout == NULL) {
-		gfx_d3d11_draw_free(d3d11);
+	if (!hresult_ok(hr) || d3d_shader->input_layout == NULL) {
+		gfx_d3d11_shader_data_free(d3d11, d3d_shader);
 		return 1;
 	}
 
-	D3D11_BUFFER_DESC buffer = {
-		.ByteWidth = (UINT)(sizeof(gfx_d3d11_vertex_2d_t) * 3),
-		.Usage	   = D3D11_USAGE_DEFAULT,
-		.BindFlags = D3D11_BIND_VERTEX_BUFFER,
-	};
-	if (!hresult_ok(device->CreateBuffer(d3d11->device, &buffer, NULL, &d3d11->triangle_buffer)) || d3d11->triangle_buffer == NULL) {
-		gfx_d3d11_draw_free(d3d11);
-		return 1;
-	}
-
+	shader->data = d3d_shader;
 	return 0;
 }
 
-static int gfx_d3d11_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static void gfx_d3d11_shader_free(gfx_shader_t *shader)
 {
-	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+	if (shader == NULL || shader->gfx == NULL) {
+		return;
+	}
+	gfx_d3d11_shader_data_free(shader->gfx->data, shader->data);
+}
+
+static int gfx_d3d11_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+{
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
 		return 1;
 	}
 
-	gfx_d3d11_t *d3d11 = gfx->data;
+	gfx_d3d11_t *d3d11	       = shader->gfx->data;
+	gfx_d3d11_shader_t *d3d_shader = shader->data;
 	if (d3d11->target.type != GFX_TARGET_SURFACE || d3d11->render_target == NULL || d3d11->target.width == 0 ||
 	    d3d11->target.height == 0) {
 		return 1;
@@ -725,11 +761,11 @@ static int gfx_d3d11_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices
 	UINT offsets[1]			 = {0};
 
 	context->OMSetRenderTargets(d3d11->context, 1, views, NULL);
-	context->IASetInputLayout(d3d11->context, d3d11->triangle_input_layout);
+	context->IASetInputLayout(d3d11->context, d3d_shader->input_layout);
 	context->IASetVertexBuffers(d3d11->context, 0, 1, buffers, strides, offsets);
 	context->IASetPrimitiveTopology(d3d11->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	context->VSSetShader(d3d11->context, d3d11->triangle_vertex_shader, NULL, 0);
-	context->PSSetShader(d3d11->context, d3d11->triangle_pixel_shader, NULL, 0);
+	context->VSSetShader(d3d11->context, d3d_shader->vertex_shader, NULL, 0);
+	context->PSSetShader(d3d11->context, d3d_shader->pixel_shader, NULL, 0);
 	context->UpdateSubresource(d3d11->context, d3d11->triangle_buffer, 0, NULL, d3d_vertices, 0, 0);
 	context->Draw(d3d11->context, 3, 0);
 	return 0;
@@ -760,6 +796,8 @@ static gfx_driver_t gfx_d3d11 = {
 	.viewport	  = gfx_d3d11_viewport,
 	.clear_color	  = gfx_d3d11_clear_color,
 	.clear		  = gfx_d3d11_clear,
+	.shader_init	  = gfx_d3d11_shader_init,
+	.shader_free	  = gfx_d3d11_shader_free,
 	.draw_triangle_2d = gfx_d3d11_draw_triangle_2d,
 	.present	  = gfx_d3d11_present,
 };

@@ -1,4 +1,5 @@
 #include "gfx_driver.h"
+#include "gfx_shader_compiler.h"
 
 #include "log.h"
 #include "test.h"
@@ -101,15 +102,15 @@ typedef struct t_d3d11_device_vtbl_s {
 	HRESULT (*CreateUnorderedAccessView)(void);
 	HRESULT (*CreateRenderTargetView)(t_d3d11_device_t *self, void *resource, const void *desc, t_d3d11_view_t **view);
 	HRESULT (*CreateDepthStencilView)(void);
-	HRESULT (*CreateInputLayout)
+	HRESULT(*CreateInputLayout)
 	(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count, const void *shader_bytecode,
 	 size_t bytecode_length, t_d3d11_input_layout_t **input_layout);
-	HRESULT (*CreateVertexShader)
+	HRESULT(*CreateVertexShader)
 	(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
 	 t_d3d11_vertex_shader_t **shader);
 	HRESULT (*CreateGeometryShader)(void);
 	HRESULT (*CreateGeometryShaderWithStreamOutput)(void);
-	HRESULT (*CreatePixelShader)
+	HRESULT(*CreatePixelShader)
 	(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage, t_d3d11_pixel_shader_t **shader);
 } t_d3d11_device_vtbl_t;
 
@@ -805,6 +806,51 @@ static int t_gfx_d3d11_init_gfx(gfx_t *gfx, proc_t *proc)
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_d3d11_symbols(proc);
 	return gfx_init(gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+}
+
+static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader)
+{
+	gfx_shader_compiler_t compiler = {0};
+	gfx_shader_compiler_init(&compiler, ALLOC_STD);
+	const char *triangle_src = "vs_in 0 VertexIn {\n"
+				   "\tvec2f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "vs_out VertexOut {\n"
+				   "\tvec4f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_in FragmentIn {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_out FragmentOut {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "VertexOut vertex(VertexIn input) {\n"
+				   "\tVertexOut output;\n"
+				   "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n"
+				   "FragmentOut fragment(FragmentIn input) {\n"
+				   "\tFragmentOut output;\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n";
+	int ret = gfx_shader_init(shader, gfx, &(gfx_shader_config_t){.compiler = &compiler, .source = strv_cstr(triangle_src)}) != shader;
+	gfx_shader_compiler_free(&compiler);
+	return ret;
+}
+
+static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	gfx_shader_t shader = {0};
+	if (t_gfx_d3d11_shader(gfx, &shader)) {
+		return 1;
+	}
+	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_shader_free(&shader);
+	return ret;
 }
 
 static int t_gfx_d3d11_set_surface_target(gfx_t *gfx, u16 width, u16 height)
@@ -1580,8 +1626,9 @@ TEST(gfx_d3d11_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -1593,8 +1640,9 @@ TEST(gfx_d3d11_draw_triangle_2d_null_vertices)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, NULL), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1610,7 +1658,7 @@ TEST(gfx_d3d11_draw_triangle_2d_without_target)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, vertices), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1627,7 +1675,7 @@ TEST(gfx_d3d11_draw_triangle_2d_success)
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, vertices), 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1643,7 +1691,7 @@ TEST(gfx_d3d11_draw_triangle_2d_compiles_shaders)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_d3d_compile_calls, 2);
 
@@ -1661,7 +1709,7 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_buffer)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_create_buffer_calls, 1);
 	EXPECT_EQ(t_create_buffer_bytes, sizeof(t_d3d11_vertex_2d_t) * 3);
@@ -1681,7 +1729,7 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_create_input_layout_calls, 1);
 	EXPECT_EQ(t_input_element_count, 2);
@@ -1700,7 +1748,7 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_render_target)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_om_set_render_targets_calls, 1);
 	EXPECT_EQ(t_render_target_count, 1);
@@ -1719,7 +1767,7 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_ia_set_vertex_buffers_calls, 1);
 	EXPECT_EQ(t_vertex_buffer_start_slot, 0);
@@ -1741,7 +1789,7 @@ TEST(gfx_d3d11_draw_triangle_2d_uses_triangle_list)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
 	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1760,7 +1808,7 @@ TEST(gfx_d3d11_draw_triangle_2d_draws_three_vertices)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_draw_calls, 1);
 	EXPECT_EQ(t_draw_vertex_count, 3);
@@ -1784,7 +1832,7 @@ TEST(gfx_d3d11_draw_triangle_2d_uploads_first_vertex)
 		{.x = 0.0f, .y = 0.0f},
 		{.x = 0.0f, .y = 0.0f},
 	};
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_update_subresource_calls, 1);
 	EXPECT_EQ(t_uploaded_vertices[0].x, -0.5f);

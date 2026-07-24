@@ -177,9 +177,12 @@ TEST(gfx_none_draw_triangle_2d_success)
 	gfx_t gfx = {0};
 	EXPECT_EQ(t_gfx_none_init(&gfx), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {0};
+	EXPECT_NOT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("none")}));
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 0);
 
+	gfx_shader_free(&shader);
 	gfx_free(&gfx);
 	END;
 }
@@ -191,8 +194,9 @@ TEST(gfx_none_draw_triangle_2d_null_gfx)
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {.data = (void *)1};
 
-	EXPECT_EQ(drv->draw_triangle_2d(NULL, vertices), 1);
+	EXPECT_EQ(drv->draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -204,8 +208,9 @@ TEST(gfx_none_draw_triangle_2d_null_vertices)
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
+	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(drv->draw_triangle_2d(&gfx, NULL), 1);
+	EXPECT_EQ(drv->draw_triangle_2d(&shader, NULL), 1);
 
 	END;
 }

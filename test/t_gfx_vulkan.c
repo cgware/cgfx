@@ -1,5 +1,6 @@
 #include "gfx.h"
 #include "gfx_driver.h"
+#include "gfx_shader_compiler.h"
 
 #include "log.h"
 #include "mem.h"
@@ -1180,15 +1181,15 @@ static void t_vkReset(void)
 	t_vk_surface_capabilities_ret		   = VK_SUCCESS;
 	t_vk_surface_capabilities_fail_at	   = 0;
 	t_vk_surface_capabilities		   = (VkSurfaceCapabilitiesKHR){
-				 .minImageCount		  = 1,
-				 .maxImageCount		  = 3,
-				 .currentExtent		  = {.width = ~0u, .height = ~0u},
-				 .minImageExtent	  = {.width = 1, .height = 1},
-				 .maxImageExtent	  = {.width = 4096, .height = 4096},
-				 .currentTransform	  = 1,
-				 .supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-				 .supportedUsageFlags	  = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	 };
+		.minImageCount		 = 1,
+		.maxImageCount		 = 3,
+		.currentExtent		 = {.width = ~0u, .height = ~0u},
+		.minImageExtent		 = {.width = 1, .height = 1},
+		.maxImageExtent		 = {.width = 4096, .height = 4096},
+		.currentTransform	 = 1,
+		.supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+		.supportedUsageFlags	 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+	};
 	t_vk_surface_formats_count_ret	    = VK_SUCCESS;
 	t_vk_surface_formats_ret	    = VK_SUCCESS;
 	t_vk_swapchain_image_count	    = 2;
@@ -1217,9 +1218,9 @@ static void t_vkReset(void)
 	t_vk_swapchain_create	  = (VkSwapchainCreateInfoKHR){0};
 	t_vk_surface_format_count = 1;
 	t_vk_surface_formats[0]	  = (VkSurfaceFormatKHR){
-		  .format     = VK_FORMAT_R8G8B8A8_UNORM,
-		  .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-	  };
+		.format	    = VK_FORMAT_R8G8B8A8_UNORM,
+		.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+	};
 	for (u32 i = 1; i < sizeof(t_vk_surface_formats) / sizeof(t_vk_surface_formats[0]); i++) {
 		t_vk_surface_formats[i] = (VkSurfaceFormatKHR){0};
 	}
@@ -1500,6 +1501,51 @@ static int t_gfx_vulkan_init_gfx(gfx_t *gfx, proc_t *proc)
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+}
+
+static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader)
+{
+	gfx_shader_compiler_t compiler = {0};
+	gfx_shader_compiler_init(&compiler, ALLOC_STD);
+	const char *triangle_src = "vs_in 0 VertexIn {\n"
+				   "\tvec2f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "vs_out VertexOut {\n"
+				   "\tvec4f position : POSITION;\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_in FragmentIn {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "fs_out FragmentOut {\n"
+				   "\tvec4f color : COLOR0;\n"
+				   "}\n"
+				   "VertexOut vertex(VertexIn input) {\n"
+				   "\tVertexOut output;\n"
+				   "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n"
+				   "FragmentOut fragment(FragmentIn input) {\n"
+				   "\tFragmentOut output;\n"
+				   "\toutput.color = input.color;\n"
+				   "\treturn output;\n"
+				   "}\n";
+	int ret = gfx_shader_init(shader, gfx, &(gfx_shader_config_t){.compiler = &compiler, .source = strv_cstr(triangle_src)}) != shader;
+	gfx_shader_compiler_free(&compiler);
+	return ret;
+}
+
+static int t_gfx_vulkan_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+{
+	gfx_shader_t shader = {0};
+	if (t_gfx_vulkan_shader(gfx, &shader)) {
+		return 1;
+	}
+	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_shader_free(&shader);
+	return ret;
 }
 
 static int t_gfx_vulkan_init_gfx_current(gfx_t *gfx, proc_t *proc)
@@ -3010,12 +3056,12 @@ TEST(gfx_vulkan_set_surface_target_uses_srgb_format)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_R8G8B8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 	gfx_target_t target	= {
-		    .type    = GFX_TARGET_SURFACE,
-		    .format  = GFX_FORMAT_RGBA8_SRGB,
-		    .surface = &t_gfx_vulkan_surface,
-		    .width   = 640,
-		    .height  = 480,
-	    };
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8_SRGB,
+		.surface = &t_gfx_vulkan_surface,
+		.width	 = 640,
+		.height	 = 480,
+	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_R8G8B8A8_SRGB);
@@ -3034,12 +3080,12 @@ TEST(gfx_vulkan_set_surface_target_uses_bgra_srgb_format)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 	gfx_target_t target	= {
-		    .type    = GFX_TARGET_SURFACE,
-		    .format  = GFX_FORMAT_BGRA8_SRGB,
-		    .surface = &t_gfx_vulkan_surface,
-		    .width   = 640,
-		    .height  = 480,
-	    };
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_BGRA8_SRGB,
+		.surface = &t_gfx_vulkan_surface,
+		.width	 = 640,
+		.height	 = 480,
+	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_B8G8R8A8_SRGB);
@@ -3058,12 +3104,12 @@ TEST(gfx_vulkan_set_surface_target_clamps_extent_min)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_capabilities.minImageExtent.width = 2;
 	gfx_target_t target			       = {
-					   .type    = GFX_TARGET_SURFACE,
-					   .format  = GFX_FORMAT_RGBA8,
-					   .surface = &t_gfx_vulkan_surface,
-					   .width   = 1,
-					   .height  = 1,
-	   };
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_vulkan_surface,
+		.width	 = 1,
+		.height	 = 1,
+	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 2);
@@ -3595,8 +3641,8 @@ TEST(gfx_vulkan_set_target_none_destroys_swapchain)
 	t_gfx_vulkan_set_surface_target(&gfx);
 	t_vk_destroy_swapchain_calls = 0;
 	gfx_target_t target	     = {
-			 .type = GFX_TARGET_NONE,
-	 };
+		.type = GFX_TARGET_NONE,
+	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
@@ -4012,8 +4058,9 @@ TEST(gfx_vulkan_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -4025,8 +4072,9 @@ TEST(gfx_vulkan_draw_triangle_2d_null_vertices)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&gfx, NULL), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -4042,7 +4090,7 @@ TEST(gfx_vulkan_draw_triangle_2d_without_target)
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, vertices), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -4060,7 +4108,7 @@ TEST(gfx_vulkan_draw_triangle_2d_success)
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, vertices), 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -4078,7 +4126,7 @@ TEST(gfx_vulkan_draw_triangle_2d_creates_pipeline)
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_vulkan_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_vk_create_graphics_pipelines_calls, 1);
 
@@ -4098,7 +4146,7 @@ TEST(gfx_vulkan_draw_triangle_2d_binds_vertex_buffer)
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_vulkan_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_vk_bind_vertex_buffers_calls, 1);
 
@@ -4118,7 +4166,7 @@ TEST(gfx_vulkan_draw_triangle_2d_draws_three_vertices)
 	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_vulkan_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_vk_draw_vertex_count, 3);
 
@@ -4142,7 +4190,7 @@ TEST(gfx_vulkan_draw_triangle_2d_passes_first_vertex_x)
 		{.x = 0.0f},
 	};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	t_gfx_vulkan_draw(&gfx, vertices);
 
 	EXPECT_EQ(t_vk_vertex_first_x, 6);
 
@@ -4160,11 +4208,11 @@ TEST(gfx_vulkan_draw_triangle_2d_recreates_swapchain_draw_targets_after_resize)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, vertices), 0);
 
 	t_vk_swapchain				= 12;
 	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, vertices), 0);
 
 	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 1);
 	EXPECT_EQ(t_vk_destroy_image_view_calls, 1);

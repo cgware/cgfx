@@ -10,6 +10,8 @@ static int t_gfx_set_target_calls;
 static int t_gfx_viewport_calls;
 static int t_gfx_clear_color_calls;
 static int t_gfx_clear_calls;
+static int t_gfx_shader_init_calls;
+static int t_gfx_shader_free_calls;
 static int t_gfx_draw_triangle_2d_calls;
 static int t_gfx_present_calls;
 static int t_gfx_init_ret;
@@ -20,6 +22,7 @@ static int t_gfx_set_target_ret;
 static int t_gfx_viewport_ret;
 static int t_gfx_clear_color_ret;
 static int t_gfx_clear_ret;
+static int t_gfx_shader_init_ret;
 static int t_gfx_draw_triangle_2d_ret;
 static int t_gfx_present_ret;
 static const gfx_config_t *t_gfx_config;
@@ -32,6 +35,8 @@ static u16 t_gfx_y;
 static u16 t_gfx_width;
 static u16 t_gfx_height;
 static const gfx_vertex_2d_t *t_gfx_vertices;
+static const gfx_shader_t *t_gfx_shader;
+static const gfx_shader_config_t *t_gfx_shader_config;
 static float t_gfx_r;
 static float t_gfx_g;
 static float t_gfx_b;
@@ -108,10 +113,24 @@ static int t_gfx_clear(gfx_t *gfx, u32 buffers)
 	return t_gfx_clear_ret;
 }
 
-static int t_gfx_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static int t_gfx_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
-	(void)gfx;
+	t_gfx_shader_init_calls++;
+	t_gfx_shader_config = config;
+	shader->data	    = (void *)0x5678;
+	return t_gfx_shader_init_ret;
+}
+
+static void t_gfx_shader_free(gfx_shader_t *shader)
+{
+	t_gfx_shader_free_calls++;
+	shader->data = NULL;
+}
+
+static int t_gfx_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+{
 	t_gfx_draw_triangle_2d_calls++;
+	t_gfx_shader   = shader;
 	t_gfx_vertices = vertices;
 	return t_gfx_draw_triangle_2d_ret;
 }
@@ -134,6 +153,8 @@ static gfx_driver_t t_gfx_driver = {
 	.viewport	  = t_gfx_viewport,
 	.clear_color	  = t_gfx_clear_color,
 	.clear		  = t_gfx_clear,
+	.shader_init	  = t_gfx_shader_init,
+	.shader_free	  = t_gfx_shader_free,
 	.draw_triangle_2d = t_gfx_draw_triangle_2d,
 	.present	  = t_gfx_present,
 };
@@ -150,6 +171,8 @@ static void t_gfx_reset(void)
 	t_gfx_viewport_calls	     = 0;
 	t_gfx_clear_color_calls	     = 0;
 	t_gfx_clear_calls	     = 0;
+	t_gfx_shader_init_calls	     = 0;
+	t_gfx_shader_free_calls	     = 0;
 	t_gfx_draw_triangle_2d_calls = 0;
 	t_gfx_present_calls	     = 0;
 	t_gfx_init_ret		     = 0;
@@ -160,6 +183,7 @@ static void t_gfx_reset(void)
 	t_gfx_viewport_ret	     = 0;
 	t_gfx_clear_color_ret	     = 0;
 	t_gfx_clear_ret		     = 0;
+	t_gfx_shader_init_ret	     = 0;
 	t_gfx_draw_triangle_2d_ret   = 0;
 	t_gfx_present_ret	     = 0;
 	t_gfx_config		     = NULL;
@@ -167,6 +191,8 @@ static void t_gfx_reset(void)
 	t_gfx_proc_sym		     = NULL;
 	t_gfx_native_value	     = (gfx_native_t){0};
 	t_gfx_target		     = NULL;
+	t_gfx_shader		     = NULL;
+	t_gfx_shader_config	     = NULL;
 	t_gfx_x			     = 0;
 	t_gfx_y			     = 0;
 	t_gfx_width		     = 0;
@@ -991,9 +1017,10 @@ TEST(gfx_draw_triangle_2d_null_driver)
 	START;
 
 	gfx_t gfx		    = {0};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -1009,8 +1036,9 @@ TEST(gfx_draw_triangle_2d_null_driver_callback)
 		.drv = &drv,
 	};
 	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }
@@ -1022,8 +1050,9 @@ TEST(gfx_draw_triangle_2d_null_vertices)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
+	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, NULL), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, NULL), 1);
 
 	END;
 }
@@ -1036,9 +1065,10 @@ TEST(gfx_draw_triangle_2d_calls_driver)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	gfx_draw_triangle_2d(&shader, vertices);
 
 	EXPECT_EQ(t_gfx_draw_triangle_2d_calls, 1);
 
@@ -1053,9 +1083,10 @@ TEST(gfx_draw_triangle_2d_passes_vertices)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&gfx, vertices);
+	gfx_draw_triangle_2d(&shader, vertices);
 
 	EXPECT_PTR(t_gfx_vertices, vertices);
 
@@ -1072,9 +1103,10 @@ TEST(gfx_draw_triangle_2d_returns_driver_result)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
+	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&gfx, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
 
 	END;
 }

@@ -2,7 +2,7 @@
 #define GFX_DRIVER_H
 
 #include "driver.h"
-#include "gfx.h"
+#include "gfx_shader.h"
 
 typedef struct gfx_driver_s {
 	const char *name;
@@ -15,7 +15,9 @@ typedef struct gfx_driver_s {
 	int (*viewport)(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
 	int (*clear_color)(gfx_t *gfx, float r, float g, float b, float a);
 	int (*clear)(gfx_t *gfx, u32 buffers);
-	int (*draw_triangle_2d)(gfx_t *gfx, const gfx_vertex_2d_t vertices[3]);
+	int (*shader_init)(gfx_shader_t *shader, const gfx_shader_config_t *config);
+	void (*shader_free)(gfx_shader_t *shader);
+	int (*draw_triangle_2d)(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3]);
 	int (*present)(gfx_t *gfx);
 } gfx_driver_t;
 

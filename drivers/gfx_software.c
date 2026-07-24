@@ -121,13 +121,25 @@ static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 	pixel[3]  = color[3];
 }
 
-static int gfx_software_draw_triangle_2d(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static int gfx_software_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
-	if (gfx == NULL || gfx->data == NULL || vertices == NULL) {
+	(void)shader;
+	(void)config;
+	return 0;
+}
+
+static void gfx_software_shader_free(gfx_shader_t *shader)
+{
+	(void)shader;
+}
+
+static int gfx_software_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+{
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
 		return 1;
 	}
 
-	gfx_software_t *render = gfx->data;
+	gfx_software_t *render = shader->gfx->data;
 	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
 		return 1;
 	}
@@ -227,6 +239,8 @@ static gfx_driver_t gfx_software = {
 	.viewport	  = gfx_software_viewport,
 	.clear_color	  = gfx_software_clear_color,
 	.clear		  = gfx_software_clear,
+	.shader_init	  = gfx_software_shader_init,
+	.shader_free	  = gfx_software_shader_free,
 	.draw_triangle_2d = gfx_software_draw_triangle_2d,
 };
 
