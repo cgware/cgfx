@@ -1,6 +1,6 @@
 #include "gfx.h"
 #include "gfx_driver.h"
-#include "gfx_shader_compiler.h"
+#include "gfx_pipeline.h"
 
 #include "log.h"
 #include "mem.h"
@@ -1180,7 +1180,8 @@ static void t_vkReset(void)
 	t_vk_surface_supported			   = 1;
 	t_vk_surface_capabilities_ret		   = VK_SUCCESS;
 	t_vk_surface_capabilities_fail_at	   = 0;
-	t_vk_surface_capabilities		   = (VkSurfaceCapabilitiesKHR){
+
+	t_vk_surface_capabilities = (VkSurfaceCapabilitiesKHR){
 		.minImageCount		 = 1,
 		.maxImageCount		 = 3,
 		.currentExtent		 = {.width = ~0u, .height = ~0u},
@@ -1217,7 +1218,8 @@ static void t_vkReset(void)
 	t_vk_swapchain		  = 9;
 	t_vk_swapchain_create	  = (VkSwapchainCreateInfoKHR){0};
 	t_vk_surface_format_count = 1;
-	t_vk_surface_formats[0]	  = (VkSurfaceFormatKHR){
+
+	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){
 		.format	    = VK_FORMAT_R8G8B8A8_UNORM,
 		.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
 	};
@@ -1543,8 +1545,11 @@ static int t_gfx_vulkan_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 	if (t_gfx_vulkan_shader(gfx, &shader)) {
 		return 1;
 	}
-	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_pipeline_t pipeline = {0};
+	gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){0});
+	int ret = gfx_draw_triangle_2d(&pipeline, vertices);
 	gfx_shader_free(&shader);
+	gfx_pipeline_free(&pipeline);
 	return ret;
 }
 
@@ -3055,7 +3060,8 @@ TEST(gfx_vulkan_set_surface_target_uses_srgb_format)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_R8G8B8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-	gfx_target_t target	= {
+
+	gfx_target_t target = {
 		.type	 = GFX_TARGET_SURFACE,
 		.format	 = GFX_FORMAT_RGBA8_SRGB,
 		.surface = &t_gfx_vulkan_surface,
@@ -3080,12 +3086,12 @@ TEST(gfx_vulkan_set_surface_target_uses_bgra_srgb_format)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
 	gfx_target_t target	= {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_BGRA8_SRGB,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
+		    .type    = GFX_TARGET_SURFACE,
+		    .format  = GFX_FORMAT_BGRA8_SRGB,
+		    .surface = &t_gfx_vulkan_surface,
+		    .width   = 640,
+		    .height  = 480,
+	    };
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_B8G8R8A8_SRGB);
@@ -3104,12 +3110,12 @@ TEST(gfx_vulkan_set_surface_target_clamps_extent_min)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	t_vk_surface_capabilities.minImageExtent.width = 2;
 	gfx_target_t target			       = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 1,
-		.height	 = 1,
-	};
+					   .type    = GFX_TARGET_SURFACE,
+					   .format  = GFX_FORMAT_RGBA8,
+					   .surface = &t_gfx_vulkan_surface,
+					   .width   = 1,
+					   .height  = 1,
+	   };
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 2);
@@ -3640,7 +3646,8 @@ TEST(gfx_vulkan_set_target_none_destroys_swapchain)
 
 	t_gfx_vulkan_set_surface_target(&gfx);
 	t_vk_destroy_swapchain_calls = 0;
-	gfx_target_t target	     = {
+
+	gfx_target_t target = {
 		.type = GFX_TARGET_NONE,
 	};
 
@@ -4058,9 +4065,9 @@ TEST(gfx_vulkan_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }
@@ -4072,9 +4079,9 @@ TEST(gfx_vulkan_draw_triangle_2d_null_vertices)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, NULL), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);

@@ -594,7 +594,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_gen_buffer_ret		       = 55;
 	t_gl_uniform_location_ret	       = 7;
 	t_surface_make_current_ret	       = 1;
-	t_gfx_opengl_surface		       = (gfx_surface_t){
+
+	t_gfx_opengl_surface = (gfx_surface_t){
 		.api	= GFX_API_OPENGL,
 		.handle = 0x4321,
 		.ops	= &t_gfx_opengl_surface_ops,
@@ -730,7 +731,8 @@ static int t_gfx_opengl_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 	if (t_gfx_opengl_shader(gfx, &shader)) {
 		return 1;
 	}
-	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_pipeline_t pipeline = {.gfx = gfx, .data = (void *)1};
+	int ret			= gfx_draw_triangle_2d(&pipeline, vertices);
 	gfx_shader_free(&shader);
 	return ret;
 }
@@ -1136,9 +1138,9 @@ TEST(gfx_opengl_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }
@@ -1584,14 +1586,15 @@ TEST(gfx_opengl_draw_triangle_2d_reuses_program)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 	gfx_shader_t shader	    = {0};
+	gfx_pipeline_t pipeline	    = {0};
 	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 0);
 
-	gfx_draw_triangle_2d(&shader, vertices);
-	gfx_draw_triangle_2d(&shader, vertices);
+	gfx_draw_triangle_2d(&pipeline, vertices);
+	gfx_draw_triangle_2d(&pipeline, vertices);
 
 	EXPECT_EQ(t_gl_create_program_calls, 1);
 
-	gfx_shader_free(&shader);
+	gfx_pipeline_free(&pipeline);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -1738,8 +1741,9 @@ TEST(gfx_opengl_draw_triangle_2d_create_buffer_failure)
 	gfx_set_target(&gfx, &target);
 	gfx_vertex_2d_t vertices[3] = {0};
 	gfx_shader_t shader	    = {0};
+	gfx_pipeline_t pipeline	    = {0};
 	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 0);
-	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, vertices), 1);
 
 	gfx_shader_free(&shader);
 	gfx_free(&gfx);
@@ -2582,8 +2586,8 @@ TEST(gfx_opengl_set_target_none_clears_surface_current)
 	gfx_set_target(&gfx, &surface_target);
 	t_surface_clear_current_calls = 0;
 	gfx_target_t target	      = {
-		.type = GFX_TARGET_NONE,
-	};
+			  .type = GFX_TARGET_NONE,
+	  };
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
 	EXPECT_EQ(t_surface_clear_current_calls, 1);

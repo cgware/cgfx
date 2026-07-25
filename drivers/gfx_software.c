@@ -1,4 +1,5 @@
 #include "gfx_driver.h"
+#include "log.h"
 
 typedef struct gfx_software_s {
 	gfx_target_t target;
@@ -133,14 +134,28 @@ static void gfx_software_shader_free(gfx_shader_t *shader)
 	(void)shader;
 }
 
-static int gfx_software_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+static int gfx_software_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
+	(void)pipeline;
+	(void)config;
+	return 0;
+}
+
+static void gfx_software_pipeline_free(gfx_pipeline_t *pipeline)
+{
+	(void)pipeline;
+}
+
+static int gfx_software_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
+{
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || vertices == NULL) {
+		log_error("cgfx", "gfx_software", NULL, "data = NULL");
 		return 1;
 	}
 
-	gfx_software_t *render = shader->gfx->data;
+	gfx_software_t *render = pipeline->gfx->data;
 	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
+		log_error("cgfx", "gfx_software", NULL, "invalid target");
 		return 1;
 	}
 
@@ -241,6 +256,8 @@ static gfx_driver_t gfx_software = {
 	.clear		  = gfx_software_clear,
 	.shader_init	  = gfx_software_shader_init,
 	.shader_free	  = gfx_software_shader_free,
+	.pipeline_init	  = gfx_software_pipeline_init,
+	.pipeline_free	  = gfx_software_pipeline_free,
 	.draw_triangle_2d = gfx_software_draw_triangle_2d,
 };
 

@@ -22,12 +22,12 @@ static int t_gfx_software_init(gfx_t *gfx)
 
 static int t_gfx_software_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 {
-	gfx_shader_t shader = {0};
-	if (gfx_shader_init(&shader, gfx, &(gfx_shader_config_t){.source = STRV("software")}) != &shader) {
+	gfx_pipeline_t pipeline = {0};
+	if (gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){0}) != &pipeline) {
 		return 1;
 	}
-	int ret = gfx_draw_triangle_2d(&shader, vertices);
-	gfx_shader_free(&shader);
+	int ret = gfx_draw_triangle_2d(&pipeline, vertices);
+	gfx_pipeline_free(&pipeline);
 	return ret;
 }
 
@@ -274,9 +274,9 @@ TEST(gfx_software_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }

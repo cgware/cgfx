@@ -26,12 +26,3 @@ void gfx_shader_free(gfx_shader_t *shader)
 
 	shader->gfx->drv->shader_free(shader);
 }
-
-int gfx_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
-{
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->drv == NULL || shader->gfx->drv->draw_triangle_2d == NULL) {
-		return 1;
-	}
-
-	return shader->gfx->drv->draw_triangle_2d(shader, vertices);
-}

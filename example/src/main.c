@@ -71,11 +71,13 @@ int main(void)
 	};
 
 	static u8 pixels[WIDTH * HEIGHT * 4];
-	fs_t fs		    = {0};
-	gfx_t gfx	    = {0};
-	gfx_shader_t shader = {0};
-	int ret		    = 0;
-	strv_t driver_name  = STRV("software");
+	fs_t fs			= {0};
+	gfx_t gfx		= {0};
+	gfx_shader_t vertex	= {0};
+	gfx_shader_t fragment	= {0};
+	gfx_pipeline_t pipeline = {0};
+	int ret			= 0;
+	strv_t driver_name	= STRV("software");
 
 	fs_init(&fs, 0, 0, ALLOC_STD);
 	gfx_driver_t *driver = gfx_driver_find(driver_name);
@@ -114,8 +116,16 @@ int main(void)
 				   "\treturn output;\n"
 				   "}\n";
 
-	if (ret == 0 && gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = strv_cstr(triangle_src)}) == NULL) {
-		log_error("cgfx_example", "main", NULL, "failed to initialize triangle shader");
+	if (ret == 0 && gfx_shader_init(&vertex, &gfx, &(gfx_shader_config_t){.source = strv_cstr(triangle_src)}) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize triangle vertex shader");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_shader_init(&fragment, &gfx, &(gfx_shader_config_t){.source = strv_cstr(triangle_src)}) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize triangle fragment shader");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = vertex, .fs = fragment}) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize pipeline");
 		ret = 1;
 	}
 	gfx_target_t target = {
@@ -162,7 +172,7 @@ int main(void)
 			.a = 1.0f,
 		},
 	};
-	if (ret == 0 && gfx_draw_triangle_2d(&shader, vertices)) {
+	if (ret == 0 && gfx_draw_triangle_2d(&pipeline, vertices)) {
 		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
 		ret = 1;
 	}
@@ -176,7 +186,9 @@ int main(void)
 		ret = 1;
 	}
 
-	gfx_shader_free(&shader);
+	gfx_shader_free(&vertex);
+	gfx_shader_free(&fragment);
+	gfx_pipeline_free(&pipeline);
 	gfx_free(&gfx);
 	fs_free(&fs);
 	return ret;

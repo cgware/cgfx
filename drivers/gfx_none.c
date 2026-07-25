@@ -80,9 +80,21 @@ static void gfx_none_shader_free(gfx_shader_t *shader)
 	(void)shader;
 }
 
-static int gfx_none_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+static int gfx_none_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
-	(void)shader;
+	(void)pipeline;
+	(void)config;
+	return 0;
+}
+
+static void gfx_none_pipeline_free(gfx_pipeline_t *pipeline)
+{
+	(void)pipeline;
+}
+
+static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
+{
+	(void)pipeline;
 	(void)vertices;
 	return 0;
 }
@@ -98,6 +110,8 @@ static gfx_driver_t gfx_none = {
 	.clear		  = gfx_none_clear,
 	.shader_init	  = gfx_none_shader_init,
 	.shader_free	  = gfx_none_shader_free,
+	.pipeline_init	  = gfx_none_pipeline_init,
+	.pipeline_free	  = gfx_none_pipeline_free,
 	.draw_triangle_2d = gfx_none_draw_triangle_2d,
 };
 

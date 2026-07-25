@@ -848,7 +848,8 @@ static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 	if (t_gfx_d3d11_shader(gfx, &shader)) {
 		return 1;
 	}
-	int ret = gfx_draw_triangle_2d(&shader, vertices);
+	gfx_pipeline_t pipeline = {.gfx = gfx, .data = (void *)1};
+	int ret			= gfx_draw_triangle_2d(&pipeline, vertices);
 	gfx_shader_free(&shader);
 	return ret;
 }
@@ -1626,9 +1627,9 @@ TEST(gfx_d3d11_draw_triangle_2d_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }
@@ -1640,9 +1641,9 @@ TEST(gfx_d3d11_draw_triangle_2d_null_vertices)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&shader, NULL), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);

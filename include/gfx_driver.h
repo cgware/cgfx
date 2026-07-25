@@ -2,7 +2,7 @@
 #define GFX_DRIVER_H
 
 #include "driver.h"
-#include "gfx_shader.h"
+#include "gfx_pipeline.h"
 
 typedef struct gfx_driver_s {
 	const char *name;
@@ -17,7 +17,9 @@ typedef struct gfx_driver_s {
 	int (*clear)(gfx_t *gfx, u32 buffers);
 	int (*shader_init)(gfx_shader_t *shader, const gfx_shader_config_t *config);
 	void (*shader_free)(gfx_shader_t *shader);
-	int (*draw_triangle_2d)(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3]);
+	int (*pipeline_init)(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config);
+	void (*pipeline_free)(gfx_pipeline_t *pipeline);
+	int (*draw_triangle_2d)(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3]);
 	int (*present)(gfx_t *gfx);
 } gfx_driver_t;
 

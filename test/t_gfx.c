@@ -37,6 +37,7 @@ static u16 t_gfx_height;
 static const gfx_vertex_2d_t *t_gfx_vertices;
 static const gfx_shader_t *t_gfx_shader;
 static const gfx_shader_config_t *t_gfx_shader_config;
+static const gfx_pipeline_t *t_gfx_pipeline;
 static float t_gfx_r;
 static float t_gfx_g;
 static float t_gfx_b;
@@ -127,10 +128,10 @@ static void t_gfx_shader_free(gfx_shader_t *shader)
 	shader->data = NULL;
 }
 
-static int t_gfx_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+static int t_gfx_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
 {
 	t_gfx_draw_triangle_2d_calls++;
-	t_gfx_shader   = shader;
+	t_gfx_pipeline = pipeline;
 	t_gfx_vertices = vertices;
 	return t_gfx_draw_triangle_2d_ret;
 }
@@ -1017,10 +1018,10 @@ TEST(gfx_draw_triangle_2d_null_driver)
 	START;
 
 	gfx_t gfx		    = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }
@@ -1036,9 +1037,9 @@ TEST(gfx_draw_triangle_2d_null_driver_callback)
 		.drv = &drv,
 	};
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }
@@ -1050,9 +1051,9 @@ TEST(gfx_draw_triangle_2d_null_vertices)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_shader_t shader = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&shader, NULL), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, NULL), 1);
 
 	END;
 }
@@ -1065,10 +1066,10 @@ TEST(gfx_draw_triangle_2d_calls_driver)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&shader, vertices);
+	gfx_draw_triangle_2d(&pipeline, vertices);
 
 	EXPECT_EQ(t_gfx_draw_triangle_2d_calls, 1);
 
@@ -1083,10 +1084,10 @@ TEST(gfx_draw_triangle_2d_passes_vertices)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	gfx_draw_triangle_2d(&shader, vertices);
+	gfx_draw_triangle_2d(&pipeline, vertices);
 
 	EXPECT_PTR(t_gfx_vertices, vertices);
 
@@ -1103,10 +1104,10 @@ TEST(gfx_draw_triangle_2d_returns_driver_result)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_shader_t shader	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&shader, vertices), 1);
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, vertices), 1);
 
 	END;
 }

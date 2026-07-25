@@ -1,4 +1,5 @@
 #include "gfx_driver.h"
+#include "gfx_pipeline.h"
 #include "gfx_shader_compiler.h"
 
 #include "buf.h"
@@ -836,9 +837,13 @@ typedef struct gfx_vulkan_s {
 } gfx_vulkan_t;
 
 typedef struct gfx_vulkan_shader_s {
+	VkShaderModule module;
+} gfx_vulkan_shader_t;
+
+typedef struct gfx_vulkan_pipeline_s {
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
-} gfx_vulkan_shader_t;
+} gfx_vulkan_pipeline_t;
 
 static int load_lib_symbol(gfx_vulkan_t *vulkan, void **sym, strv_t name)
 {
@@ -2156,426 +2161,6 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, VkImageView view,
 	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, framebuffer));
 }
 
-#if 0
-enum {
-	GFX_VULKAN_SPV_MAGIC	      = 0x07230203,
-	GFX_VULKAN_SPV_VERSION	      = 0x00010000,
-	GFX_VULKAN_SPV_GENERATOR      = 0,
-	GFX_VULKAN_SPV_SCHEMA	      = 0,
-	GFX_VULKAN_SPV_WORD_MAIN      = 0x6e69616d,
-	GFX_VULKAN_SPV_WORD_ZERO      = 0,
-	GFX_VULKAN_SPV_WORD_FLOAT_ONE = 0x3f800000,
-	GFX_VULKAN_SPV_VERTEX_WORDS   = 158,
-	GFX_VULKAN_SPV_FRAGMENT_WORDS = 75,
-};
-
-enum {
-	GFX_VULKAN_SPV_OP_SOURCE	      = 3,
-	GFX_VULKAN_SPV_OP_MEMORY_MODEL	      = 14,
-	GFX_VULKAN_SPV_OP_ENTRY_POINT	      = 15,
-	GFX_VULKAN_SPV_OP_EXECUTION_MODE      = 16,
-	GFX_VULKAN_SPV_OP_CAPABILITY	      = 17,
-	GFX_VULKAN_SPV_OP_TYPE_VOID	      = 19,
-	GFX_VULKAN_SPV_OP_TYPE_INT	      = 21,
-	GFX_VULKAN_SPV_OP_TYPE_FLOAT	      = 22,
-	GFX_VULKAN_SPV_OP_TYPE_VECTOR	      = 23,
-	GFX_VULKAN_SPV_OP_TYPE_STRUCT	      = 30,
-	GFX_VULKAN_SPV_OP_TYPE_POINTER	      = 32,
-	GFX_VULKAN_SPV_OP_TYPE_FUNCTION	      = 33,
-	GFX_VULKAN_SPV_OP_CONSTANT	      = 43,
-	GFX_VULKAN_SPV_OP_FUNCTION	      = 54,
-	GFX_VULKAN_SPV_OP_FUNCTION_END	      = 56,
-	GFX_VULKAN_SPV_OP_VARIABLE	      = 59,
-	GFX_VULKAN_SPV_OP_LOAD		      = 61,
-	GFX_VULKAN_SPV_OP_STORE		      = 62,
-	GFX_VULKAN_SPV_OP_ACCESS_CHAIN	      = 65,
-	GFX_VULKAN_SPV_OP_DECORATE	      = 71,
-	GFX_VULKAN_SPV_OP_MEMBER_DECORATE     = 72,
-	GFX_VULKAN_SPV_OP_COMPOSITE_CONSTRUCT = 80,
-	GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT   = 81,
-	GFX_VULKAN_SPV_OP_LABEL		      = 248,
-	GFX_VULKAN_SPV_OP_RETURN	      = 253,
-};
-
-enum {
-	GFX_VULKAN_SPV_CAPABILITY_SHADER		= 1,
-	GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL		= 0,
-	GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450		= 1,
-	GFX_VULKAN_SPV_EXECUTION_MODEL_VERTEX		= 0,
-	GFX_VULKAN_SPV_EXECUTION_MODEL_FRAGMENT		= 4,
-	GFX_VULKAN_SPV_EXECUTION_MODE_ORIGIN_UPPER_LEFT = 7,
-	GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL		= 2,
-	GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450		= 450,
-	GFX_VULKAN_SPV_DECORATION_BUILT_IN		= 11,
-	GFX_VULKAN_SPV_DECORATION_BLOCK			= 2,
-	GFX_VULKAN_SPV_DECORATION_LOCATION		= 30,
-	GFX_VULKAN_SPV_BUILT_IN_POSITION		= 0,
-	GFX_VULKAN_SPV_STORAGE_INPUT			= 1,
-	GFX_VULKAN_SPV_STORAGE_OUTPUT			= 3,
-	GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE		= 0,
-	GFX_VULKAN_SPV_WIDTH_32				= 32,
-	GFX_VULKAN_SPV_SIGNED				= 1,
-	GFX_VULKAN_SPV_VEC2				= 2,
-	GFX_VULKAN_SPV_VEC4				= 4,
-	GFX_VULKAN_SPV_LOCATION_POSITION		= 0,
-	GFX_VULKAN_SPV_LOCATION_COLOR			= 1,
-};
-
-enum {
-	GFX_VULKAN_VERTEX_ID_VOID		      = 2,
-	GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE	      = 3,
-	GFX_VULKAN_VERTEX_ID_MAIN		      = 4,
-	GFX_VULKAN_VERTEX_ID_LABEL		      = 5,
-	GFX_VULKAN_VERTEX_ID_FLOAT		      = 6,
-	GFX_VULKAN_VERTEX_ID_VEC4		      = 7,
-	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4	      = 8,
-	GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR	      = 9,
-	GFX_VULKAN_VERTEX_ID_VEC2		      = 10,
-	GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2	      = 11,
-	GFX_VULKAN_VERTEX_ID_INPUT_POSITION	      = 12,
-	GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4	      = 13,
-	GFX_VULKAN_VERTEX_ID_INPUT_COLOR	      = 14,
-	GFX_VULKAN_VERTEX_ID_FLOAT_ZERO		      = 15,
-	GFX_VULKAN_VERTEX_ID_FLOAT_ONE		      = 16,
-	GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX	      = 17,
-	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX = 18,
-	GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR	      = 19,
-	GFX_VULKAN_VERTEX_ID_INT		      = 20,
-	GFX_VULKAN_VERTEX_ID_INT_ZERO		      = 21,
-	GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION      = 22,
-	GFX_VULKAN_VERTEX_ID_LOADED_POSITION	      = 23,
-	GFX_VULKAN_VERTEX_ID_POSITION_X		      = 24,
-	GFX_VULKAN_VERTEX_ID_POSITION_Y		      = 25,
-	GFX_VULKAN_VERTEX_ID_POSITION		      = 26,
-	GFX_VULKAN_VERTEX_ID_POSITION_PTR	      = 27,
-	GFX_VULKAN_VERTEX_ID_LOADED_COLOR	      = 28,
-	GFX_VULKAN_VERTEX_ID_BOUND		      = 29,
-};
-
-enum {
-	GFX_VULKAN_FRAGMENT_ID_VOID	       = 2,
-	GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE   = 3,
-	GFX_VULKAN_FRAGMENT_ID_MAIN	       = 4,
-	GFX_VULKAN_FRAGMENT_ID_LABEL	       = 5,
-	GFX_VULKAN_FRAGMENT_ID_FLOAT	       = 6,
-	GFX_VULKAN_FRAGMENT_ID_VEC4	       = 7,
-	GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4 = 8,
-	GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR    = 9,
-	GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR     = 10,
-	GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4  = 11,
-	GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR    = 12,
-	GFX_VULKAN_FRAGMENT_ID_BOUND	       = 13,
-};
-
-static int gfx_vulkan_spv_write(buf_t *code, u32 word)
-{
-	return buf_write_u32le(code, word);
-}
-
-static int gfx_vulkan_spv_inst(buf_t *code, u32 op, u32 word_count, ...)
-{
-	if (gfx_vulkan_spv_write(code, (word_count << 16) | op)) {
-		return 1;
-	}
-
-	va_list args;
-	va_start(args, word_count);
-	for (u32 i = 1; i < word_count; i++) {
-		u32 word = va_arg(args, u32);
-		if (gfx_vulkan_spv_write(code, word)) {
-			va_end(args);
-			return 1;
-		}
-	}
-	va_end(args);
-	return 0;
-}
-
-static int gfx_vulkan_spv_header(buf_t *code, u32 bound)
-{
-	return gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_MAGIC) || gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_VERSION) ||
-	       gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_GENERATOR) || gfx_vulkan_spv_write(code, bound) ||
-	       gfx_vulkan_spv_write(code, GFX_VULKAN_SPV_SCHEMA);
-}
-
-static int gfx_vulkan_spv_vertex(buf_t *code)
-{
-	if (buf_init(code, GFX_VULKAN_SPV_VERTEX_WORDS * sizeof(u32), ALLOC_STD) == NULL) {
-		return 1;
-	}
-
-	int ret = 0;
-	ret |= gfx_vulkan_spv_header(code, GFX_VULKAN_VERTEX_ID_BOUND);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_CAPABILITY, 2, GFX_VULKAN_SPV_CAPABILITY_SHADER);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_MEMORY_MODEL, 3, GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL, GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_ENTRY_POINT,
-				   9,
-				   GFX_VULKAN_SPV_EXECUTION_MODEL_VERTEX,
-				   GFX_VULKAN_VERTEX_ID_MAIN,
-				   GFX_VULKAN_SPV_WORD_MAIN,
-				   GFX_VULKAN_SPV_WORD_ZERO,
-				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
-				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
-				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_SOURCE, 3, GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL, GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_MEMBER_DECORATE,
-				   5,
-				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX,
-				   0,
-				   GFX_VULKAN_SPV_DECORATION_BUILT_IN,
-				   GFX_VULKAN_SPV_BUILT_IN_POSITION);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_DECORATE, 3, GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX, GFX_VULKAN_SPV_DECORATION_BLOCK);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_DECORATE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_SPV_DECORATION_LOCATION,
-				   GFX_VULKAN_SPV_LOCATION_POSITION);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_DECORATE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
-				   GFX_VULKAN_SPV_DECORATION_LOCATION,
-				   GFX_VULKAN_SPV_LOCATION_POSITION);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_DECORATE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR,
-				   GFX_VULKAN_SPV_DECORATION_LOCATION,
-				   GFX_VULKAN_SPV_LOCATION_COLOR);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_VOID, 2, GFX_VULKAN_VERTEX_ID_VOID);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FUNCTION, 3, GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE, GFX_VULKAN_VERTEX_ID_VOID);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FLOAT, 3, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_WIDTH_32);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_VERTEX_ID_VEC4, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
-				   GFX_VULKAN_VERTEX_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_VEC4,
-				   GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_VERTEX_ID_VEC2, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_SPV_VEC2);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2,
-				   GFX_VULKAN_SPV_STORAGE_INPUT,
-				   GFX_VULKAN_VERTEX_ID_VEC2);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC2,
-				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION,
-				   GFX_VULKAN_SPV_STORAGE_INPUT);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4,
-				   GFX_VULKAN_SPV_STORAGE_INPUT,
-				   GFX_VULKAN_VERTEX_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_INPUT_VEC4,
-				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR,
-				   GFX_VULKAN_SPV_STORAGE_INPUT);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_CONSTANT, 4, GFX_VULKAN_VERTEX_ID_FLOAT, GFX_VULKAN_VERTEX_ID_FLOAT_ZERO, GFX_VULKAN_SPV_WORD_ZERO);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_CONSTANT,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_FLOAT,
-				   GFX_VULKAN_VERTEX_ID_FLOAT_ONE,
-				   GFX_VULKAN_SPV_WORD_FLOAT_ONE);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_STRUCT, 3, GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX, GFX_VULKAN_VERTEX_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
-				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_GL_PER_VERTEX,
-				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_TYPE_INT, 4, GFX_VULKAN_VERTEX_ID_INT, GFX_VULKAN_SPV_WIDTH_32, GFX_VULKAN_SPV_SIGNED);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_CONSTANT, 4, GFX_VULKAN_VERTEX_ID_INT, GFX_VULKAN_VERTEX_ID_INT_ZERO, GFX_VULKAN_SPV_WORD_ZERO);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
-				   GFX_VULKAN_VERTEX_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_FUNCTION,
-				   5,
-				   GFX_VULKAN_VERTEX_ID_VOID,
-				   GFX_VULKAN_VERTEX_ID_MAIN,
-				   GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE,
-				   GFX_VULKAN_VERTEX_ID_FUNCTION_TYPE);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_LABEL, 2, GFX_VULKAN_VERTEX_ID_LABEL);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_LOAD,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_VEC2,
-				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
-				   GFX_VULKAN_VERTEX_ID_INPUT_POSITION);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT,
-				   5,
-				   GFX_VULKAN_VERTEX_ID_FLOAT,
-				   GFX_VULKAN_VERTEX_ID_POSITION_X,
-				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
-				   0);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_COMPOSITE_EXTRACT,
-				   5,
-				   GFX_VULKAN_VERTEX_ID_FLOAT,
-				   GFX_VULKAN_VERTEX_ID_POSITION_Y,
-				   GFX_VULKAN_VERTEX_ID_LOADED_POSITION,
-				   1);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_COMPOSITE_CONSTRUCT,
-				   7,
-				   GFX_VULKAN_VERTEX_ID_VEC4,
-				   GFX_VULKAN_VERTEX_ID_POSITION,
-				   GFX_VULKAN_VERTEX_ID_POSITION_X,
-				   GFX_VULKAN_VERTEX_ID_POSITION_Y,
-				   GFX_VULKAN_VERTEX_ID_FLOAT_ZERO,
-				   GFX_VULKAN_VERTEX_ID_FLOAT_ONE);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_ACCESS_CHAIN,
-				   5,
-				   GFX_VULKAN_VERTEX_ID_PTR_OUTPUT_POSITION,
-				   GFX_VULKAN_VERTEX_ID_POSITION_PTR,
-				   GFX_VULKAN_VERTEX_ID_GL_PER_VERTEX_VAR,
-				   GFX_VULKAN_VERTEX_ID_INT_ZERO);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_VERTEX_ID_POSITION_PTR, GFX_VULKAN_VERTEX_ID_POSITION);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_LOAD,
-				   4,
-				   GFX_VULKAN_VERTEX_ID_VEC4,
-				   GFX_VULKAN_VERTEX_ID_LOADED_COLOR,
-				   GFX_VULKAN_VERTEX_ID_INPUT_COLOR);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_VERTEX_ID_OUTPUT_COLOR, GFX_VULKAN_VERTEX_ID_LOADED_COLOR);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_RETURN, 1);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_FUNCTION_END, 1);
-	if (ret || code->used != GFX_VULKAN_SPV_VERTEX_WORDS * sizeof(u32)) {
-		buf_free(code);
-		return 1;
-	}
-	return 0;
-}
-
-static int gfx_vulkan_spv_fragment(buf_t *code)
-{
-	if (buf_init(code, GFX_VULKAN_SPV_FRAGMENT_WORDS * sizeof(u32), ALLOC_STD) == NULL) {
-		return 1;
-	}
-
-	int ret = 0;
-	ret |= gfx_vulkan_spv_header(code, GFX_VULKAN_FRAGMENT_ID_BOUND);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_CAPABILITY, 2, GFX_VULKAN_SPV_CAPABILITY_SHADER);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_MEMORY_MODEL, 3, GFX_VULKAN_SPV_ADDRESSING_MODEL_LOGICAL, GFX_VULKAN_SPV_MEMORY_MODEL_GLSL450);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_ENTRY_POINT,
-				   7,
-				   GFX_VULKAN_SPV_EXECUTION_MODEL_FRAGMENT,
-				   GFX_VULKAN_FRAGMENT_ID_MAIN,
-				   GFX_VULKAN_SPV_WORD_MAIN,
-				   GFX_VULKAN_SPV_WORD_ZERO,
-				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_EXECUTION_MODE, 3, GFX_VULKAN_FRAGMENT_ID_MAIN, GFX_VULKAN_SPV_EXECUTION_MODE_ORIGIN_UPPER_LEFT);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_SOURCE, 3, GFX_VULKAN_SPV_SOURCE_LANGUAGE_GLSL, GFX_VULKAN_SPV_SOURCE_VERSION_GLSL450);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_DECORATE,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_SPV_DECORATION_LOCATION,
-				   GFX_VULKAN_SPV_LOCATION_POSITION);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_DECORATE,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR,
-				   GFX_VULKAN_SPV_DECORATION_LOCATION,
-				   GFX_VULKAN_SPV_LOCATION_POSITION);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_VOID, 2, GFX_VULKAN_FRAGMENT_ID_VOID);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_TYPE_FUNCTION, 3, GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE, GFX_VULKAN_FRAGMENT_ID_VOID);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_TYPE_FLOAT, 3, GFX_VULKAN_FRAGMENT_ID_FLOAT, GFX_VULKAN_SPV_WIDTH_32);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_TYPE_VECTOR, 4, GFX_VULKAN_FRAGMENT_ID_VEC4, GFX_VULKAN_FRAGMENT_ID_FLOAT, GFX_VULKAN_SPV_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT,
-				   GFX_VULKAN_FRAGMENT_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_PTR_OUTPUT_VEC4,
-				   GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR,
-				   GFX_VULKAN_SPV_STORAGE_OUTPUT);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_TYPE_POINTER,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4,
-				   GFX_VULKAN_SPV_STORAGE_INPUT,
-				   GFX_VULKAN_FRAGMENT_ID_VEC4);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_VARIABLE,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_PTR_INPUT_VEC4,
-				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR,
-				   GFX_VULKAN_SPV_STORAGE_INPUT);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_FUNCTION,
-				   5,
-				   GFX_VULKAN_FRAGMENT_ID_VOID,
-				   GFX_VULKAN_FRAGMENT_ID_MAIN,
-				   GFX_VULKAN_SPV_FUNCTION_CONTROL_NONE,
-				   GFX_VULKAN_FRAGMENT_ID_FUNCTION_TYPE);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_LABEL, 2, GFX_VULKAN_FRAGMENT_ID_LABEL);
-	ret |= gfx_vulkan_spv_inst(code,
-				   GFX_VULKAN_SPV_OP_LOAD,
-				   4,
-				   GFX_VULKAN_FRAGMENT_ID_VEC4,
-				   GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR,
-				   GFX_VULKAN_FRAGMENT_ID_INPUT_COLOR);
-	ret |= gfx_vulkan_spv_inst(
-		code, GFX_VULKAN_SPV_OP_STORE, 3, GFX_VULKAN_FRAGMENT_ID_OUTPUT_COLOR, GFX_VULKAN_FRAGMENT_ID_LOADED_COLOR);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_RETURN, 1);
-	ret |= gfx_vulkan_spv_inst(code, GFX_VULKAN_SPV_OP_FUNCTION_END, 1);
-	if (ret || code->used != GFX_VULKAN_SPV_FRAGMENT_WORDS * sizeof(u32)) {
-		buf_free(code);
-		return 1;
-	}
-	return 0;
-}
-#endif
-
 static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
@@ -2583,80 +2168,88 @@ static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	}
 
 	gfx_vulkan_t *vulkan = shader->gfx->data;
-	if (config->compiler == NULL) {
-		log_error("cgfx", "gfx_vulkan", NULL, "failed to initialize Vulkan shader: shader compiler is unavailable");
+
+	gfx_shader_code_t shader_code = {0};
+	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_SPIRV, &shader_code)) {
+		gfx_shader_code_free(&shader_code);
 		return 1;
 	}
+
+	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&vulkan->alloc, sizeof(*vk_shader));
+	if (vk_shader == NULL) {
+		return 1;
+	}
+
+	VkShaderModuleCreateInfo shader_create = {
+		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = shader_code.code.used,
+		.pCode	  = shader_code.code.data,
+	};
+
+	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &shader_create, NULL, &vk_shader->module))) {
+		gfx_shader_code_free(&shader_code);
+		return 1;
+	}
+
+	gfx_shader_code_free(&shader_code);
+
+	shader->data = vk_shader;
+
+	return 0;
+}
+
+static void gfx_vulkan_shader_free(gfx_shader_t *shader)
+{
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
+		return;
+	}
+
+	gfx_vulkan_t *vulkan	       = shader->gfx->data;
+	gfx_vulkan_shader_t *vk_shader = shader->data;
+	vulkan->DestroyShaderModule(vulkan->device, vk_shader->module, NULL);
+	alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+}
+
+static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
+{
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan = pipeline->gfx->data;
+
 	if (gfx_vulkan_create_render_pass(vulkan)) {
 		return 1;
 	}
 
-	gfx_shader_code_t vertex_shader	  = {0};
-	gfx_shader_code_t fragment_shader = {0};
-	if (gfx_shader_compiler_transpile(
-		    config->compiler, config->source, GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &vertex_shader) ||
-	    gfx_shader_compiler_transpile(
-		    config->compiler, config->source, GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_SPIRV, &fragment_shader)) {
-		gfx_shader_code_free(&vertex_shader);
-		gfx_shader_code_free(&fragment_shader);
+	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&vulkan->alloc, sizeof(gfx_vulkan_pipeline_t));
+	if (vk_pipeline == NULL) {
 		return 1;
 	}
-
-	VkShaderModuleCreateInfo vertex_create = {
-		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = vertex_shader.code.used,
-		.pCode	  = vertex_shader.code.data,
-	};
-	VkShaderModule vertex = 0;
-	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &vertex_create, NULL, &vertex))) {
-		gfx_shader_code_free(&fragment_shader);
-		gfx_shader_code_free(&vertex_shader);
-		return 1;
-	}
-	VkShaderModuleCreateInfo fragment_create = {
-		.sType	  = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-		.codeSize = fragment_shader.code.used,
-		.pCode	  = fragment_shader.code.data,
-	};
-	VkShaderModule fragment = 0;
-	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &fragment_create, NULL, &fragment))) {
-		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
-		gfx_shader_code_free(&fragment_shader);
-		gfx_shader_code_free(&vertex_shader);
-		return 1;
-	}
-	gfx_shader_code_free(&fragment_shader);
-	gfx_shader_code_free(&vertex_shader);
-
-	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&vulkan->alloc, sizeof(*vk_shader));
-	if (vk_shader == NULL) {
-		vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
-		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
-		return 1;
-	}
-	*vk_shader = (gfx_vulkan_shader_t){0};
+	*vk_pipeline = (gfx_vulkan_pipeline_t){0};
 
 	VkPipelineLayoutCreateInfo layout = {
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 	};
-	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_shader->pipeline_layout))) {
-		vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
-		vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
-		alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_pipeline->pipeline_layout))) {
+		alloc_free(&vulkan->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 		return 1;
 	}
+
+	gfx_vulkan_shader_t *vk_vs = config->vs.data;
+	gfx_vulkan_shader_t *vk_fs = config->fs.data;
 
 	VkPipelineShaderStageCreateInfo stages[2] = {
 		{
 			.sType	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 			.stage	= VK_SHADER_STAGE_VERTEX_BIT,
-			.module = vertex,
+			.module = vk_vs->module,
 			.pName	= "main",
 		},
 		{
 			.sType	= VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
 			.stage	= VK_SHADER_STAGE_FRAGMENT_BIT,
-			.module = fragment,
+			.module = vk_fs->module,
 			.pName	= "main",
 		},
 	};
@@ -2727,40 +2320,36 @@ static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		.pMultisampleState   = &multisample,
 		.pColorBlendState    = &blend,
 		.pDynamicState	     = &dynamic,
-		.layout		     = vk_shader->pipeline_layout,
+		.layout		     = vk_pipeline->pipeline_layout,
 		.renderPass	     = vulkan->render_pass,
 	};
-	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_shader->pipeline));
-	vulkan->DestroyShaderModule(vulkan->device, fragment, NULL);
-	vulkan->DestroyShaderModule(vulkan->device, vertex, NULL);
+	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_pipeline->pipeline));
 	if (failed) {
-		vulkan->DestroyPipelineLayout(vulkan->device, vk_shader->pipeline_layout, NULL);
-		alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+		vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
+		alloc_free(&vulkan->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 		return 1;
 	}
-	shader->data = vk_shader;
+
+	pipeline->data = vk_pipeline;
+
 	return 0;
 }
 
-static void gfx_vulkan_shader_free(gfx_shader_t *shader)
+static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
 		return;
 	}
-	gfx_vulkan_t *vulkan	       = shader->gfx->data;
-	gfx_vulkan_shader_t *vk_shader = shader->data;
-	if (vk_shader->pipeline != 0) {
-		vulkan->DestroyPipeline(vulkan->device, vk_shader->pipeline, NULL);
-	}
-	if (vk_shader->pipeline_layout != 0) {
-		vulkan->DestroyPipelineLayout(vulkan->device, vk_shader->pipeline_layout, NULL);
-	}
-	alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
-	shader->data = NULL;
+
+	gfx_vulkan_t *vulkan		   = pipeline->gfx->data;
+	gfx_vulkan_pipeline_t *vk_pipeline = pipeline->data;
+	vulkan->DestroyPipeline(vulkan->device, vk_pipeline->pipeline, NULL);
+	vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
+	alloc_free(&vulkan->alloc, vk_pipeline, sizeof(*vk_pipeline));
 }
 
 static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view, VkFramebuffer *framebuffer, u32 old_layout,
-				  u32 final_layout, const gfx_vulkan_shader_t *shader)
+				  u32 final_layout, const gfx_vulkan_pipeline_t *pipeline)
 {
 	if (*view == 0 && gfx_vulkan_create_image_view(vulkan, image, view)) {
 		return 1;
@@ -2840,7 +2429,7 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	};
 	VkDeviceSize offset = 0;
 	vulkan->CmdBeginRenderPass(vulkan->command_buffer, &render, VK_SUBPASS_CONTENTS_INLINE);
-	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shader->pipeline);
+	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->pipeline);
 	vulkan->CmdBindVertexBuffers(vulkan->command_buffer, 0, 1, &vulkan->vertex_buffer, &offset);
 	vulkan->CmdSetViewport(vulkan->command_buffer, 0, 1, &viewport);
 	vulkan->CmdSetScissor(vulkan->command_buffer, 0, 1, &scissor);
@@ -2870,14 +2459,14 @@ static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageVi
 	       !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull));
 }
 
-static int gfx_vulkan_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+static int gfx_vulkan_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || vertices == NULL) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan	       = shader->gfx->data;
-	gfx_vulkan_shader_t *vk_shader = shader->data;
+	gfx_vulkan_t *vulkan		   = pipeline->gfx->data;
+	gfx_vulkan_pipeline_t *vk_pipeline = pipeline->data;
 	if (vulkan->target.type != GFX_TARGET_MEMORY && vulkan->target.type != GFX_TARGET_SURFACE) {
 		return 1;
 	}
@@ -2891,7 +2480,7 @@ static int gfx_vulkan_draw_triangle_2d(const gfx_shader_t *shader, const gfx_ver
 					   &vulkan->framebuffer,
 					   VK_IMAGE_LAYOUT_UNDEFINED,
 					   VK_IMAGE_LAYOUT_GENERAL,
-					   vk_shader)) {
+					   vk_pipeline)) {
 			return 1;
 		}
 		return gfx_vulkan_copy_memory(vulkan);
@@ -2908,7 +2497,7 @@ static int gfx_vulkan_draw_triangle_2d(const gfx_shader_t *shader, const gfx_ver
 					   &vulkan->swapchain_framebuffers[i],
 					   old_layout,
 					   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-					   vk_shader)) {
+					   vk_pipeline)) {
 			return 1;
 		}
 		vulkan->swapchain_image_layouts[i] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -2959,6 +2548,8 @@ static gfx_driver_t gfx_vulkan = {
 	.clear		  = gfx_vulkan_clear,
 	.shader_init	  = gfx_vulkan_shader_init,
 	.shader_free	  = gfx_vulkan_shader_free,
+	.pipeline_init	  = gfx_vulkan_pipeline_init,
+	.pipeline_free	  = gfx_vulkan_pipeline_free,
 	.draw_triangle_2d = gfx_vulkan_draw_triangle_2d,
 	.present	  = gfx_vulkan_present,
 };

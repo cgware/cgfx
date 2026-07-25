@@ -99,9 +99,13 @@ typedef struct gfx_opengl_s {
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_shader_s {
+	unsigned int shader;
+} gfx_opengl_shader_t;
+
+typedef struct gfx_opengl_pipeline_s {
 	unsigned int program;
 	int target_size;
-} gfx_opengl_shader_t;
+} gfx_opengl_pipeline_t;
 
 static void gfx_opengl_draw_free(gfx_opengl_t *opengl);
 static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl);
@@ -597,139 +601,6 @@ static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
 	return 0;
 }
 
-static const char *gfx_opengl_shader_language_name(gfx_shader_language_t language)
-{
-	if (language == GFX_SHADER_LANGUAGE_GLSL) {
-		return "GLSL 120";
-	}
-	return "unknown GLSL";
-}
-
-static int gfx_opengl_shader_build(gfx_opengl_t *opengl, gfx_shader_compiler_t *compiler, strv_t source, gfx_shader_language_t language,
-				   gfx_opengl_shader_t *gl_shader, int log_errors)
-{
-	if (opengl == NULL || compiler == NULL || source.data == NULL || gl_shader == NULL) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to build OpenGL shader: invalid arguments opengl=%p compiler=%p source=%p shader=%p",
-				  (void *)opengl,
-				  (void *)compiler,
-				  (const void *)source.data,
-				  (void *)gl_shader);
-		}
-		return 1;
-	}
-
-	gfx_shader_code_t vertex   = {0};
-	gfx_shader_code_t fragment = {0};
-	if (gfx_shader_compiler_transpile(compiler, source, GFX_SHADER_STAGE_VERTEX, language, &vertex)) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to transpile OpenGL vertex shader to %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		gfx_shader_code_free(&vertex);
-		return 1;
-	}
-	if (gfx_shader_compiler_transpile(compiler, source, GFX_SHADER_STAGE_FRAGMENT, language, &fragment)) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to transpile OpenGL fragment shader to %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		gfx_shader_code_free(&fragment);
-		gfx_shader_code_free(&vertex);
-		return 1;
-	}
-
-	unsigned int vertex_shader = gfx_opengl_compile_shader(opengl, GL_VERTEX_SHADER, vertex.text, log_errors);
-	if (vertex_shader == 0) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to build OpenGL vertex shader for %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		gfx_shader_code_free(&fragment);
-		gfx_shader_code_free(&vertex);
-		return 1;
-	}
-	unsigned int fragment_shader = gfx_opengl_compile_shader(opengl, GL_FRAGMENT_SHADER, fragment.text, log_errors);
-	gfx_shader_code_free(&fragment);
-	gfx_shader_code_free(&vertex);
-	if (fragment_shader == 0) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to build OpenGL fragment shader for %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		opengl->DeleteShader(vertex_shader);
-		return 1;
-	}
-
-	unsigned int program = opengl->CreateProgram();
-	if (program == 0) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to create OpenGL shader program for %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		opengl->DeleteShader(fragment_shader);
-		opengl->DeleteShader(vertex_shader);
-		return 1;
-	}
-
-	opengl->AttachShader(program, vertex_shader);
-	opengl->AttachShader(program, fragment_shader);
-	opengl->BindAttribLocation(program, GFX_OPENGL_POS_ATTR, "a_pos");
-	opengl->BindAttribLocation(program, GFX_OPENGL_COLOR_ATTR, "a_color");
-	opengl->LinkProgram(program);
-	opengl->DeleteShader(fragment_shader);
-	opengl->DeleteShader(vertex_shader);
-
-	int linked = 0;
-	opengl->GetProgramiv(program, GL_LINK_STATUS, &linked);
-	if (!linked) {
-		if (log_errors) {
-			gfx_opengl_log_program_link(opengl, program);
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to link OpenGL shader program for %s",
-				  gfx_opengl_shader_language_name(language));
-		}
-		opengl->DeleteProgram(program);
-		return 1;
-	}
-
-	gl_shader->program     = program;
-	gl_shader->target_size = opengl->GetUniformLocation(program, "u_target_size");
-	if (gl_shader->target_size < 0) {
-		if (log_errors) {
-			log_error("cgfx",
-				  "gfx_opengl",
-				  NULL,
-				  "failed to find OpenGL shader uniform for %s: u_target_size",
-				  gfx_opengl_shader_language_name(language));
-		}
-		opengl->DeleteProgram(program);
-		return 1;
-	}
-
-	return 0;
-}
-
 static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
@@ -737,10 +608,6 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	}
 
 	gfx_opengl_t *opengl = shader->gfx->data;
-	if (config->compiler == NULL) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to initialize OpenGL shader: shader compiler is unavailable");
-		return 1;
-	}
 
 	if (gfx_opengl_make_current(opengl, "shader initialization")) {
 		return 1;
@@ -761,14 +628,40 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	}
 	*gl_shader = (gfx_opengl_shader_t){0};
 
-	if (gfx_opengl_shader_build(opengl, config->compiler, config->source, GFX_SHADER_LANGUAGE_GLSL, gl_shader, 1) &&
-	    gfx_opengl_shader_build(opengl, config->compiler, config->source, GFX_SHADER_LANGUAGE_GLSL, gl_shader, 1)) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to initialize OpenGL shader: all GLSL variants failed");
-		alloc_free(&opengl->alloc, gl_shader, sizeof(*gl_shader));
+	gfx_shader_code_t shader_code = {0};
+	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_GLSL, &shader_code)) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to transpile OpenGL shader");
+		gfx_shader_code_free(&shader_code);
 		return 1;
 	}
 
+	unsigned int type;
+	switch (config->stage) {
+	case GFX_SHADER_STAGE_VERTEX: {
+		type = GL_VERTEX_SHADER;
+		break;
+	}
+	case GFX_SHADER_STAGE_FRAGMENT: {
+		type = GL_FRAGMENT_SHADER;
+		break;
+	}
+	default: {
+		log_error("cgfx", "gfx_opengl", NULL, "unsupported shader stage: %d", config->stage);
+		gfx_shader_code_free(&shader_code);
+		return 1;
+	}
+	}
+
+	gl_shader->shader = gfx_opengl_compile_shader(opengl, type, shader_code.text, 1);
+	if (gl_shader->shader == 0) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to build OpenGL shader");
+		gfx_shader_code_free(&shader_code);
+		return 1;
+	}
+	gfx_shader_code_free(&shader_code);
+
 	shader->data = gl_shader;
+
 	return 0;
 }
 
@@ -782,21 +675,87 @@ static void gfx_opengl_shader_free(gfx_shader_t *shader)
 	if (gfx_opengl_make_current(opengl, "shader destruction")) {
 		return;
 	}
-	if (gl_shader->program != 0 && opengl->DeleteProgram != NULL) {
-		opengl->DeleteProgram(gl_shader->program);
-	}
+	opengl->DeleteShader(gl_shader->shader);
 	alloc_free(&opengl->alloc, gl_shader, sizeof(*gl_shader));
-	shader->data = NULL;
 }
 
-static int gfx_opengl_draw_triangle_2d(const gfx_shader_t *shader, const gfx_vertex_2d_t vertices[3])
+static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl	       = shader->gfx->data;
-	gfx_opengl_shader_t *gl_shader = shader->data;
+	gfx_opengl_t *opengl = pipeline->gfx->data;
+
+	if (gfx_opengl_make_current(opengl, "pipeline initialization")) {
+		return 1;
+	}
+
+	gfx_opengl_pipeline_t *gl_pipeline = alloc_alloc(&opengl->alloc, sizeof(gfx_opengl_pipeline_t));
+	if (gl_pipeline == NULL) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to allocate OpenGL pipeline");
+		return 1;
+	}
+	*gl_pipeline = (gfx_opengl_pipeline_t){0};
+
+	gl_pipeline->program = opengl->CreateProgram();
+	if (gl_pipeline->program == 0) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to create OpenGL shader program");
+		return 1;
+	}
+
+	gfx_opengl_shader_t *vs = config->vs.data;
+	gfx_opengl_shader_t *fs = config->fs.data;
+
+	opengl->AttachShader(gl_pipeline->program, vs->shader);
+	opengl->AttachShader(gl_pipeline->program, fs->shader);
+	opengl->BindAttribLocation(gl_pipeline->program, GFX_OPENGL_POS_ATTR, "a_pos");
+	opengl->BindAttribLocation(gl_pipeline->program, GFX_OPENGL_COLOR_ATTR, "a_color");
+	opengl->LinkProgram(gl_pipeline->program);
+
+	int linked = 0;
+	opengl->GetProgramiv(gl_pipeline->program, GL_LINK_STATUS, &linked);
+	if (!linked) {
+		gfx_opengl_log_program_link(opengl, gl_pipeline->program);
+		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program");
+		opengl->DeleteProgram(gl_pipeline->program);
+		return 1;
+	}
+
+	gl_pipeline->target_size = opengl->GetUniformLocation(gl_pipeline->program, "u_target_size");
+	if (gl_pipeline->target_size < 0) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to find OpenGL shader uniform: u_target_size");
+		opengl->DeleteProgram(gl_pipeline->program);
+		return 1;
+	}
+
+	pipeline->data = gl_pipeline;
+
+	return 0;
+}
+
+static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
+{
+	if (pipeline == NULL || pipeline->gfx || pipeline->gfx->data || pipeline->data == NULL) {
+		return;
+	}
+	gfx_opengl_t *opengl		   = pipeline->gfx->data;
+	gfx_opengl_pipeline_t *gl_pipeline = pipeline->data;
+	if (gfx_opengl_make_current(opengl, "shader destruction")) {
+		return;
+	}
+	opengl->DeleteProgram(gl_pipeline->program);
+	alloc_free(&opengl->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
+}
+
+static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
+{
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || vertices == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl		   = pipeline->gfx->data;
+	gfx_opengl_pipeline_t *gl_pipeline = pipeline->data;
 	if (gfx_opengl_make_current(opengl, "triangle draw")) {
 		return 1;
 	}
@@ -819,8 +778,8 @@ static int gfx_opengl_draw_triangle_2d(const gfx_shader_t *shader, const gfx_ver
 		};
 	}
 
-	opengl->UseProgram(gl_shader->program);
-	opengl->Uniform2f(gl_shader->target_size, (float)opengl->target.width, (float)opengl->target.height);
+	opengl->UseProgram(gl_pipeline->program);
+	opengl->Uniform2f(gl_pipeline->target_size, (float)opengl->target.width, (float)opengl->target.height);
 	opengl->BindBuffer(GL_ARRAY_BUFFER, opengl->triangle_buffer);
 	opengl->BufferData(GL_ARRAY_BUFFER, sizeof(gl_vertices), gl_vertices, GL_DYNAMIC_DRAW);
 	opengl->EnableVertexAttribArray(GFX_OPENGL_POS_ATTR);
@@ -895,6 +854,8 @@ static gfx_driver_t gfx_opengl = {
 	.clear		  = gfx_opengl_clear,
 	.shader_init	  = gfx_opengl_shader_init,
 	.shader_free	  = gfx_opengl_shader_free,
+	.pipeline_init	  = gfx_opengl_pipeline_init,
+	.pipeline_free	  = gfx_opengl_pipeline_free,
 	.draw_triangle_2d = gfx_opengl_draw_triangle_2d,
 	.present	  = gfx_opengl_present,
 };
