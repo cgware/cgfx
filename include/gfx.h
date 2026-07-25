@@ -80,18 +80,18 @@ typedef struct gfx_vertex_2d_s {
 } gfx_vertex_2d_t;
 
 typedef struct gfx_config_s {
-	proc_t *proc;
-	alloc_t alloc;
 	const gfx_plan_t *plan;
 	gfx_surface_t *surface;
 } gfx_config_t;
 
 typedef struct gfx_s {
 	const struct gfx_driver_s *drv;
+	proc_t *proc;
+	alloc_t alloc;
 	void *data;
 } gfx_t;
 
-gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config);
+gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config, proc_t *proc, alloc_t alloc);
 void gfx_free(gfx_t *gfx);
 
 int gfx_native(gfx_t *gfx, gfx_native_t *native);

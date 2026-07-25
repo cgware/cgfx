@@ -2,13 +2,16 @@
 
 #include "gfx_driver.h"
 
-gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config)
+gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config, proc_t *proc, alloc_t alloc)
 {
 	if (gfx == NULL || drv == NULL || config == NULL || drv->init == NULL) {
 		return NULL;
 	}
 
-	gfx->drv = drv;
+	gfx->drv   = drv;
+	gfx->proc  = proc;
+	gfx->alloc = alloc;
+
 	if (gfx->drv->init(gfx, config)) {
 		return NULL;
 	}

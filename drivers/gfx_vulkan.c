@@ -728,9 +728,7 @@ enum {
 };
 
 typedef struct gfx_vulkan_s {
-	proc_t *proc;
 	void *lib;
-	alloc_t alloc;
 	gfx_target_t target;
 	VkInstance instance;
 	VkPhysicalDevice physical_device;
@@ -845,9 +843,10 @@ typedef struct gfx_vulkan_pipeline_s {
 	VkPipeline pipeline;
 } gfx_vulkan_pipeline_t;
 
-static int load_lib_symbol(gfx_vulkan_t *vulkan, void **sym, strv_t name)
+static int load_lib_symbol(gfx_t *gfx, void **sym, strv_t name)
 {
-	if (proc_dlsym(vulkan->proc, vulkan->lib, name, sym)) {
+	gfx_vulkan_t *vulkan = gfx->data;
+	if (proc_dlsym(gfx->proc, vulkan->lib, name, sym)) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to load Vulkan symbol: %.*s", name.len, name.data);
 		return 1;
 	}
@@ -897,9 +896,9 @@ static void *symbol_ptr(PFN_vkVoidFunction fn)
 	return symbol.ptr;
 }
 
-#define LOAD_VK_LIB(_vulkan, _name)  load_lib_symbol((_vulkan), (void **)&(_vulkan)->_name, STRV("vk" #_name))
-#define LOAD_VK_INST(_vulkan, _name) load_instance_symbol((_vulkan), (void **)&(_vulkan)->_name, "vk" #_name)
-#define LOAD_VK_DEV(_vulkan, _name)  load_device_symbol((_vulkan), (void **)&(_vulkan)->_name, "vk" #_name)
+#define LOAD_VK_LIB(_gfx, _vulkan, _name) load_lib_symbol((_gfx), (void **)&(_vulkan)->_name, STRV("vk" #_name))
+#define LOAD_VK_INST(_vulkan, _name)	  load_instance_symbol((_vulkan), (void **)&(_vulkan)->_name, "vk" #_name)
+#define LOAD_VK_DEV(_vulkan, _name)	  load_device_symbol((_vulkan), (void **)&(_vulkan)->_name, "vk" #_name)
 
 static int vk_ok(VkResult result)
 {
@@ -1056,9 +1055,9 @@ static int gfx_vulkan_init_free(gfx_t *gfx, gfx_vulkan_t *vulkan)
 		vulkan->DestroyInstance(vulkan->instance, NULL);
 	}
 	if (vulkan->lib != NULL) {
-		proc_dlclose(vulkan->proc, vulkan->lib);
+		proc_dlclose(gfx->proc, vulkan->lib);
 	}
-	alloc_free(&vulkan->alloc, vulkan, sizeof(*vulkan));
+	alloc_free(&gfx->alloc, vulkan, sizeof(*vulkan));
 	gfx->data = NULL;
 	return 1;
 }
@@ -1112,8 +1111,10 @@ static int gfx_vulkan_pick_device(gfx_vulkan_t *vulkan)
 	return 1;
 }
 
-static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan)
+static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 {
+	gfx_vulkan_t *vulkan = gfx->data;
+
 	float priority		      = 1.0f;
 	VkDeviceQueueCreateInfo queue = {
 		.sType		  = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
@@ -1134,7 +1135,7 @@ static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan
 	if (add_swapchain && plan_extension_count == 0) {
 		device_extensions = swapchain_extensions;
 	} else if (add_swapchain) {
-		owned_extensions = alloc_alloc(&vulkan->alloc, sizeof(*owned_extensions) * device_extension_count);
+		owned_extensions = alloc_alloc(&gfx->alloc, sizeof(*owned_extensions) * device_extension_count);
 		if (owned_extensions == NULL) {
 			return 1;
 		}
@@ -1153,7 +1154,7 @@ static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan
 	};
 	int create_failed = !vk_ok(vulkan->CreateDevice(vulkan->physical_device, &create, NULL, &vulkan->device));
 	if (owned_extensions != NULL) {
-		alloc_free(&vulkan->alloc, owned_extensions, sizeof(*owned_extensions) * device_extension_count);
+		alloc_free(&gfx->alloc, owned_extensions, sizeof(*owned_extensions) * device_extension_count);
 	}
 	if (create_failed) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to create Vulkan device");
@@ -1227,18 +1228,15 @@ static int gfx_vulkan_create_device(gfx_vulkan_t *vulkan, const gfx_plan_t *plan
 
 static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 {
-	if (gfx == NULL || config == NULL || config->proc == NULL || config->alloc.alloc == NULL) {
+	if (gfx == NULL || config == NULL) {
 		return 1;
 	}
 
-	alloc_t alloc	     = config->alloc;
-	gfx_vulkan_t *vulkan = alloc_alloc(&alloc, sizeof(gfx_vulkan_t));
+	gfx_vulkan_t *vulkan = alloc_alloc(&gfx->alloc, sizeof(gfx_vulkan_t));
 	if (vulkan == NULL) {
 		return 1;
 	}
 	*vulkan = (gfx_vulkan_t){
-		.proc	     = config->proc,
-		.alloc	     = alloc,
 		.clear_color = {.float32 = {0.0f, 0.0f, 0.0f, 1.0f}},
 	};
 	if (config->plan != NULL) {
@@ -1250,14 +1248,13 @@ static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 	}
 	gfx->data = vulkan;
 
-	if (proc_dlopen(vulkan->proc, STRV("vulkan-1.dll"), &vulkan->lib) &&
-	    proc_dlopen(vulkan->proc, STRV("libvulkan.so.1"), &vulkan->lib) &&
-	    proc_dlopen(vulkan->proc, STRV("libvulkan.so"), &vulkan->lib)) {
+	if (proc_dlopen(gfx->proc, STRV("vulkan-1.dll"), &vulkan->lib) && proc_dlopen(gfx->proc, STRV("libvulkan.so.1"), &vulkan->lib) &&
+	    proc_dlopen(gfx->proc, STRV("libvulkan.so"), &vulkan->lib)) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to load Vulkan library");
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
-	if (LOAD_VK_LIB(vulkan, GetInstanceProcAddr)) {
+	if (LOAD_VK_LIB(gfx, vulkan, GetInstanceProcAddr)) {
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
@@ -1298,7 +1295,7 @@ static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
-	if (gfx_vulkan_pick_device(vulkan) || gfx_vulkan_create_device(vulkan, config->plan)) {
+	if (gfx_vulkan_pick_device(vulkan) || gfx_vulkan_create_device(gfx, config->plan)) {
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
@@ -1317,9 +1314,9 @@ static int gfx_vulkan_free(gfx_t *gfx)
 		vulkan->DestroyInstance(vulkan->instance, NULL);
 	}
 	if (vulkan->lib != NULL) {
-		proc_dlclose(vulkan->proc, vulkan->lib);
+		proc_dlclose(gfx->proc, vulkan->lib);
 	}
-	alloc_free(&vulkan->alloc, vulkan, sizeof(*vulkan));
+	alloc_free(&gfx->alloc, vulkan, sizeof(*vulkan));
 	gfx->data = NULL;
 	return 0;
 }
@@ -1331,7 +1328,7 @@ static int gfx_vulkan_proc(gfx_t *gfx, strv_t name, void **proc)
 	}
 
 	gfx_vulkan_t *vulkan = gfx->data;
-	if (proc_dlsym(vulkan->proc, vulkan->lib, name, proc) == 0) {
+	if (proc_dlsym(gfx->proc, vulkan->lib, name, proc) == 0) {
 		return 0;
 	}
 
@@ -2175,7 +2172,7 @@ static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		return 1;
 	}
 
-	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&vulkan->alloc, sizeof(*vk_shader));
+	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&shader->gfx->alloc, sizeof(*vk_shader));
 	if (vk_shader == NULL) {
 		return 1;
 	}
@@ -2207,7 +2204,7 @@ static void gfx_vulkan_shader_free(gfx_shader_t *shader)
 	gfx_vulkan_t *vulkan	       = shader->gfx->data;
 	gfx_vulkan_shader_t *vk_shader = shader->data;
 	vulkan->DestroyShaderModule(vulkan->device, vk_shader->module, NULL);
-	alloc_free(&vulkan->alloc, vk_shader, sizeof(*vk_shader));
+	alloc_free(&shader->gfx->alloc, vk_shader, sizeof(*vk_shader));
 }
 
 static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
@@ -2222,7 +2219,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		return 1;
 	}
 
-	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&vulkan->alloc, sizeof(gfx_vulkan_pipeline_t));
+	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_vulkan_pipeline_t));
 	if (vk_pipeline == NULL) {
 		return 1;
 	}
@@ -2232,7 +2229,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 	};
 	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_pipeline->pipeline_layout))) {
-		alloc_free(&vulkan->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
+		alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 		return 1;
 	}
 
@@ -2326,7 +2323,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	int failed = !vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_pipeline->pipeline));
 	if (failed) {
 		vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
-		alloc_free(&vulkan->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
+		alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 		return 1;
 	}
 
@@ -2345,7 +2342,7 @@ static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 	gfx_vulkan_pipeline_t *vk_pipeline = pipeline->data;
 	vulkan->DestroyPipeline(vulkan->device, vk_pipeline->pipeline, NULL);
 	vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
-	alloc_free(&vulkan->alloc, vk_pipeline, sizeof(*vk_pipeline));
+	alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(*vk_pipeline));
 }
 
 static int gfx_vulkan_draw_target(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view, VkFramebuffer *framebuffer, u32 old_layout,

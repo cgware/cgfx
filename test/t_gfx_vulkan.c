@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "gfx.h"
 #include "gfx_driver.h"
 #include "gfx_pipeline.h"
@@ -1502,7 +1503,7 @@ static int t_gfx_vulkan_init_gfx(gfx_t *gfx, proc_t *proc)
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
-	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+	return gfx_init(gfx, drv, &(gfx_config_t){0}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader)
@@ -1558,7 +1559,7 @@ static int t_gfx_vulkan_init_gfx_current(gfx_t *gfx, proc_t *proc)
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
-	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+	return gfx_init(gfx, drv, &(gfx_config_t){0}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_vulkan_init_surface_gfx(gfx_t *gfx, proc_t *proc)
@@ -1576,7 +1577,7 @@ static int t_gfx_vulkan_init_surface_gfx(gfx_t *gfx, proc_t *proc)
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
-	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD, .plan = &plan}) != gfx;
+	return gfx_init(gfx, drv, &(gfx_config_t){.plan = &plan}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_vulkan_init_surface_gfx_current(gfx_t *gfx, proc_t *proc)
@@ -1593,7 +1594,7 @@ static int t_gfx_vulkan_init_surface_gfx_current(gfx_t *gfx, proc_t *proc)
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
-	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD, .plan = &plan}) != gfx;
+	return gfx_init(gfx, drv, &(gfx_config_t){.plan = &plan}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_vulkan_init_surface_gfx_without_device_extensions(gfx_t *gfx, proc_t *proc)
@@ -1608,7 +1609,7 @@ static int t_gfx_vulkan_init_surface_gfx_without_device_extensions(gfx_t *gfx, p
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
-	return gfx_init(gfx, drv, &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD, .plan = &plan}) != gfx;
+	return gfx_init(gfx, drv, &(gfx_config_t){.plan = &plan}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_vulkan_set_memory_target(gfx_t *gfx, u8 *pixels)
@@ -1667,7 +1668,7 @@ TEST(gfx_vulkan_init_null_proc)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(drv->init(&gfx, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
+	EXPECT_EQ(drv->init(&gfx, &(gfx_config_t){0}), 1);
 
 	END;
 }
@@ -1682,7 +1683,7 @@ TEST(gfx_vulkan_init_alloc_failure)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = {.alloc = t_gfx_vulkan_alloc_fail}}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, (alloc_t){.alloc = t_gfx_vulkan_alloc_fail}));
 
 	proc_free(&proc);
 	END;
@@ -1700,7 +1701,7 @@ TEST(gfx_vulkan_init_missing_library)
 	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -1719,7 +1720,7 @@ TEST(gfx_vulkan_init_fallback_library)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1738,7 +1739,7 @@ TEST(gfx_vulkan_init_windows_library)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1759,7 +1760,7 @@ TEST(gfx_vulkan_init_missing_instance_symbol)
 	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -1780,7 +1781,7 @@ TEST(gfx_vulkan_init_missing_device_symbol)
 	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -1803,7 +1804,7 @@ TEST(gfx_vulkan_init_missing_lib_symbol)
 	EXPECT_NOT_NULL(drv);
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -1965,7 +1966,7 @@ TEST(gfx_vulkan_init_adds_swapchain_to_existing_device_extensions)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .plan = &plan}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.plan = &plan}, &proc, ALLOC_STD), &gfx);
 	EXPECT_EQ(t_vk_device_extension_count, 2);
 	EXPECT_EQ(t_strcmp(t_vk_device_extensions[1], "VK_KHR_swapchain"), 0);
 
@@ -1999,10 +2000,10 @@ TEST(gfx_vulkan_init_device_extension_alloc_failure)
 	EXPECT_NULL(gfx_init(&gfx,
 			     drv,
 			     &(gfx_config_t){
-				     .proc  = &proc,
-				     .alloc = {.alloc = t_gfx_vulkan_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std},
-				     .plan  = &plan,
-			     }));
+				     .plan = &plan,
+			     },
+			     &proc,
+			     (alloc_t){.alloc = t_gfx_vulkan_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std}));
 
 	proc_free(&proc);
 	END;
@@ -2157,7 +2158,7 @@ TEST(gfx_vulkan_init_uses_plan_extension_count)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .plan = &plan}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.plan = &plan}, &proc, ALLOC_STD), &gfx);
 	EXPECT_EQ(t_vk_instance_extension_count, 2);
 
 	gfx_free(&gfx);
@@ -2183,7 +2184,7 @@ TEST(gfx_vulkan_init_uses_plan_extensions)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .plan = &plan}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.plan = &plan}, &proc, ALLOC_STD), &gfx);
 	EXPECT_PTR(t_vk_instance_extensions, extensions);
 
 	gfx_free(&gfx);
@@ -2366,7 +2367,7 @@ TEST(gfx_vulkan_init_enables_swapchain_from_device_extension)
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD, .plan = &plan}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.plan = &plan}, &proc, ALLOC_STD), &gfx);
 
 	gfx_free(&gfx);
 	proc_free(&proc);

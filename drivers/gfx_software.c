@@ -34,17 +34,15 @@ static int target_valid(const gfx_target_t *target)
 
 static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
 {
-	if (gfx == NULL || config == NULL || config->alloc.alloc == NULL) {
+	if (gfx == NULL || config == NULL) {
 		return 1;
 	}
 
-	alloc_t alloc	       = config->alloc;
-	gfx_software_t *render = alloc_alloc(&alloc, sizeof(gfx_software_t));
+	gfx_software_t *render = alloc_alloc(&gfx->alloc, sizeof(gfx_software_t));
 	if (render == NULL) {
 		return 1;
 	}
 	*render = (gfx_software_t){
-		.alloc = alloc,
 		.color = {0, 0, 0, 255},
 	};
 	gfx->data = render;

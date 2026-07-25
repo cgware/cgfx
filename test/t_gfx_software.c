@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "gfx_driver.h"
 
 #include "test.h"
@@ -17,7 +18,7 @@ static gfx_driver_t *t_gfx_software_driver(void)
 static int t_gfx_software_init(gfx_t *gfx)
 {
 	gfx_driver_t *drv = t_gfx_software_driver();
-	return drv == NULL || gfx_init(gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD}) != gfx;
+	return drv == NULL || gfx_init(gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_software_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
@@ -61,7 +62,7 @@ TEST(gfx_software_init_null_gfx)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
+	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){0}), 1);
 
 	END;
 }
@@ -100,7 +101,7 @@ TEST(gfx_software_init_success)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
 	gfx_free(&gfx);
 	END;
@@ -114,7 +115,7 @@ TEST(gfx_software_init_alloc_failure)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){.alloc = {.alloc = t_gfx_software_alloc_fail}}));
+	EXPECT_NULL(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, (alloc_t){.alloc = t_gfx_software_alloc_fail}));
 
 	END;
 }
@@ -187,7 +188,7 @@ TEST(gfx_software_set_target_invalid_format)
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD);
 	gfx_target_t target = {
 		.type	= GFX_TARGET_MEMORY,
 		.format = GFX_FORMAT_NONE,
@@ -483,7 +484,7 @@ TEST(gfx_software_set_target_invalid_stride)
 	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){.alloc = ALLOC_STD});
+	gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD);
 	gfx_target_t target = {
 		.type	= GFX_TARGET_MEMORY,
 		.format = GFX_FORMAT_RGBA8,

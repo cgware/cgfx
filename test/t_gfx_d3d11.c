@@ -805,7 +805,7 @@ static int t_gfx_d3d11_init_gfx(gfx_t *gfx, proc_t *proc)
 	t_gfx_d3d11_reset();
 	proc_init(proc, 0, 1, ALLOC_STD);
 	t_gfx_d3d11_symbols(proc);
-	return gfx_init(gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = proc, .alloc = ALLOC_STD}) != gfx;
+	return gfx_init(gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, proc, ALLOC_STD) != gfx;
 }
 
 static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader)
@@ -879,7 +879,7 @@ TEST(gfx_d3d11_init_null_gfx)
 {
 	START;
 
-	EXPECT_EQ(t_gfx_d3d11_driver()->init(NULL, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(NULL, &(gfx_config_t){0}), 1);
 
 	END;
 }
@@ -897,7 +897,7 @@ TEST(gfx_d3d11_init_null_proc)
 {
 	START;
 
-	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){.alloc = ALLOC_STD}), 1);
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){0}), 1);
 
 	END;
 }
@@ -906,9 +906,7 @@ TEST(gfx_d3d11_init_null_alloc)
 {
 	START;
 
-	proc_t proc = {0};
-
-	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){.proc = &proc}), 1);
+	EXPECT_EQ(t_gfx_d3d11_driver()->init(&(gfx_t){0}, &(gfx_config_t){0}), 1);
 
 	END;
 }
@@ -923,7 +921,7 @@ TEST(gfx_d3d11_init_alloc_failure)
 	t_gfx_d3d11_symbols(&proc);
 	gfx_t gfx = {0};
 
-	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = {.alloc = t_gfx_d3d11_alloc_fail}}));
+	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, (alloc_t){.alloc = t_gfx_d3d11_alloc_fail}));
 
 	proc_free(&proc);
 	END;
@@ -939,7 +937,7 @@ TEST(gfx_d3d11_init_loads_library)
 	gfx_t gfx = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -957,7 +955,7 @@ TEST(gfx_d3d11_init_missing_create_device_symbol)
 	gfx_t gfx = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -976,7 +974,7 @@ TEST(gfx_d3d11_init_create_device_failure)
 	gfx_t gfx = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD}));
+	EXPECT_NULL(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD));
 	log_set_quiet(0, 0);
 
 	proc_free(&proc);
@@ -994,7 +992,7 @@ TEST(gfx_d3d11_init_failure_releases_context)
 	t_gfx_d3d11_symbols(&proc);
 
 	log_set_quiet(0, 1);
-	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD);
 	log_set_quiet(0, 0);
 
 	EXPECT_EQ(t_release_context_calls, 1);
@@ -1014,7 +1012,7 @@ TEST(gfx_d3d11_init_failure_releases_device)
 	t_gfx_d3d11_symbols(&proc);
 
 	log_set_quiet(0, 1);
-	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){.proc = &proc, .alloc = ALLOC_STD});
+	gfx_init(&(gfx_t){0}, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD);
 	log_set_quiet(0, 0);
 
 	EXPECT_EQ(t_release_device_calls, 1);

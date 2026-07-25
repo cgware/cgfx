@@ -212,7 +212,7 @@ TEST(gfx_init_null_gfx)
 
 	gfx_config_t config = {0};
 
-	EXPECT_NULL(gfx_init(NULL, &t_gfx_driver, &config));
+	EXPECT_NULL(gfx_init(NULL, &t_gfx_driver, &config, NULL, ALLOC_STD));
 
 	END;
 }
@@ -224,7 +224,7 @@ TEST(gfx_init_null_driver)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	EXPECT_NULL(gfx_init(&gfx, NULL, &config));
+	EXPECT_NULL(gfx_init(&gfx, NULL, &config, NULL, ALLOC_STD));
 
 	END;
 }
@@ -235,7 +235,7 @@ TEST(gfx_init_null_config)
 
 	gfx_t gfx = {0};
 
-	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, NULL));
+	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, NULL, NULL, ALLOC_STD));
 
 	END;
 }
@@ -249,7 +249,7 @@ TEST(gfx_init_null_driver_callback)
 	gfx_config_t config = {0};
 	drv.init	    = NULL;
 
-	EXPECT_NULL(gfx_init(&gfx, &drv, &config));
+	EXPECT_NULL(gfx_init(&gfx, &drv, &config, NULL, ALLOC_STD));
 
 	END;
 }
@@ -262,7 +262,7 @@ TEST(gfx_init_calls_driver)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	EXPECT_PTR(gfx_init(&gfx, &t_gfx_driver, &config), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, &t_gfx_driver, &config, NULL, ALLOC_STD), &gfx);
 	EXPECT_EQ(t_gfx_init_calls, 1);
 
 	END;
@@ -276,7 +276,7 @@ TEST(gfx_init_passes_config)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	gfx_init(&gfx, &t_gfx_driver, &config);
+	gfx_init(&gfx, &t_gfx_driver, &config, NULL, ALLOC_STD);
 
 	EXPECT_PTR(t_gfx_config, &config);
 
@@ -291,7 +291,7 @@ TEST(gfx_init_sets_fields)
 	gfx_t gfx	    = {0};
 	gfx_config_t config = {0};
 
-	gfx_init(&gfx, &t_gfx_driver, &config);
+	gfx_init(&gfx, &t_gfx_driver, &config, NULL, ALLOC_STD);
 
 	EXPECT_PTR(gfx.drv, &t_gfx_driver);
 	EXPECT_PTR(gfx.data, (void *)0x1234);
@@ -308,7 +308,7 @@ TEST(gfx_init_failure_returns_null)
 	gfx_config_t config = {0};
 	t_gfx_init_ret	    = 1;
 
-	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, &config));
+	EXPECT_NULL(gfx_init(&gfx, &t_gfx_driver, &config, NULL, ALLOC_STD));
 
 	END;
 }
@@ -322,7 +322,7 @@ TEST(gfx_init_failure_clears_fields)
 	gfx_config_t config = {0};
 	t_gfx_init_ret	    = 1;
 
-	gfx_init(&gfx, &t_gfx_driver, &config);
+	gfx_init(&gfx, &t_gfx_driver, &config, NULL, ALLOC_STD);
 
 	EXPECT_NULL(gfx.drv);
 	EXPECT_NULL(gfx.data);

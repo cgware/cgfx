@@ -3,6 +3,7 @@
 #include "gfx.h"
 #include "gfx_driver.h"
 #include "log.h"
+#include "proc.h"
 
 static int write_bmp(fs_t *fs, strv_t path, const u8 *pixels, u16 width, u16 height, size_t stride)
 {
@@ -72,6 +73,7 @@ int main(void)
 
 	static u8 pixels[WIDTH * HEIGHT * 4];
 	fs_t fs			= {0};
+	proc_t proc		= {0};
 	gfx_t gfx		= {0};
 	gfx_shader_t vertex	= {0};
 	gfx_shader_t fragment	= {0};
@@ -80,12 +82,13 @@ int main(void)
 	strv_t driver_name	= STRV("software");
 
 	fs_init(&fs, 0, 0, ALLOC_STD);
+	proc_init(&proc, 0, 0, ALLOC_STD);
 	gfx_driver_t *driver = gfx_driver_find(driver_name);
 	if (driver == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to find gfx driver: %.*s", driver_name.len, driver_name.data);
 		ret = 1;
 	}
-	if (ret == 0 && gfx_init(&gfx, driver, &(gfx_config_t){.alloc = ALLOC_STD}) == NULL) {
+	if (ret == 0 && gfx_init(&gfx, driver, &(gfx_config_t){0}, &proc, ALLOC_STD) == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to initialize gfx driver: %s", driver->name);
 		ret = 1;
 	}
@@ -190,6 +193,7 @@ int main(void)
 	gfx_shader_free(&fragment);
 	gfx_pipeline_free(&pipeline);
 	gfx_free(&gfx);
+	proc_free(&proc);
 	fs_free(&fs);
 	return ret;
 }

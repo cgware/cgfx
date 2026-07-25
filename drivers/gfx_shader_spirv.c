@@ -323,12 +323,12 @@ static int gfx_shader_spv_emit_function(buf_t *code, gfx_shader_spv_t *spv, cons
 {
 	const gfx_shader_function_ir_t *fn = stage == GFX_SHADER_STAGE_VERTEX ? &ir->vertex : &ir->fragment;
 	int ret				   = gfx_shader_spv_inst(code,
-								 GFX_SHADER_SPV_OP_FUNCTION,
-								 5,
-								 spv->void_id,
-								 spv->main_id,
-								 GFX_SHADER_SPV_FUNCTION_CONTROL_NONE,
-								 spv->function_type_id);
+					 GFX_SHADER_SPV_OP_FUNCTION,
+					 5,
+					 spv->void_id,
+					 spv->main_id,
+					 GFX_SHADER_SPV_FUNCTION_CONTROL_NONE,
+					 spv->function_type_id);
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LABEL, 2, spv->label_id);
 	for (u32 i = 0; i < fn->statement_count; i++) {
 		const gfx_shader_statement_ir_t *stmt = &fn->statements[i];
@@ -368,13 +368,13 @@ static int gfx_shader_spv_add_var(gfx_shader_spv_t *spv, gfx_shader_spv_var_t *v
 	}
 	gfx_shader_spv_var_t *var = &vars[*count];
 	*var			  = (gfx_shader_spv_var_t){
-		.member	     = member,
-		.type_id     = gfx_shader_spv_type_id(spv, member->type),
-		.ptr_type_id = gfx_shader_spv_id(spv),
-		.var_id	     = gfx_shader_spv_id(spv),
-		.storage     = storage,
-		.location    = location,
-	};
+				     .member	  = member,
+				     .type_id	  = gfx_shader_spv_type_id(spv, member->type),
+				     .ptr_type_id = gfx_shader_spv_id(spv),
+				     .var_id	  = gfx_shader_spv_id(spv),
+				     .storage	  = storage,
+				     .location	  = location,
+	     };
 	if (var->type_id == 0) {
 		return 1;
 	}

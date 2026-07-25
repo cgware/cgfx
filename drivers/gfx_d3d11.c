@@ -229,10 +229,8 @@ typedef struct gfx_d3d11_vertex_2d_s {
 } gfx_d3d11_vertex_2d_t;
 
 typedef struct gfx_d3d11_s {
-	proc_t *proc;
 	void *lib;
 	void *compiler_lib;
-	alloc_t alloc;
 	gfx_target_t target;
 	ID3D11Device *device;
 	ID3D11DeviceContext *context;
@@ -297,23 +295,24 @@ static int gfx_d3d11_init_free(gfx_t *gfx, gfx_d3d11_t *d3d11)
 		d3d11_release(d3d11->device);
 	}
 	if (d3d11->compiler_lib != NULL) {
-		proc_dlclose(d3d11->proc, d3d11->compiler_lib);
+		proc_dlclose(gfx->proc, d3d11->compiler_lib);
 	}
 	if (d3d11->lib != NULL) {
-		proc_dlclose(d3d11->proc, d3d11->lib);
+		proc_dlclose(gfx->proc, d3d11->lib);
 	}
-	alloc_free(&d3d11->alloc, d3d11, sizeof(*d3d11));
+	alloc_free(&gfx->alloc, d3d11, sizeof(*d3d11));
 	gfx->data = NULL;
 	return 1;
 }
 
-static int gfx_d3d11_load(gfx_d3d11_t *d3d11)
+static int gfx_d3d11_load(gfx_t *gfx)
 {
-	if (proc_dlopen(d3d11->proc, STRV("d3d11.dll"), &d3d11->lib)) {
+	gfx_d3d11_t *d3d11 = gfx->data;
+	if (proc_dlopen(gfx->proc, STRV("d3d11.dll"), &d3d11->lib)) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3D11 library");
 		return 1;
 	}
-	if (proc_dlsym(d3d11->proc, d3d11->lib, STRV("D3D11CreateDevice"), (void **)&d3d11->D3D11CreateDevice)) {
+	if (proc_dlsym(gfx->proc, d3d11->lib, STRV("D3D11CreateDevice"), (void **)&d3d11->D3D11CreateDevice)) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3D11 symbol: D3D11CreateDevice");
 		return 1;
 	}
@@ -321,18 +320,19 @@ static int gfx_d3d11_load(gfx_d3d11_t *d3d11)
 	return 0;
 }
 
-static int gfx_d3d11_load_compiler(gfx_d3d11_t *d3d11)
+static int gfx_d3d11_load_compiler(gfx_t *gfx)
 {
+	gfx_d3d11_t *d3d11 = gfx->data;
 	if (d3d11->D3DCompile != NULL) {
 		return 0;
 	}
-	if (proc_dlopen(d3d11->proc, STRV("d3dcompiler_47.dll"), &d3d11->compiler_lib)) {
+	if (proc_dlopen(gfx->proc, STRV("d3dcompiler_47.dll"), &d3d11->compiler_lib)) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler library");
 		return 1;
 	}
-	if (proc_dlsym(d3d11->proc, d3d11->compiler_lib, STRV("D3DCompile"), (void **)&d3d11->D3DCompile)) {
+	if (proc_dlsym(gfx->proc, d3d11->compiler_lib, STRV("D3DCompile"), (void **)&d3d11->D3DCompile)) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler symbol: D3DCompile");
-		proc_dlclose(d3d11->proc, d3d11->compiler_lib);
+		proc_dlclose(gfx->proc, d3d11->compiler_lib);
 		d3d11->compiler_lib = NULL;
 		return 1;
 	}
@@ -342,23 +342,20 @@ static int gfx_d3d11_load_compiler(gfx_d3d11_t *d3d11)
 
 static int gfx_d3d11_init(gfx_t *gfx, const gfx_config_t *config)
 {
-	if (gfx == NULL || config == NULL || config->proc == NULL || config->alloc.alloc == NULL) {
+	if (gfx == NULL || config == NULL) {
 		return 1;
 	}
 
-	alloc_t alloc	   = config->alloc;
-	gfx_d3d11_t *d3d11 = alloc_alloc(&alloc, sizeof(*d3d11));
+	gfx_d3d11_t *d3d11 = alloc_alloc(&gfx->alloc, sizeof(*d3d11));
 	if (d3d11 == NULL) {
 		return 1;
 	}
 	*d3d11 = (gfx_d3d11_t){
-		.proc  = config->proc,
-		.alloc = alloc,
 		.color = {0.0f, 0.0f, 0.0f, 1.0f},
 	};
 	gfx->data = d3d11;
 
-	if (gfx_d3d11_load(d3d11)) {
+	if (gfx_d3d11_load(gfx)) {
 		return gfx_d3d11_init_free(gfx, d3d11);
 	}
 	if (!hresult_ok(d3d11->D3D11CreateDevice(
@@ -393,12 +390,12 @@ static int gfx_d3d11_free(gfx_t *gfx)
 	d3d11_release(d3d11->context);
 	d3d11_release(d3d11->device);
 	if (d3d11->compiler_lib != NULL) {
-		proc_dlclose(d3d11->proc, d3d11->compiler_lib);
+		proc_dlclose(gfx->proc, d3d11->compiler_lib);
 	}
 	if (d3d11->lib != NULL) {
-		proc_dlclose(d3d11->proc, d3d11->lib);
+		proc_dlclose(gfx->proc, d3d11->lib);
 	}
-	alloc_free(&d3d11->alloc, d3d11, sizeof(*d3d11));
+	alloc_free(&gfx->alloc, d3d11, sizeof(*d3d11));
 	gfx->data = NULL;
 	return 0;
 }
@@ -615,7 +612,7 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 	}
 
 	gfx_d3d11_t *d3d11 = shader->gfx->data;
-	if (gfx_d3d11_load_compiler(d3d11)) {
+	if (gfx_d3d11_load_compiler(shader->gfx)) {
 		return 1;
 	}
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
@@ -643,7 +640,7 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 	}
 	}
 
-	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&d3d11->alloc, sizeof(*d3d_shader));
+	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&shader->gfx->alloc, sizeof(*d3d_shader));
 	if (d3d_shader == NULL) {
 		return 1;
 	}
@@ -693,12 +690,11 @@ static void gfx_d3d11_shader_free(gfx_shader_t *shader)
 		return;
 	}
 
-	gfx_d3d11_t *d3d11	       = shader->gfx->data;
 	gfx_d3d11_shader_t *d3d_shader = shader->data;
 
 	d3d11_release(d3d_shader->shader.vertex);
 	d3d11_release(d3d_shader->code);
-	alloc_free(&d3d11->alloc, shader, sizeof(*shader));
+	alloc_free(&shader->gfx->alloc, shader, sizeof(*shader));
 }
 
 static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
@@ -714,7 +710,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 		return 1;
 	}
 
-	gfx_d3d11_pipeline_t *d3d_pipeline = alloc_alloc(&d3d11->alloc, sizeof(gfx_d3d11_pipeline_t));
+	gfx_d3d11_pipeline_t *d3d_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_d3d11_pipeline_t));
 	if (d3d_pipeline == NULL) {
 		return 1;
 	}
@@ -752,10 +748,9 @@ static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 		return;
 	}
 
-	gfx_d3d11_t *d3d11		   = pipeline->gfx->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
 	d3d11_release(d3d_pipeline->input_layout);
-	alloc_free(&d3d11->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
+	alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
 }
 
 static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])

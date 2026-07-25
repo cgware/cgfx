@@ -1,3 +1,4 @@
+#include "alloc.h"
 #include "gfx_driver.h"
 
 #include "test.h"
@@ -10,7 +11,7 @@ static gfx_driver_t *t_gfx_none_driver(void)
 static int t_gfx_none_init(gfx_t *gfx)
 {
 	gfx_driver_t *drv = t_gfx_none_driver();
-	return drv == NULL || gfx_init(gfx, drv, &(gfx_config_t){0}) != gfx;
+	return drv == NULL || gfx_init(gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD) != gfx;
 }
 
 TEST(gfx_none_driver_is_registered)
@@ -42,7 +43,7 @@ TEST(gfx_none_init_success)
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}), &gfx);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
 	gfx_free(&gfx);
 	END;
