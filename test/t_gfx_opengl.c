@@ -1056,6 +1056,54 @@ TEST(gfx_opengl_clear_color_calls_gl)
 	END;
 }
 
+TEST(gfx_opengl_clear_color_surface_makes_current)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_calls = 0;
+
+	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 0);
+	EXPECT_EQ(t_surface_make_current_calls, 1);
+	EXPECT_EQ(t_gl_clear_color_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_clear_color_surface_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_ret = 0;
+	t_gl_clear_color_calls	   = 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_clear_color_calls, 0);
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_clear_color_null_data)
 {
 	START;
@@ -1100,6 +1148,54 @@ TEST(gfx_opengl_viewport_calls_gl)
 	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
 	EXPECT_EQ(t_gl_viewport_calls, 1);
 
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_surface_makes_current)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_calls = 0;
+
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
+	EXPECT_EQ(t_surface_make_current_calls, 1);
+	EXPECT_EQ(t_gl_viewport_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_viewport_surface_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_ret = 0;
+	t_gl_viewport_calls	   = 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_viewport_calls, 0);
+
+	t_surface_make_current_ret = 1;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2849,6 +2945,54 @@ TEST(gfx_opengl_clear_surface_sets_viewport)
 	END;
 }
 
+TEST(gfx_opengl_clear_surface_makes_current)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_opengl_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_calls = 0;
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	EXPECT_EQ(t_surface_make_current_calls, 1);
+	EXPECT_EQ(t_gl_clear_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_clear_surface_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
+	gfx_set_target(&gfx, &target);
+	t_surface_make_current_ret = 0;
+	t_gl_clear_calls	   = 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_clear_calls, 0);
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_present_swaps_buffers)
 {
 	START;
@@ -3019,9 +3163,13 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_free_does_not_use_init_surface);
 	RUN(gfx_opengl_free_null_data);
 	RUN(gfx_opengl_clear_color_calls_gl);
+	RUN(gfx_opengl_clear_color_surface_makes_current);
+	RUN(gfx_opengl_clear_color_surface_make_current_failure);
 	RUN(gfx_opengl_clear_color_null_data);
 	RUN(gfx_opengl_viewport_null_data);
 	RUN(gfx_opengl_viewport_calls_gl);
+	RUN(gfx_opengl_viewport_surface_makes_current);
+	RUN(gfx_opengl_viewport_surface_make_current_failure);
 	RUN(gfx_opengl_viewport_passes_x);
 	RUN(gfx_opengl_viewport_passes_y);
 	RUN(gfx_opengl_viewport_passes_width);
@@ -3100,6 +3248,8 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_set_surface_target_updates_size_on_resize);
 	RUN(gfx_opengl_clear_surface_binds_default_framebuffer);
 	RUN(gfx_opengl_clear_surface_sets_viewport);
+	RUN(gfx_opengl_clear_surface_makes_current);
+	RUN(gfx_opengl_clear_surface_make_current_failure);
 	RUN(gfx_opengl_present_swaps_buffers);
 	RUN(gfx_opengl_free_clears_surface_current);
 	RUN(gfx_opengl_set_target_none_clears_surface_current);

@@ -107,6 +107,8 @@ typedef struct gfx_opengl_pipeline_s {
 
 static void gfx_opengl_draw_free(gfx_opengl_t *opengl);
 static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl);
+static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation);
+static int gfx_opengl_begin(gfx_t *gfx, const char *operation, gfx_opengl_t **out);
 
 static int find_gl_symbol(gfx_t *gfx, gfx_surface_t *surface, void **sym, strv_t name)
 {
@@ -405,22 +407,22 @@ static int gfx_opengl_set_target(gfx_t *gfx, const gfx_target_t *target)
 
 static int gfx_opengl_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 {
-	if (gfx == NULL || gfx->data == NULL) {
+	gfx_opengl_t *opengl = NULL;
+	if (gfx_opengl_begin(gfx, "clear color", &opengl)) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl = gfx->data;
 	opengl->ClearColor(r, g, b, a);
 	return 0;
 }
 
 static int gfx_opengl_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
 {
-	if (gfx == NULL || gfx->data == NULL) {
+	gfx_opengl_t *opengl = NULL;
+	if (gfx_opengl_begin(gfx, "viewport", &opengl)) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl = gfx->data;
 	opengl->Viewport(x, y, width, height);
 	return 0;
 }
@@ -473,6 +475,21 @@ static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation)
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make OpenGL context current for %s", operation);
 		return 1;
 	}
+	return 0;
+}
+
+static int gfx_opengl_begin(gfx_t *gfx, const char *operation, gfx_opengl_t **out)
+{
+	if (gfx == NULL || gfx->data == NULL || out == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = gfx->data;
+	if (gfx_opengl_make_current(opengl, operation)) {
+		return 1;
+	}
+
+	*out = opengl;
 	return 0;
 }
 
@@ -831,7 +848,10 @@ static int gfx_opengl_clear(gfx_t *gfx, u32 buffers)
 		mask |= GL_COLOR_BUFFER_BIT;
 	}
 
-	gfx_opengl_t *opengl = gfx->data;
+	gfx_opengl_t *opengl = NULL;
+	if (gfx_opengl_begin(gfx, "clear", &opengl)) {
+		return 1;
+	}
 	if (opengl->target.type == GFX_TARGET_MEMORY) {
 		opengl->BindFramebuffer(GL_FRAMEBUFFER, opengl->framebuffer);
 		opengl->Viewport(0, 0, opengl->target.width, opengl->target.height);
