@@ -30,7 +30,10 @@ int gfx_shader_text_putf(buf_t *text, const char *fmt, ...)
 		va_end(args);
 		return 1;
 	}
-	c_sprintv((char *)text->data, text->size - text->used, text->used, fmt, args);
+	if (c_sprintv((char *)text->data, text->size, text->used, fmt, args) != len) {
+		va_end(args); // LCOV_EXCL_LINE
+		return 1;     // LCOV_EXCL_LINE
+	}
 	va_end(args);
 	text->used += (size_t)len;
 	return 0;

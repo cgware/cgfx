@@ -368,6 +368,40 @@ TEST(gfx_shader_text_putf_resize_failure)
 	END;
 }
 
+TEST(gfx_shader_text_putf_rejects_n_conversion)
+{
+	START;
+
+	int count  = 0;
+	buf_t text = {0};
+	EXPECT_EQ(gfx_shader_text_init(&text), 0);
+
+	EXPECT_EQ(gfx_shader_text_putf(&text, "%n", &count), 1);
+	EXPECT_EQ(count, 0);
+	EXPECT_EQ(text.used, 0);
+
+	buf_free(&text);
+	END;
+}
+
+TEST(gfx_shader_text_putf_append)
+{
+	START;
+
+	buf_t text		 = {0};
+	gfx_shader_code_t shader = {0};
+	EXPECT_EQ(gfx_shader_text_init(&text), 0);
+
+	EXPECT_EQ(gfx_shader_text_putf(&text, "a"), 0);
+	EXPECT_EQ(gfx_shader_text_putf(&text, "b"), 0);
+	EXPECT_EQ(gfx_shader_text_finish(&text, &shader), 0);
+	EXPECT_STR(shader.text, "ab");
+
+	gfx_shader_code_free(&shader);
+	buf_free(&text);
+	END;
+}
+
 TEST(gfx_shader_text_finish_failure)
 {
 	START;
@@ -428,6 +462,8 @@ STEST(gfx_shader_compiler)
 	RUN(gfx_shader_code_free_null_shader);
 	RUN(gfx_shader_text_putf_format_failure);
 	RUN(gfx_shader_text_putf_resize_failure);
+	RUN(gfx_shader_text_putf_rejects_n_conversion);
+	RUN(gfx_shader_text_putf_append);
 	RUN(gfx_shader_text_finish_failure);
 	RUN(gfx_shader_struct_member_missing);
 	RUN(gfx_shader_strv_prefix_false);
