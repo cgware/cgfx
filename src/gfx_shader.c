@@ -20,7 +20,7 @@ gfx_shader_t *gfx_shader_init(gfx_shader_t *shader, gfx_t *gfx, const gfx_shader
 
 void gfx_shader_free(gfx_shader_t *shader)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->drv == NULL || shader->gfx->drv->shader_free) {
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->drv == NULL || shader->gfx->drv->shader_free == NULL) {
 		return;
 	}
 

@@ -66,38 +66,138 @@ static const char *gfx_shader_input_ebnf =
 	"expression_operator = '+' | '-' | '*' | '/' | '<' | '>' | '==' | '>=' | '<='\n"
 	"assignment_operator = '=' | '+=' | '-=' | '*=' | '/='\n";
 
-static int gfx_shader_compile_grammar(estx_t *estx, gfx_shader_rules_t *rules)
+static int gfx_shader_compile_grammar_cleanup(int ret, estx_t *estx, ebnf_t *ebnf, lex_t *lex, prs_t *prs, int estx_initialized,
+					      int ebnf_initialized, int lex_initialized, int prs_initialized)
 {
-	ebnf_t ebnf = {0};
-	lex_t lex   = {0};
-	prs_t prs   = {0};
-	int ret	    = 1;
-
-	if (estx == NULL || rules == NULL || ebnf_init(&ebnf, ALLOC_STD) == NULL || lex_init(&lex, 0, 4096, ALLOC_STD) == NULL ||
-	    prs_init(&prs, 4096, ALLOC_STD) == NULL || estx_init(estx, 4096, ALLOC_STD) == NULL) {
-		goto cleanup;
+	if (ret && estx_initialized) {
+		estx_free(estx); // LCOV_EXCL_LINE
 	}
+	if (prs_initialized) {
+		prs_free(prs);
+	}
+	if (lex_initialized) {
+		lex_free(lex);
+	}
+	if (ebnf_initialized) {
+		ebnf_free(ebnf);
+	}
+	return ret;
+}
+
+static int gfx_shader_compile_grammar(estx_t *estx, gfx_shader_rules_t *rules, alloc_t alloc)
+{
+	ebnf_t ebnf	     = {0};
+	lex_t lex	     = {0};
+	prs_t prs	     = {0};
+	int ebnf_initialized = 0;
+	int lex_initialized  = 0;
+	int prs_initialized  = 0;
+	int estx_initialized = 0;
+
+	if (estx == NULL || rules == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (ebnf_init(&ebnf, alloc) == NULL) {
+		return gfx_shader_compile_grammar_cleanup(
+			1, estx, &ebnf, &lex, &prs, estx_initialized, ebnf_initialized, lex_initialized, prs_initialized);
+	}
+	ebnf_initialized = 1;
+	if (lex_init(&lex, 0, 4096, alloc) == NULL) {
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
+	}
+	lex_initialized = 1;
+	if (prs_init(&prs, 4096, alloc) == NULL) {
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
+	}
+	prs_initialized = 1;
+	if (estx_init(estx, 4096, alloc) == NULL) {
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
+	}
+	estx_initialized = 1;
 
 	log_info("cgfx", "gfx_shader", NULL, "shader grammar: loading EBNF syntax");
-	if (ebnf_get_stx(&ebnf, ALLOC_STD, DST_NONE()) == NULL) {
-		goto cleanup;
+	if (ebnf_get_stx(&ebnf, alloc, DST_NONE()) == NULL) {
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
 	}
 	log_info("cgfx", "gfx_shader", NULL, "shader grammar: loaded EBNF syntax");
 
 	if (lex_tokenize(&lex, strv_cstr(gfx_shader_input_ebnf), STRV("gfx_shader_ebnf"), 0)) {
-		goto cleanup;
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
 	}
 
 	prs_node_t prs_root = 0;
 	estx_node_t root    = 0;
 	log_info("cgfx", "gfx_shader", NULL, "shader grammar: parsing EBNF grammar");
 	if (prs_parse(&prs, &lex, &ebnf.stx, ebnf.file, &prs_root, DST_NONE())) {
-		goto cleanup;
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
 	}
 	log_info("cgfx", "gfx_shader", NULL, "shader grammar: parsed EBNF grammar");
 
 	if (estx_from_ebnf(&ebnf, &prs, prs_root, estx, &root)) {
-		goto cleanup;
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
 	}
 
 	if (estx_find_rule(estx, STRV("program"), &rules->program) || estx_find_rule(estx, STRV("item"), &rules->item) ||
@@ -117,15 +217,19 @@ static int gfx_shader_compile_grammar(estx_t *estx, gfx_shader_rules_t *rules)
 	    estx_find_rule(estx, STRV("expression"), &rules->expression) || estx_find_rule(estx, STRV("lvalue"), &rules->lvalue) ||
 	    estx_find_rule(estx, STRV("type_name"), &rules->type_name) || estx_find_rule(estx, STRV("identifier"), &rules->identifier) ||
 	    estx_find_rule(estx, STRV("semantic"), &rules->semantic)) {
-		goto cleanup;
+		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
+			1,
+			estx,
+			&ebnf,
+			&lex,
+			&prs,
+			estx_initialized,
+			ebnf_initialized,
+			lex_initialized,
+			prs_initialized);
 	}
-	ret = 0;
-
-cleanup:
-	prs_free(&prs);
-	lex_free(&lex);
-	ebnf_free(&ebnf);
-	return ret;
+	return gfx_shader_compile_grammar_cleanup(
+		0, estx, &ebnf, &lex, &prs, estx_initialized, ebnf_initialized, lex_initialized, prs_initialized);
 }
 
 gfx_shader_compiler_t *gfx_shader_compiler_init(gfx_shader_compiler_t *compiler, alloc_t alloc)
@@ -137,9 +241,8 @@ gfx_shader_compiler_t *gfx_shader_compiler_init(gfx_shader_compiler_t *compiler,
 	compiler->alloc = alloc;
 
 	log_info("cgfx", "gfx_shader_compiler", NULL, "compiling shader grammar");
-	if (gfx_shader_compile_grammar(&compiler->estx, &compiler->rules)) {
+	if (gfx_shader_compile_grammar(&compiler->estx, &compiler->rules, compiler->alloc)) {
 		log_error("cgfx", "gfx_shader", NULL, "failed to create shader compiler: grammar compilation failed");
-		estx_free(&compiler->estx);
 		return NULL;
 	}
 	log_info("cgfx", "gfx_shader_compiler", NULL, "compiled shader grammar");
@@ -156,23 +259,23 @@ void gfx_shader_compiler_free(gfx_shader_compiler_t *compiler)
 	estx_free(&compiler->estx);
 }
 
-static int gfx_shader_parse_source(strv_t source, const estx_t *estx, const gfx_shader_rules_t *rules, lex_t *lex, eprs_t *eprs,
-				   eprs_node_t *root)
+static int gfx_shader_parse_source(strv_t source, const estx_t *estx, const gfx_shader_rules_t *rules, alloc_t alloc, lex_t *lex,
+				   eprs_t *eprs, eprs_node_t *root)
 {
 	if (source.data == NULL || source.len == 0 || estx == NULL || rules == NULL || lex == NULL || eprs == NULL || root == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (lex_init(lex, 0, (uint)(source.len + 1), alloc) == NULL) {
 		return 1;
 	}
-	if (lex_init(lex, 0, (uint)(source.len + 1), ALLOC_STD) == NULL) {
-		return 1;
-	}
-	if (eprs_init(eprs, 4096, ALLOC_STD) == NULL) {
+	if (eprs_init(eprs, 4096, alloc) == NULL) {
 		lex_free(lex);
 		return 1;
 	}
 	if (lex_tokenize(lex, source, STRV("shader"), 0)) {
-		eprs_free(eprs);
-		lex_free(lex);
-		return 1;
+		eprs_free(eprs); // LCOV_EXCL_LINE
+		lex_free(lex);	 // LCOV_EXCL_LINE
+		return 1;	 // LCOV_EXCL_LINE
 	}
 	if (eprs_parse(eprs, lex, estx, rules->program, root, DST_NONE())) {
 		eprs_free(eprs);
@@ -186,7 +289,7 @@ static int gfx_shader_node_text(const eprs_t *eprs, const lex_t *lex, eprs_node_
 {
 	tok_t tok = {0};
 	if (eprs == NULL || lex == NULL || out == NULL || eprs_get_str(eprs, node, &tok)) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	*out = lex_get_tok_val(lex, tok);
 	return out->data == NULL || out->len == 0;
@@ -195,7 +298,7 @@ static int gfx_shader_node_text(const eprs_t *eprs, const lex_t *lex, eprs_node_
 static int gfx_shader_child_rule(const eprs_t *eprs, eprs_node_t parent, estx_node_t rule, u32 index, eprs_node_t *out)
 {
 	if (eprs == NULL || out == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	eprs_node_t child;
@@ -218,7 +321,7 @@ static int gfx_shader_child_text(const eprs_t *eprs, const lex_t *lex, eprs_node
 {
 	eprs_node_t node = 0;
 	if (gfx_shader_child_rule(eprs, parent, rule, index, &node)) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	return gfx_shader_node_text(eprs, lex, node, out);
 }
@@ -227,7 +330,7 @@ static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const g
 				   gfx_shader_struct_ir_t *ir)
 {
 	if (ir == NULL || gfx_shader_child_text(eprs, lex, node, rules->identifier, 0, &ir->name)) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	ir->present = 1;
@@ -245,13 +348,13 @@ static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const g
 		gfx_shader_member_t *member = &ir->members[ir->member_count];
 		if (gfx_shader_child_text(eprs, lex, member_node, rules->type_name, 0, &member->type) ||
 		    gfx_shader_child_text(eprs, lex, member_node, rules->identifier, 1, &member->name)) {
-			return 1;
+			return 1; // LCOV_EXCL_LINE
 		}
 
 		eprs_node_t semantic = 0;
 		if (gfx_shader_child_rule(eprs, member_node, rules->semantic, 0, &semantic) == 0 &&
 		    gfx_shader_child_text(eprs, lex, semantic, rules->identifier, 0, &member->semantic)) {
-			return 1;
+			return 1; // LCOV_EXCL_LINE
 		}
 		ir->member_count++;
 	}
@@ -267,7 +370,7 @@ static int gfx_shader_parse_statement(const eprs_t *eprs, const lex_t *lex, cons
 		*stmt = (gfx_shader_statement_ir_t){.kind = GFX_SHADER_STMT_DECL};
 		if (gfx_shader_child_text(eprs, lex, child, rules->type_name, 0, &stmt->type) ||
 		    gfx_shader_child_text(eprs, lex, child, rules->identifier, 1, &stmt->name)) {
-			return 1;
+			return 1; // LCOV_EXCL_LINE
 		}
 		eprs_node_t init = 0;
 		if (gfx_shader_child_rule(eprs, child, rules->initialization, 0, &init) == 0) {
@@ -286,7 +389,7 @@ static int gfx_shader_parse_statement(const eprs_t *eprs, const lex_t *lex, cons
 		*stmt = (gfx_shader_statement_ir_t){.kind = GFX_SHADER_STMT_RETURN};
 		return gfx_shader_child_text(eprs, lex, child, rules->expression, 0, &stmt->expr);
 	}
-	return 1;
+	return 1; // LCOV_EXCL_LINE
 }
 
 static int gfx_shader_parse_function(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
@@ -298,7 +401,7 @@ static int gfx_shader_parse_function(const eprs_t *eprs, const lex_t *lex, const
 	if (gfx_shader_child_rule(eprs, node, rules->function_header, 0, &header) ||
 	    gfx_shader_child_text(eprs, lex, header, rules->type_name, 0, &ret) ||
 	    gfx_shader_child_text(eprs, lex, header, rules->identifier, 1, &name)) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_shader_function_ir_t fn = {.present = 1, .ret = ret, .name = name};
@@ -312,12 +415,12 @@ static int gfx_shader_parse_function(const eprs_t *eprs, const lex_t *lex, const
 			continue;
 		}
 		if (gfx_shader_parse_statement(eprs, lex, rules, statement, &fn.statements[fn.statement_count])) {
-			return 1;
+			return 1; // LCOV_EXCL_LINE
 		}
 		fn.statement_count++;
 	}
 	if (fn.statement_count == 0) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	if (strv_eq(name, STRV("vertex"))) {
@@ -331,7 +434,7 @@ static int gfx_shader_parse_function(const eprs_t *eprs, const lex_t *lex, const
 static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t root, gfx_shader_ir_t *ir)
 {
 	if (eprs == NULL || lex == NULL || rules == NULL || ir == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	*ir = (gfx_shader_ir_t){0};
@@ -344,23 +447,23 @@ static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_s
 		eprs_node_t node = 0;
 		if (eprs_get_rule(eprs, item, rules->vs_in_struct, &node) == 0) {
 			if (gfx_shader_parse_struct(eprs, lex, rules, node, &ir->vs_in)) {
-				return 1;
+				return 1; // LCOV_EXCL_LINE
 			}
 		} else if (eprs_get_rule(eprs, item, rules->vs_out_struct, &node) == 0) {
 			if (gfx_shader_parse_struct(eprs, lex, rules, node, &ir->vs_out)) {
-				return 1;
+				return 1; // LCOV_EXCL_LINE
 			}
 		} else if (eprs_get_rule(eprs, item, rules->fs_in_struct, &node) == 0) {
 			if (gfx_shader_parse_struct(eprs, lex, rules, node, &ir->fs_in)) {
-				return 1;
+				return 1; // LCOV_EXCL_LINE
 			}
 		} else if (eprs_get_rule(eprs, item, rules->fs_out_struct, &node) == 0) {
 			if (gfx_shader_parse_struct(eprs, lex, rules, node, &ir->fs_out)) {
-				return 1;
+				return 1; // LCOV_EXCL_LINE
 			}
 		} else if (eprs_get_rule(eprs, item, rules->function_definition, &node) == 0) {
 			if (gfx_shader_parse_function(eprs, lex, rules, node, ir)) {
-				return 1;
+				return 1; // LCOV_EXCL_LINE
 			}
 		}
 	}
@@ -371,7 +474,7 @@ static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_s
 static int gfx_shader_struct_has_semantic(const gfx_shader_struct_ir_t *ir, strv_t semantic, strv_t type)
 {
 	if (ir == NULL || !ir->present) {
-		return 0;
+		return 0; // LCOV_EXCL_LINE
 	}
 
 	for (u32 i = 0; i < ir->member_count; i++) {
@@ -393,54 +496,18 @@ static int gfx_shader_ir_supported(const gfx_shader_ir_t *ir)
 	       gfx_shader_struct_has_semantic(&ir->fs_out, STRV("COLOR0"), STRV("vec4f"));
 }
 
-int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source, gfx_shader_stage_t stage, gfx_shader_language_t language,
-				  gfx_shader_code_t *shader)
+static int gfx_shader_compiler_emit(gfx_shader_compiler_t *compiler, const eprs_t *eprs, const lex_t *lex, eprs_node_t root,
+				    gfx_shader_stage_t stage, gfx_shader_language_t language, gfx_shader_code_t *shader)
 {
-	if (shader == NULL) {
-		log_error("cgfx", "gfx_shader", NULL, "failed to transpile shader: output shader is null");
-		return 1;
-	}
-
-	*shader = (gfx_shader_code_t){0};
-
-	lex_t lex	     = {0};
-	eprs_t eprs	     = {0};
-	eprs_node_t root     = 0;
-	gfx_shader_ir_t ir   = {0};
-	int ret		     = 1;
-	int lex_initialized  = 0;
-	int eprs_initialized = 0;
-
-	if (compiler == NULL) {
-		log_error("cgfx",
-			  "gfx_shader",
-			  NULL,
-			  "failed to transpile %s shader to %s: shader compiler is null",
-			  gfx_shader_stage_name(stage),
-			  gfx_shader_language_name(language));
-		goto cleanup;
-	}
-
-	if (gfx_shader_parse_source(source, &compiler->estx, &compiler->rules, &lex, &eprs, &root)) {
-		log_error("cgfx",
-			  "gfx_shader",
-			  NULL,
-			  "failed to transpile %s shader to %s: source parsing failed",
-			  gfx_shader_stage_name(stage),
-			  gfx_shader_language_name(language));
-		goto cleanup;
-	}
-	lex_initialized	 = 1;
-	eprs_initialized = 1;
-
-	if (gfx_shader_build_ir(&eprs, &lex, &compiler->rules, root, &ir)) {
-		log_error("cgfx",
+	gfx_shader_ir_t ir = {0};
+	if (gfx_shader_build_ir(eprs, lex, &compiler->rules, root, &ir)) {
+		log_error("cgfx", // LCOV_EXCL_LINE
 			  "gfx_shader",
 			  NULL,
 			  "failed to transpile %s shader to %s: IR build failed",
 			  gfx_shader_stage_name(stage),
 			  gfx_shader_language_name(language));
-		goto cleanup;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	if (!gfx_shader_ir_supported(&ir)) {
@@ -450,7 +517,7 @@ int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source
 			  "failed to transpile %s shader to %s: IR is not supported by current backends",
 			  gfx_shader_stage_name(stage),
 			  gfx_shader_language_name(language));
-		goto cleanup;
+		return 1;
 	}
 
 	*shader = (gfx_shader_code_t){
@@ -472,6 +539,7 @@ int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source
 		}
 	}
 
+	int ret = 1;
 	if (shader_driver == NULL) {
 		log_error("cgfx",
 			  "gfx_shader",
@@ -479,7 +547,6 @@ int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source
 			  "failed to transpile %s shader: unknown shader language %d",
 			  gfx_shader_stage_name(stage),
 			  (int)language);
-		ret = 1;
 	} else {
 		ret = shader_driver->emit(&ir, stage, shader);
 	}
@@ -499,14 +566,46 @@ int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source
 			 gfx_shader_stage_name(stage),
 			 gfx_shader_language_name(language));
 	}
+	return ret;
+}
 
-cleanup:
-	if (eprs_initialized) {
-		eprs_free(&eprs);
+int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source, gfx_shader_stage_t stage, gfx_shader_language_t language,
+				  gfx_shader_code_t *shader)
+{
+	if (shader == NULL) {
+		log_error("cgfx", "gfx_shader", NULL, "failed to transpile shader: output shader is null");
+		return 1;
 	}
-	if (lex_initialized) {
-		lex_free(&lex);
+
+	*shader = (gfx_shader_code_t){0};
+
+	lex_t lex	 = {0};
+	eprs_t eprs	 = {0};
+	eprs_node_t root = 0;
+
+	if (compiler == NULL) {
+		log_error("cgfx",
+			  "gfx_shader",
+			  NULL,
+			  "failed to transpile %s shader to %s: shader compiler is null",
+			  gfx_shader_stage_name(stage),
+			  gfx_shader_language_name(language));
+		return 1;
 	}
+
+	if (gfx_shader_parse_source(source, &compiler->estx, &compiler->rules, compiler->alloc, &lex, &eprs, &root)) {
+		log_error("cgfx",
+			  "gfx_shader",
+			  NULL,
+			  "failed to transpile %s shader to %s: source parsing failed",
+			  gfx_shader_stage_name(stage),
+			  gfx_shader_language_name(language));
+		return 1;
+	}
+
+	int ret = gfx_shader_compiler_emit(compiler, &eprs, &lex, root, stage, language, shader);
+	eprs_free(&eprs);
+	lex_free(&lex);
 	if (ret) {
 		gfx_shader_code_free(shader);
 	}

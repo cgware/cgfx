@@ -27,7 +27,8 @@ void gfx_pipeline_free(gfx_pipeline_t *pipeline)
 
 int gfx_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->drv == NULL || pipeline->gfx->drv->draw_triangle_2d == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->drv == NULL || pipeline->gfx->drv->draw_triangle_2d == NULL ||
+	    vertices == NULL) {
 		return 1;
 	}
 

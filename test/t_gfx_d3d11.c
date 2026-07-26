@@ -76,6 +76,9 @@ typedef struct t_d3d11_texture_s t_d3d11_texture_t;
 typedef struct t_d3d11_vertex_shader_s t_d3d11_vertex_shader_t;
 typedef struct t_dxgi_swapchain_s t_dxgi_swapchain_t;
 
+static gfx_shader_compiler_t t_gfx_d3d11_compiler;
+static int t_gfx_d3d11_compiler_initialized;
+
 typedef struct t_d3d_blob_vtbl_s {
 	HRESULT (*QueryInterface)(void);
 	ULONG (*AddRef)(void);
@@ -808,10 +811,33 @@ static int t_gfx_d3d11_init_gfx(gfx_t *gfx, proc_t *proc)
 	return gfx_init(gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, proc, ALLOC_STD) != gfx;
 }
 
-static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader)
+static int t_gfx_d3d11_compiler_init(void)
 {
-	gfx_shader_compiler_t compiler = {0};
-	gfx_shader_compiler_init(&compiler, ALLOC_STD);
+	if (t_gfx_d3d11_compiler_initialized) {
+		return 0;
+	}
+	if (gfx_shader_compiler_init(&t_gfx_d3d11_compiler, ALLOC_STD) == NULL) {
+		return 1;
+	}
+	t_gfx_d3d11_compiler_initialized = 1;
+	return 0;
+}
+
+static void t_gfx_d3d11_compiler_free(void)
+{
+	if (!t_gfx_d3d11_compiler_initialized) {
+		return;
+	}
+	gfx_shader_compiler_free(&t_gfx_d3d11_compiler);
+	t_gfx_d3d11_compiler		 = (gfx_shader_compiler_t){0};
+	t_gfx_d3d11_compiler_initialized = 0;
+}
+
+static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stage_t stage)
+{
+	if (!t_gfx_d3d11_compiler_initialized) {
+		return 1;
+	}
 	const char *triangle_src = "vs_in 0 VertexIn {\n"
 				   "\tvec2f position : POSITION;\n"
 				   "\tvec4f color : COLOR0;\n"
@@ -837,20 +863,34 @@ static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader)
 				   "\toutput.color = input.color;\n"
 				   "\treturn output;\n"
 				   "}\n";
-	int ret = gfx_shader_init(shader, gfx, &(gfx_shader_config_t){.compiler = &compiler, .source = strv_cstr(triangle_src)}) != shader;
-	gfx_shader_compiler_free(&compiler);
-	return ret;
+
+	gfx_shader_config_t config = {
+		.compiler = &t_gfx_d3d11_compiler,
+		.source	  = strv_cstr(triangle_src),
+		.stage	  = stage,
+	};
+	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
 static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 {
-	gfx_shader_t shader = {0};
-	if (t_gfx_d3d11_shader(gfx, &shader)) {
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	if (t_gfx_d3d11_shader(gfx, &vs, GFX_SHADER_STAGE_VERTEX)) {
 		return 1;
 	}
-	gfx_pipeline_t pipeline = {.gfx = gfx, .data = (void *)1};
-	int ret			= gfx_draw_triangle_2d(&pipeline, vertices);
-	gfx_shader_free(&shader);
+	if (t_gfx_d3d11_shader(gfx, &fs, GFX_SHADER_STAGE_FRAGMENT)) {
+		gfx_shader_free(&vs);
+		return 1;
+	}
+	gfx_pipeline_t pipeline = {0};
+	int ret			= gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}) != &pipeline;
+	if (ret == 0) {
+		ret = gfx_draw_triangle_2d(&pipeline, vertices);
+	}
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
 	return ret;
 }
 
@@ -1920,6 +1960,8 @@ STEST(gfx_d3d11)
 {
 	SSTART;
 
+	(void)t_gfx_d3d11_compiler_init();
+
 	RUN(gfx_d3d11_driver_is_registered);
 	RUN(gfx_d3d11_init_null_gfx);
 	RUN(gfx_d3d11_init_null_config);
@@ -1984,6 +2026,8 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_free_null_data);
 	RUN(gfx_d3d11_free_releases_context);
 	RUN(gfx_d3d11_free_releases_device);
+
+	t_gfx_d3d11_compiler_free();
 
 	SEND;
 }

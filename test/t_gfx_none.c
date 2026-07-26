@@ -188,6 +188,24 @@ TEST(gfx_none_draw_triangle_2d_success)
 	END;
 }
 
+TEST(gfx_none_pipeline_success)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_none_init(&gfx), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_NOT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("none")}));
+	gfx_pipeline_t pipeline = {0};
+
+	EXPECT_NOT_NULL(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = shader, .fs = shader}));
+
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_none_draw_triangle_2d_null_gfx)
 {
 	START;
@@ -232,6 +250,7 @@ STEST(gfx_none)
 	RUN(gfx_none_set_target_null_gfx);
 	RUN(gfx_none_clear_success);
 	RUN(gfx_none_clear_null_gfx);
+	RUN(gfx_none_pipeline_success);
 	RUN(gfx_none_draw_triangle_2d_success);
 	RUN(gfx_none_draw_triangle_2d_null_gfx);
 	RUN(gfx_none_draw_triangle_2d_null_vertices);

@@ -13,6 +13,10 @@ gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *
 	gfx->alloc = alloc;
 
 	if (gfx->drv->init(gfx, config)) {
+		if (gfx->drv->free != NULL) {
+			gfx->drv->free(gfx);
+		}
+		*gfx = (gfx_t){0};
 		return NULL;
 	}
 
@@ -26,6 +30,7 @@ void gfx_free(gfx_t *gfx)
 	}
 
 	gfx->drv->free(gfx);
+	*gfx = (gfx_t){0};
 }
 
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc)

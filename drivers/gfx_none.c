@@ -94,8 +94,10 @@ static void gfx_none_pipeline_free(gfx_pipeline_t *pipeline)
 
 static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
 {
-	(void)pipeline;
-	(void)vertices;
+	if (pipeline == NULL || pipeline->gfx == NULL || vertices == NULL) {
+		return 1;
+	}
+
 	return 0;
 }
 

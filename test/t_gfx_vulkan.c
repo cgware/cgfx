@@ -361,6 +361,8 @@ static VkSurfaceFormatKHR t_vk_surface_formats[20];
 static u32 t_vk_surface_format_count;
 static VkImage t_vk_swapchain_images[20];
 static u32 t_vk_present_image_index;
+static gfx_shader_compiler_t t_gfx_vulkan_compiler;
+static int t_gfx_vulkan_compiler_initialized;
 
 static void *t_gfx_vulkan_alloc_fail(alloc_t *alloc, size_t size)
 {
@@ -1506,10 +1508,33 @@ static int t_gfx_vulkan_init_gfx(gfx_t *gfx, proc_t *proc)
 	return gfx_init(gfx, drv, &(gfx_config_t){0}, proc, ALLOC_STD) != gfx;
 }
 
-static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader)
+static int t_gfx_vulkan_compiler_init(void)
 {
-	gfx_shader_compiler_t compiler = {0};
-	gfx_shader_compiler_init(&compiler, ALLOC_STD);
+	if (t_gfx_vulkan_compiler_initialized) {
+		return 0;
+	}
+	if (gfx_shader_compiler_init(&t_gfx_vulkan_compiler, ALLOC_STD) == NULL) {
+		return 1;
+	}
+	t_gfx_vulkan_compiler_initialized = 1;
+	return 0;
+}
+
+static void t_gfx_vulkan_compiler_free(void)
+{
+	if (!t_gfx_vulkan_compiler_initialized) {
+		return;
+	}
+	gfx_shader_compiler_free(&t_gfx_vulkan_compiler);
+	t_gfx_vulkan_compiler		  = (gfx_shader_compiler_t){0};
+	t_gfx_vulkan_compiler_initialized = 0;
+}
+
+static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stage_t stage)
+{
+	if (!t_gfx_vulkan_compiler_initialized) {
+		return 1;
+	}
 	const char *triangle_src = "vs_in 0 VertexIn {\n"
 				   "\tvec2f position : POSITION;\n"
 				   "\tvec4f color : COLOR0;\n"
@@ -1535,22 +1560,34 @@ static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader)
 				   "\toutput.color = input.color;\n"
 				   "\treturn output;\n"
 				   "}\n";
-	int ret = gfx_shader_init(shader, gfx, &(gfx_shader_config_t){.compiler = &compiler, .source = strv_cstr(triangle_src)}) != shader;
-	gfx_shader_compiler_free(&compiler);
-	return ret;
+
+	gfx_shader_config_t config = {
+		.compiler = &t_gfx_vulkan_compiler,
+		.source	  = strv_cstr(triangle_src),
+		.stage	  = stage,
+	};
+	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
 static int t_gfx_vulkan_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 {
-	gfx_shader_t shader = {0};
-	if (t_gfx_vulkan_shader(gfx, &shader)) {
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	if (t_gfx_vulkan_shader(gfx, &vs, GFX_SHADER_STAGE_VERTEX)) {
+		return 1;
+	}
+	if (t_gfx_vulkan_shader(gfx, &fs, GFX_SHADER_STAGE_FRAGMENT)) {
+		gfx_shader_free(&vs);
 		return 1;
 	}
 	gfx_pipeline_t pipeline = {0};
-	gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){0});
-	int ret = gfx_draw_triangle_2d(&pipeline, vertices);
-	gfx_shader_free(&shader);
+	int ret			= gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}) != &pipeline;
+	if (ret == 0) {
+		ret = gfx_draw_triangle_2d(&pipeline, vertices);
+	}
 	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
 	return ret;
 }
 
@@ -4302,6 +4339,8 @@ STEST(gfx_vulkan)
 {
 	SSTART;
 
+	(void)t_gfx_vulkan_compiler_init();
+
 	RUN(gfx_vulkan_driver_is_registered);
 	RUN(gfx_vulkan_init_null_gfx);
 	RUN(gfx_vulkan_init_null_proc);
@@ -4444,6 +4483,8 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_present_without_acquired_image);
 	RUN(gfx_vulkan_present_failure);
 	RUN(gfx_vulkan_present_accepts_suboptimal_present);
+
+	t_gfx_vulkan_compiler_free();
 
 	SEND;
 }

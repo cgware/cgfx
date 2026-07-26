@@ -34,7 +34,7 @@ static int target_valid(const gfx_target_t *target)
 
 static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
 {
-	if (gfx == NULL || config == NULL) {
+	if (gfx == NULL || config == NULL || gfx->alloc.alloc == NULL) {
 		return 1;
 	}
 
@@ -43,6 +43,7 @@ static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
 		return 1;
 	}
 	*render = (gfx_software_t){
+		.alloc = gfx->alloc,
 		.color = {0, 0, 0, 255},
 	};
 	gfx->data = render;
@@ -147,13 +148,11 @@ static void gfx_software_pipeline_free(gfx_pipeline_t *pipeline)
 static int gfx_software_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || vertices == NULL) {
-		log_error("cgfx", "gfx_software", NULL, "data = NULL");
 		return 1;
 	}
 
 	gfx_software_t *render = pipeline->gfx->data;
 	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
-		log_error("cgfx", "gfx_software", NULL, "invalid target");
 		return 1;
 	}
 

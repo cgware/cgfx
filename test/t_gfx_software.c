@@ -309,6 +309,21 @@ TEST(gfx_software_draw_triangle_2d_without_target)
 	END;
 }
 
+TEST(gfx_software_shader_success)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_shader_t shader = {0};
+
+	EXPECT_PTR(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){0}), &shader);
+
+	gfx_shader_free(&shader);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_draw_triangle_2d_writes_inside_pixel)
 {
 	START;
@@ -325,6 +340,49 @@ TEST(gfx_software_draw_triangle_2d_writes_inside_pixel)
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
 	EXPECT_EQ(pixels[0], 255);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_accepts_positive_winding)
+{
+	START;
+
+	u8 pixels[4 * 4 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[0], 255);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_draw_triangle_2d_clamps_viewport_to_target)
+{
+	START;
+
+	u8 pixels[2 * 2 * 4] = {0};
+	gfx_t gfx	     = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 2, 2, 8), 0);
+	EXPECT_EQ(gfx_viewport(&gfx, 1, 1, 4, 4), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+	};
+
+	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
+	EXPECT_EQ(pixels[12], 255);
 
 	gfx_free(&gfx);
 	END;
@@ -623,7 +681,7 @@ TEST(gfx_software_clear_zero_buffers)
 	END;
 }
 
-TEST(gfx_software_clear_writes_first_pixel)
+TEST(gfx_software_clear_writes_pixels)
 {
 	START;
 
@@ -639,23 +697,6 @@ TEST(gfx_software_clear_writes_first_pixel)
 	EXPECT_EQ(pixels[1], 51);
 	EXPECT_EQ(pixels[2], 77);
 	EXPECT_EQ(pixels[3], 255);
-
-	gfx_free(&gfx);
-	END;
-}
-
-TEST(gfx_software_clear_writes_second_pixel)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
-	t_gfx_software_set_target(&gfx, pixels, 2, 1, 8);
-	gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 1.0f);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
 	EXPECT_EQ(pixels[4], 26);
 	EXPECT_EQ(pixels[5], 51);
 	EXPECT_EQ(pixels[6], 77);
@@ -707,7 +748,10 @@ STEST(gfx_software)
 	RUN(gfx_software_draw_triangle_2d_null_data);
 	RUN(gfx_software_draw_triangle_2d_null_vertices);
 	RUN(gfx_software_draw_triangle_2d_without_target);
+	RUN(gfx_software_shader_success);
 	RUN(gfx_software_draw_triangle_2d_writes_inside_pixel);
+	RUN(gfx_software_draw_triangle_2d_accepts_positive_winding);
+	RUN(gfx_software_draw_triangle_2d_clamps_viewport_to_target);
 	RUN(gfx_software_draw_triangle_2d_leaves_outside_pixel);
 	RUN(gfx_software_draw_triangle_2d_respects_viewport);
 	RUN(gfx_software_draw_triangle_2d_interpolates_first_vertex_color);
@@ -725,8 +769,7 @@ STEST(gfx_software)
 	RUN(gfx_software_clear_null_data);
 	RUN(gfx_software_clear_without_target);
 	RUN(gfx_software_clear_zero_buffers);
-	RUN(gfx_software_clear_writes_first_pixel);
-	RUN(gfx_software_clear_writes_second_pixel);
+	RUN(gfx_software_clear_writes_pixels);
 	RUN(gfx_software_clear_uses_stride);
 
 	SEND;

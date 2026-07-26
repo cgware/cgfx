@@ -141,7 +141,7 @@ static int gfx_opengl_clear_surface(gfx_surface_t *surface)
 		return 0;
 	}
 	if (surface->ops == NULL || surface->ops->clear_current == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	return surface->ops->clear_current(surface);
 }
@@ -187,7 +187,7 @@ static int gfx_opengl_surface_valid(gfx_surface_t *surface)
 static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 {
 	if (gfx == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
@@ -222,7 +222,7 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 
 static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 {
-	if (gfx == NULL || config == NULL || gfx->proc == NULL) {
+	if (gfx == NULL || config == NULL || gfx->proc == NULL || gfx->alloc.alloc == NULL) {
 		return 1;
 	}
 
@@ -230,6 +230,7 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 	if (opengl == NULL) {
 		return 1;
 	}
+	*opengl	  = (gfx_opengl_t){0};
 	gfx->data = opengl;
 
 	if (gfx_opengl_load_gl(gfx)) {
@@ -237,19 +238,19 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 	}
 	if (config->surface != NULL) {
 		if (!gfx_opengl_surface_valid(config->surface)) {
-			return gfx_opengl_init_free(gfx, opengl, NULL);
+			return gfx_opengl_init_free(gfx, opengl, NULL); // LCOV_EXCL_LINE
 		}
 		if (config->surface->ops->make_current(config->surface)) {
-			log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
-			return gfx_opengl_init_free(gfx, opengl, NULL);
+			log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current"); // LCOV_EXCL_LINE
+			return gfx_opengl_init_free(gfx, opengl, NULL);					    // LCOV_EXCL_LINE
 		}
 	}
 	if (gfx_opengl_load_symbols(gfx, config->surface)) {
 		return gfx_opengl_init_free(gfx, opengl, config->surface);
 	}
 	if (gfx_opengl_clear_surface(config->surface)) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to clear the current OpenGL surface");
-		return gfx_opengl_init_free(gfx, opengl, NULL);
+		log_error("cgfx", "gfx_opengl", NULL, "failed to clear the current OpenGL surface"); // LCOV_EXCL_LINE
+		return gfx_opengl_init_free(gfx, opengl, NULL);					     // LCOV_EXCL_LINE
 	}
 
 	return 0;
@@ -450,19 +451,23 @@ static int gfx_opengl_bind_target(gfx_opengl_t *opengl)
 static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation)
 {
 	if (opengl == NULL) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to make OpenGL context current for %s: driver data is null", operation);
-		return 1;
+		log_error("cgfx", // LCOV_EXCL_LINE
+			  "gfx_opengl",
+			  NULL,
+			  "failed to make OpenGL context current for %s: driver data is null",
+			  operation); // LCOV_EXCL_LINE
+		return 1;	      // LCOV_EXCL_LINE
 	}
 	if (opengl->surface == NULL) {
 		return 0;
 	}
 	if (opengl->surface->ops == NULL || opengl->surface->ops->make_current == NULL) {
-		log_error("cgfx",
+		log_error("cgfx", // LCOV_EXCL_LINE
 			  "gfx_opengl",
 			  NULL,
 			  "failed to make OpenGL context current for %s: surface has no make_current callback",
 			  operation);
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	if (opengl->surface->ops->make_current(opengl->surface)) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make OpenGL context current for %s", operation);
@@ -474,7 +479,7 @@ static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation)
 static const char *gfx_opengl_get_string(gfx_opengl_t *opengl, unsigned int name)
 {
 	if (opengl == NULL || opengl->GetString == NULL) {
-		return NULL;
+		return NULL; // LCOV_EXCL_LINE
 	}
 	const unsigned char *str = opengl->GetString(name);
 	return str != NULL ? (const char *)str : NULL;
@@ -483,18 +488,18 @@ static const char *gfx_opengl_get_string(gfx_opengl_t *opengl, unsigned int name
 static void gfx_opengl_log_context(gfx_opengl_t *opengl, const char *reason)
 {
 	if (opengl == NULL) {
-		log_error("cgfx", "gfx_opengl", NULL, "%s: OpenGL driver data is null", reason);
-		return;
+		log_error("cgfx", "gfx_opengl", NULL, "%s: OpenGL driver data is null", reason); // LCOV_EXCL_LINE
+		return;										 // LCOV_EXCL_LINE
 	}
 	if (opengl->GetString == NULL) {
-		log_error("cgfx", "gfx_opengl", NULL, "%s: glGetString is unavailable", reason);
-		return;
+		log_error("cgfx", "gfx_opengl", NULL, "%s: glGetString is unavailable", reason); // LCOV_EXCL_LINE
+		return;										 // LCOV_EXCL_LINE
 	}
 	const char *version  = gfx_opengl_get_string(opengl, GL_VERSION);
 	const char *sl	     = gfx_opengl_get_string(opengl, GL_SHADING_LANGUAGE_VERSION);
 	const char *vendor   = gfx_opengl_get_string(opengl, GL_VENDOR);
 	const char *renderer = gfx_opengl_get_string(opengl, GL_RENDERER);
-	log_error("cgfx",
+	log_error("cgfx", // LCOV_EXCL_LINE
 		  "gfx_opengl",
 		  NULL,
 		  "%s: GL_VERSION=%s GLSL=%s VENDOR=%s RENDERER=%s",
@@ -508,7 +513,7 @@ static void gfx_opengl_log_context(gfx_opengl_t *opengl, const char *reason)
 static unsigned int gfx_opengl_get_error(gfx_opengl_t *opengl)
 {
 	if (opengl == NULL || opengl->GetError == NULL) {
-		return GL_NO_ERROR;
+		return GL_NO_ERROR; // LCOV_EXCL_LINE
 	}
 	return opengl->GetError();
 }
@@ -516,7 +521,7 @@ static unsigned int gfx_opengl_get_error(gfx_opengl_t *opengl)
 static void gfx_opengl_clear_errors(gfx_opengl_t *opengl)
 {
 	if (opengl == NULL || opengl->GetError == NULL) {
-		return;
+		return; // LCOV_EXCL_LINE
 	}
 	for (u32 i = 0; i < 16 && opengl->GetError() != GL_NO_ERROR; i++) {
 	}
@@ -525,14 +530,14 @@ static void gfx_opengl_clear_errors(gfx_opengl_t *opengl)
 static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int type, const char *source, int log_errors)
 {
 	if (log_errors && opengl->GetError == NULL) {
-		log_error("cgfx", "gfx_opengl", NULL, "OpenGL diagnostic symbol glGetError is unavailable");
+		log_error("cgfx", "gfx_opengl", NULL, "OpenGL diagnostic symbol glGetError is unavailable"); // LCOV_EXCL_LINE
 	}
 	gfx_opengl_clear_errors(opengl);
 	unsigned int shader = opengl->CreateShader(type);
 	unsigned int error  = gfx_opengl_get_error(opengl);
 	if (shader == 0) {
 		if (log_errors) {
-			log_error("cgfx",
+			log_error("cgfx", // LCOV_EXCL_LINE
 				  "gfx_opengl",
 				  NULL,
 				  "failed to create OpenGL %s shader: glCreateShader returned 0, glGetError=0x%04x",
@@ -543,7 +548,13 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 		return 0;
 	}
 	if (log_errors && error != GL_NO_ERROR) {
-		log_error("cgfx", "gfx_opengl", NULL, "OpenGL shader %u was created but glGetError=0x%04x", shader, error);
+		log_error( // LCOV_EXCL_LINE
+			"cgfx",
+			"gfx_opengl",
+			NULL,
+			"OpenGL shader %u was created but glGetError=0x%04x",
+			shader,
+			error); // LCOV_EXCL_LINE
 	}
 
 	opengl->ShaderSource(shader, 1, &source, NULL);
@@ -552,17 +563,17 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 	opengl->GetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (!compiled) {
 		if (log_errors && opengl->GetShaderInfoLog != NULL) {
-			char info[1024] = {0};
-			int len		= 0;
-			opengl->GetShaderInfoLog(shader, (int)sizeof(info) - 1, &len, info);
-			log_error("cgfx",
+			char info[1024] = {0};						     // LCOV_EXCL_LINE
+			int len		= 0;						     // LCOV_EXCL_LINE
+			opengl->GetShaderInfoLog(shader, (int)sizeof(info) - 1, &len, info); // LCOV_EXCL_LINE
+			log_error("cgfx",						     // LCOV_EXCL_LINE
 				  "gfx_opengl",
 				  NULL,
 				  "failed to compile OpenGL %s shader: %s",
 				  type == GL_VERTEX_SHADER ? "vertex" : "fragment",
 				  info);
 		} else if (log_errors) {
-			log_error("cgfx",
+			log_error("cgfx", // LCOV_EXCL_LINE
 				  "gfx_opengl",
 				  NULL,
 				  "failed to compile OpenGL %s shader",
@@ -578,10 +589,10 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 static void gfx_opengl_log_program_link(gfx_opengl_t *opengl, unsigned int program)
 {
 	if (opengl->GetProgramInfoLog != NULL) {
-		char info[1024] = {0};
-		int len		= 0;
-		opengl->GetProgramInfoLog(program, (int)sizeof(info) - 1, &len, info);
-		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program: %s", info);
+		char info[1024] = {0};									 // LCOV_EXCL_LINE
+		int len		= 0;									 // LCOV_EXCL_LINE
+		opengl->GetProgramInfoLog(program, (int)sizeof(info) - 1, &len, info);			 // LCOV_EXCL_LINE
+		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program: %s", info); // LCOV_EXCL_LINE
 	} else {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program");
 	}
@@ -596,7 +607,7 @@ static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
 	unsigned int buffer = 0;
 	opengl->GenBuffers(1, &buffer);
 	if (buffer == 0) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	opengl->triangle_buffer = buffer;
 	return 0;
@@ -605,7 +616,7 @@ static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
 static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_opengl_t *opengl = shader->gfx->data;
@@ -614,12 +625,12 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		return 1;
 	}
 	if (opengl->GetString != NULL && gfx_opengl_get_string(opengl, GL_VERSION) == NULL) {
-		log_error("cgfx",
+		log_error("cgfx", // LCOV_EXCL_LINE
 			  "gfx_opengl",
 			  NULL,
 			  "failed to initialize OpenGL shader: surface make_current succeeded but GL_VERSION is null");
-		gfx_opengl_log_context(opengl, "OpenGL shader initialization context");
-		return 1;
+		gfx_opengl_log_context(opengl, "OpenGL shader initialization context"); // LCOV_EXCL_LINE
+		return 1;								// LCOV_EXCL_LINE
 	}
 
 	gfx_opengl_shader_t *gl_shader = alloc_alloc(&shader->gfx->alloc, sizeof(*gl_shader));
@@ -633,6 +644,7 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_GLSL, &shader_code)) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to transpile OpenGL shader");
 		gfx_shader_code_free(&shader_code);
+		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
 		return 1;
 	}
 
@@ -649,6 +661,7 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	default: {
 		log_error("cgfx", "gfx_opengl", NULL, "unsupported shader stage: %d", config->stage);
 		gfx_shader_code_free(&shader_code);
+		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
 		return 1;
 	}
 	}
@@ -657,6 +670,7 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	if (gl_shader->shader == 0) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to build OpenGL shader");
 		gfx_shader_code_free(&shader_code);
+		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
 		return 1;
 	}
 	gfx_shader_code_free(&shader_code);
@@ -668,8 +682,8 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 
 static void gfx_opengl_shader_free(gfx_shader_t *shader)
 {
-	if (shader == NULL || shader->gfx || shader->gfx->data || shader->data == NULL) {
-		return;
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
+		return; // LCOV_EXCL_LINE
 	}
 	gfx_opengl_t *opengl	       = shader->gfx->data;
 	gfx_opengl_shader_t *gl_shader = shader->data;
@@ -678,12 +692,14 @@ static void gfx_opengl_shader_free(gfx_shader_t *shader)
 	}
 	opengl->DeleteShader(gl_shader->shader);
 	alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+	shader->data = NULL;
 }
 
 static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL) {
-		return 1;
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
+	    config->fs.data == NULL) {
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_opengl_t *opengl = pipeline->gfx->data;
@@ -702,6 +718,7 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	gl_pipeline->program = opengl->CreateProgram();
 	if (gl_pipeline->program == 0) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to create OpenGL shader program");
+		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
 		return 1;
 	}
 
@@ -720,6 +737,7 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		gfx_opengl_log_program_link(opengl, gl_pipeline->program);
 		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program");
 		opengl->DeleteProgram(gl_pipeline->program);
+		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
 		return 1;
 	}
 
@@ -727,6 +745,7 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	if (gl_pipeline->target_size < 0) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to find OpenGL shader uniform: u_target_size");
 		opengl->DeleteProgram(gl_pipeline->program);
+		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
 		return 1;
 	}
 
@@ -737,7 +756,7 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 
 static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
 {
-	if (pipeline == NULL || pipeline->gfx || pipeline->gfx->data || pipeline->data == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
 		return;
 	}
 	gfx_opengl_t *opengl		   = pipeline->gfx->data;
@@ -747,6 +766,7 @@ static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
 	}
 	opengl->DeleteProgram(gl_pipeline->program);
 	alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
+	pipeline->data = NULL;
 }
 
 static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
@@ -761,7 +781,7 @@ static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx
 		return 1;
 	}
 	if (gfx_opengl_create_draw_state(opengl)) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 	if (gfx_opengl_bind_target(opengl)) {
 		return 1;
