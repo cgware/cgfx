@@ -69,6 +69,62 @@ static const char *t_gfx_shader_compiler_expr_source = "vs_in 0 VertexIn {\n"
 						       "\treturn output;\n"
 						       "}\n";
 
+static const char *t_gfx_shader_compiler_extra_semantic_source =
+	"vs_in 0 VertexIn {\n"
+	"\tvec2f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"\tvec4f extra : TEXCOORD0;\n"
+	"}\n"
+	"vs_out VertexOut {\n"
+	"\tvec4f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"\tvec4f extra : TEXCOORD0;\n"
+	"}\n"
+	"fs_in FragmentIn {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"fs_out FragmentOut {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"VertexOut vertex(VertexIn input) {\n"
+	"\tVertexOut output;\n"
+	"\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+	"\toutput.color = input.color;\n"
+	"\treturn output;\n"
+	"}\n"
+	"FragmentOut fragment(FragmentIn input) {\n"
+	"\tFragmentOut output;\n"
+	"\toutput.color = input.color;\n"
+	"\treturn output;\n"
+	"}\n";
+
+static const char *t_gfx_shader_compiler_extra_type_source = "vs_in 0 VertexIn {\n"
+							     "\tvec2f position : POSITION;\n"
+							     "\tvec4f color : COLOR0;\n"
+							     "\tvec3f extra : TEXCOORD0;\n"
+							     "}\n"
+							     "vs_out VertexOut {\n"
+							     "\tvec4f position : POSITION;\n"
+							     "\tvec4f color : COLOR0;\n"
+							     "}\n"
+							     "fs_in FragmentIn {\n"
+							     "\tvec4f color : COLOR0;\n"
+							     "}\n"
+							     "fs_out FragmentOut {\n"
+							     "\tvec4f color : COLOR0;\n"
+							     "}\n"
+							     "VertexOut vertex(VertexIn input) {\n"
+							     "\tVertexOut output;\n"
+							     "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+							     "\toutput.color = input.color;\n"
+							     "\treturn output;\n"
+							     "}\n"
+							     "FragmentOut fragment(FragmentIn input) {\n"
+							     "\tFragmentOut output;\n"
+							     "\toutput.color = input.color;\n"
+							     "\treturn output;\n"
+							     "}\n";
+
 static void t_gfx_shader_compiler_reset(void)
 {
 	t_gfx_shader_compiler_alloc_count   = 0;
@@ -261,7 +317,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	gfx_shader_code_t shader = {0};
 	int ret			 = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		 &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -279,7 +335,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -292,7 +348,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -305,7 +361,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -318,7 +374,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -332,7 +388,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -344,12 +400,74 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		&compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		   &compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
 		EXPECT_NOT_NULL(strstr(shader.text, "float4 color = float4"));
 	}
+	gfx_shader_code_free(&shader);
+
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
+TEST(gfx_shader_compiler_transpile_extra_semantic)
+{
+	START;
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+	gfx_shader_code_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_shader_compiler_transpile(&compiler,
+						strv_cstr(t_gfx_shader_compiler_extra_semantic_source),
+						GFX_SHADER_STAGE_VERTEX,
+						GFX_SHADER_LANGUAGE_HLSL,
+						&shader),
+		  1);
+	log_set_quiet(0, 0);
+	gfx_shader_code_free(&shader);
+
+	shader = (gfx_shader_code_t){0};
+	EXPECT_EQ(gfx_shader_compiler_transpile(&compiler,
+						strv_cstr(t_gfx_shader_compiler_extra_semantic_source),
+						GFX_SHADER_STAGE_VERTEX,
+						GFX_SHADER_LANGUAGE_SPIRV,
+						&shader),
+		  0);
+	gfx_shader_code_free(&shader);
+
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
+TEST(gfx_shader_compiler_transpile_extra_type)
+{
+	START;
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+	gfx_shader_code_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_shader_compiler_transpile(&compiler,
+						strv_cstr(t_gfx_shader_compiler_extra_type_source),
+						GFX_SHADER_STAGE_VERTEX,
+						GFX_SHADER_LANGUAGE_GLSL,
+						&shader),
+		  1);
+	gfx_shader_code_free(&shader);
+
+	shader = (gfx_shader_code_t){0};
+	EXPECT_EQ(gfx_shader_compiler_transpile(&compiler,
+						strv_cstr(t_gfx_shader_compiler_extra_type_source),
+						GFX_SHADER_STAGE_VERTEX,
+						GFX_SHADER_LANGUAGE_SPIRV,
+						&shader),
+		  1);
+	log_set_quiet(0, 0);
 	gfx_shader_code_free(&shader);
 
 	gfx_shader_compiler_free(&compiler);
@@ -487,6 +605,8 @@ STEST(gfx_shader_compiler)
 	RUN(gfx_shader_compiler_transpile_failures);
 	RUN(gfx_shader_compiler_transpile_alloc_failure);
 	RUN(gfx_shader_compiler_transpile_outputs);
+	RUN(gfx_shader_compiler_transpile_extra_semantic);
+	RUN(gfx_shader_compiler_transpile_extra_type);
 	RUN(gfx_shader_code_free_null_shader);
 	RUN(gfx_shader_text_putf_format_failure);
 	RUN(gfx_shader_text_putf_resize_failure);

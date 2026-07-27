@@ -4,7 +4,9 @@
 
 static int t_gfx_pipeline_init_calls;
 static int t_gfx_pipeline_free_calls;
+static int t_gfx_pipeline_bind_calls;
 static int t_gfx_pipeline_init_ret;
+static int t_gfx_pipeline_bind_ret;
 static const gfx_pipeline_config_t *t_gfx_pipeline_config;
 
 static int t_gfx_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
@@ -21,18 +23,29 @@ static void t_gfx_pipeline_free(gfx_pipeline_t *pipeline)
 	pipeline->data = NULL;
 }
 
+static int t_gfx_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
+{
+	(void)frame;
+	(void)pipeline;
+	t_gfx_pipeline_bind_calls++;
+	return t_gfx_pipeline_bind_ret;
+}
+
 static gfx_driver_t t_gfx_pipeline_driver = {
 	.name	       = "test",
 	.api	       = GFX_API_OPENGL,
 	.pipeline_init = t_gfx_pipeline_init,
 	.pipeline_free = t_gfx_pipeline_free,
+	.pipeline_bind = t_gfx_pipeline_bind,
 };
 
 static void t_gfx_pipeline_reset(void)
 {
 	t_gfx_pipeline_init_calls = 0;
 	t_gfx_pipeline_free_calls = 0;
+	t_gfx_pipeline_bind_calls = 0;
 	t_gfx_pipeline_init_ret	  = 0;
+	t_gfx_pipeline_bind_ret	  = 0;
 	t_gfx_pipeline_config	  = NULL;
 }
 
@@ -151,6 +164,40 @@ TEST(gfx_pipeline_free_null_pipeline)
 	END;
 }
 
+TEST(gfx_pipeline_bind_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv	= t_gfx_pipeline_driver;
+	drv.pipeline_bind	= NULL;
+	gfx_t gfx		= {.drv = &drv};
+	gfx_frame_t frame	= {.gfx = &gfx, .active = 1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)0x9ABC};
+	gfx.frame		= &frame;
+
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 1);
+
+	END;
+}
+
+TEST(gfx_pipeline_bind_returns_driver_result)
+{
+	START;
+
+	t_gfx_pipeline_reset();
+	t_gfx_pipeline_bind_ret = 1;
+	gfx_t gfx		= {.drv = &t_gfx_pipeline_driver};
+	gfx_frame_t frame	= {.gfx = &gfx, .active = 1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)0x9ABC};
+	gfx.frame		= &frame;
+
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 1);
+	EXPECT_EQ(t_gfx_pipeline_bind_calls, 1);
+	EXPECT_NULL(frame.pipeline);
+
+	END;
+}
+
 STEST(gfx_pipeline)
 {
 	SSTART;
@@ -163,6 +210,8 @@ STEST(gfx_pipeline)
 	RUN(gfx_pipeline_init_returns_null_on_driver_failure);
 	RUN(gfx_pipeline_free_calls_driver_and_clears_data);
 	RUN(gfx_pipeline_free_null_pipeline);
+	RUN(gfx_pipeline_bind_null_driver_callback);
+	RUN(gfx_pipeline_bind_returns_driver_result);
 
 	SEND;
 }

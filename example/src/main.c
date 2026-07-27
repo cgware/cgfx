@@ -193,8 +193,25 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
 		ret = 1;
 	}
-	if (ret == 0 && gfx_draw_triangle_2d(&pipeline, &vb)) {
+	gfx_frame_t frame = {0};
+	if (ret == 0 && gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target})) {
+		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_pipeline_bind(&frame, &pipeline)) {
+		log_error("cgfx_example", "main", NULL, "failed to bind pipeline");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_buffer_bind(&frame, &vb)) {
+		log_error("cgfx_example", "main", NULL, "failed to bind vertex buffer");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_draw(&frame, 3, 0)) {
 		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
+		ret = 1;
+	}
+	if (frame.active && gfx_end(&frame)) {
+		log_error("cgfx_example", "main", NULL, "failed to end frame");
 		ret = 1;
 	}
 

@@ -142,7 +142,7 @@ static u32 gfx_shader_spv_location(strv_t semantic, u32 fallback)
 	if (strv_eq(semantic, STRV("COLOR0"))) {
 		return 1;
 	}
-	return fallback; // LCOV_EXCL_LINE
+	return fallback;
 }
 
 static u32 gfx_shader_spv_type_id(const gfx_shader_spv_t *spv, strv_t type)
@@ -153,7 +153,7 @@ static u32 gfx_shader_spv_type_id(const gfx_shader_spv_t *spv, strv_t type)
 	if (strv_eq(type, STRV("vec4f"))) {
 		return spv->vec4_id;
 	}
-	return 0; // LCOV_EXCL_LINE
+	return 0;
 }
 
 static const gfx_shader_member_t *gfx_shader_spv_lhs_member(const gfx_shader_struct_ir_t *ir, strv_t lhs)
@@ -386,7 +386,7 @@ static int gfx_shader_spv_add_var(gfx_shader_spv_t *spv, gfx_shader_spv_var_t *v
 				     .location	  = location,
 	     };
 	if (var->type_id == 0) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	(*count)++;
 	return 0;
@@ -410,7 +410,7 @@ static int gfx_shader_spirv_build(buf_t *code, gfx_shader_spv_t *spv, const gfx_
 						   &ir->vs_in.members[i],
 						   GFX_SHADER_SPV_STORAGE_INPUT,
 						   gfx_shader_spv_location(ir->vs_in.members[i].semantic, i))) {
-				return 1; // LCOV_EXCL_LINE
+				return 1;
 			}
 		}
 		u32 location = 0;
@@ -464,8 +464,8 @@ static int gfx_shader_spirv_emit(const gfx_shader_ir_t *ir, gfx_shader_stage_t s
 	spv.vec4_id	     = gfx_shader_spv_id(&spv);
 
 	if (gfx_shader_spirv_build(&code, &spv, ir, stage)) {
-		buf_free(&code); // LCOV_EXCL_LINE
-		return 1;	 // LCOV_EXCL_LINE
+		buf_free(&code);
+		return 1;
 	}
 	((u32 *)code.data)[3] = spv.next_id;
 	shader->code	      = code;

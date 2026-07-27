@@ -13,16 +13,20 @@ typedef struct gfx_driver_s {
 	int (*proc)(gfx_t *gfx, strv_t name, void **proc);
 	int (*set_target)(gfx_t *gfx, const gfx_target_t *target);
 	int (*viewport)(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
+	int (*begin)(gfx_frame_t *frame);
 	int (*clear_color)(gfx_t *gfx, float r, float g, float b, float a);
 	int (*clear)(gfx_t *gfx, u32 buffers);
 	int (*buffer_init)(gfx_buffer_t *buffer, const gfx_buffer_config_t *config);
 	void (*buffer_free)(gfx_buffer_t *buffer);
 	int (*buffer_set_data)(gfx_buffer_t *buffer, const void *data, size_t size);
+	int (*buffer_bind)(gfx_frame_t *frame, const gfx_buffer_t *buffer);
 	int (*shader_init)(gfx_shader_t *shader, const gfx_shader_config_t *config);
 	void (*shader_free)(gfx_shader_t *shader);
 	int (*pipeline_init)(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config);
 	void (*pipeline_free)(gfx_pipeline_t *pipeline);
-	int (*draw_triangle_2d)(const gfx_pipeline_t *pipeline, const gfx_buffer_t *vertex_buffer);
+	int (*pipeline_bind)(gfx_frame_t *frame, const gfx_pipeline_t *pipeline);
+	int (*draw)(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex);
+	int (*end)(gfx_frame_t *frame);
 	int (*present)(gfx_t *gfx);
 } gfx_driver_t;
 

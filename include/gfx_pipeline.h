@@ -33,6 +33,6 @@ typedef struct gfx_pipeline_s {
 gfx_pipeline_t *gfx_pipeline_init(gfx_pipeline_t *pipeline, gfx_t *gfx, const gfx_pipeline_config_t *config);
 void gfx_pipeline_free(gfx_pipeline_t *pipeline);
 
-int gfx_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *vertex_buffer); // TODO: this should not exist
+int gfx_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline);
 
 #endif

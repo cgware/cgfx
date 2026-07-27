@@ -22,4 +22,6 @@ void gfx_buffer_free(gfx_buffer_t *buf);
 
 int gfx_buffer_set_data(gfx_buffer_t *buf, const void *data, size_t size);
 
+int gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buf);
+
 #endif

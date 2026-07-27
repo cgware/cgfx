@@ -335,6 +335,7 @@ static t_d3d11_texture_t t_texture;
 static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
+static gfx_target_t t_gfx_d3d11_target;
 
 static const gfx_layout_t t_gfx_d3d11_input_layout[] = {
 	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
@@ -909,7 +910,7 @@ static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stage
 	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
-static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
+static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_target_t *target, const gfx_vertex_2d_t vertices[3])
 {
 	if (vertices == NULL) {
 		return 1;
@@ -936,8 +937,23 @@ static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 	gfx_pipeline_t pipeline	     = {0};
 	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
 	int ret			     = gfx_pipeline_init(&pipeline, gfx, &config) != &pipeline;
+	gfx_frame_t frame	     = {0};
+	int began		     = 0;
 	if (ret == 0) {
-		ret = gfx_draw_triangle_2d(&pipeline, &buffer);
+		ret = gfx_begin(gfx, &frame, &(gfx_frame_config_t){.target = target});
+	}
+	if (ret == 0) {
+		began = 1;
+		ret   = gfx_pipeline_bind(&frame, &pipeline);
+	}
+	if (ret == 0) {
+		ret = gfx_buffer_bind(&frame, &buffer);
+	}
+	if (ret == 0) {
+		ret = gfx_draw(&frame, 3, 0);
+	}
+	if (began && gfx_end(&frame)) {
+		ret = 1;
 	}
 	gfx_pipeline_free(&pipeline);
 	gfx_shader_free(&fs);
@@ -948,14 +964,14 @@ static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 
 static int t_gfx_d3d11_set_surface_target(gfx_t *gfx, u16 width, u16 height)
 {
-	gfx_target_t target = {
+	t_gfx_d3d11_target = (gfx_target_t){
 		.type	 = GFX_TARGET_SURFACE,
 		.format	 = GFX_FORMAT_RGBA8,
 		.surface = &t_surface,
 		.width	 = width,
 		.height	 = height,
 	};
-	return gfx_set_target(gfx, &target);
+	return gfx_set_target(gfx, &t_gfx_d3d11_target);
 }
 
 TEST(gfx_d3d11_driver_is_registered)
@@ -1708,7 +1724,7 @@ TEST(gfx_d3d11_present_calls_surface)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_null_data)
+TEST(gfx_d3d11_draw_null_data)
 {
 	START;
 
@@ -1716,31 +1732,40 @@ TEST(gfx_d3d11_draw_triangle_2d_null_data)
 		.drv = t_gfx_d3d11_driver(),
 	};
 	EXPECT_NOT_NULL(gfx.drv);
-	gfx_buffer_t buffer	= {0};
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, &buffer), 1);
+	EXPECT_EQ(gfx.drv->draw(NULL, 3, 0), 1);
 
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_null_buffer)
+TEST(gfx_d3d11_end_null_frame)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->end(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_draw_null_buffer)
 {
 	START;
 
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, NULL), 1);
+	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, NULL, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_without_target)
+TEST(gfx_d3d11_draw_without_target)
 {
 	START;
 
@@ -1749,8 +1774,59 @@ TEST(gfx_d3d11_draw_triangle_2d_without_target)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, vertices), 1);
+	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, NULL, vertices), 1);
 
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_begin_null_frame)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->begin(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_begin_missing_render_target_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	void (*saved)(t_d3d11_context_t *, UINT, t_d3d11_view_t *const *, void *) = t_context_vtbl.OMSetRenderTargets;
+	t_context_vtbl.OMSetRenderTargets					  = NULL;
+	gfx_frame_t frame							  = {.gfx = &gfx, .active = 1};
+
+	EXPECT_EQ(gfx.drv->begin(&frame), 1);
+
+	t_context_vtbl.OMSetRenderTargets = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_clear_missing_clear_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	void (*saved)(t_d3d11_context_t *, t_d3d11_view_t *, const float[4]) = t_context_vtbl.ClearRenderTargetView;
+	t_context_vtbl.ClearRenderTargetView				     = NULL;
+
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+
+	t_context_vtbl.ClearRenderTargetView = saved;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2334,7 +2410,7 @@ TEST(gfx_d3d11_pipeline_init_unsupported_input_layout)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_success)
+TEST(gfx_d3d11_draw_success)
 {
 	START;
 
@@ -2344,14 +2420,14 @@ TEST(gfx_d3d11_draw_triangle_2d_success)
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, vertices), 0);
+	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices), 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_compiles_shaders)
+TEST(gfx_d3d11_draw_compiles_shaders)
 {
 	START;
 
@@ -2360,7 +2436,7 @@ TEST(gfx_d3d11_draw_triangle_2d_compiles_shaders)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_d3d_compile_calls, 2);
 
@@ -2369,7 +2445,7 @@ TEST(gfx_d3d11_draw_triangle_2d_compiles_shaders)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_creates_buffer)
+TEST(gfx_d3d11_draw_creates_buffer)
 {
 	START;
 
@@ -2378,7 +2454,7 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_buffer)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_create_buffer_calls, 1);
 	EXPECT_EQ(t_create_buffer_bytes, sizeof(t_d3d11_vertex_2d_t) * 3);
@@ -2389,7 +2465,30 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_buffer)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
+TEST(gfx_d3d11_buffer_set_data_missing_update_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	void (*saved)(t_d3d11_context_t *, t_d3d11_buffer_t *, UINT, const void *, const void *, UINT, UINT) =
+		t_context_vtbl.UpdateSubresource;
+	t_context_vtbl.UpdateSubresource = NULL;
+	gfx_vertex_2d_t vertices[3]	 = {0};
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+
+	t_context_vtbl.UpdateSubresource = saved;
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_creates_input_layout)
 {
 	START;
 
@@ -2398,7 +2497,7 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_create_input_layout_calls, 1);
 	EXPECT_EQ(t_input_element_count, 2);
@@ -2412,7 +2511,49 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_binds_render_target)
+TEST(gfx_d3d11_pipeline_bind_null_frame)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->pipeline_bind(NULL, NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_bind_missing_shader_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	void (*saved)(t_d3d11_context_t *, t_d3d11_vertex_shader_t *, void *const *, UINT) = t_context_vtbl.VSSetShader;
+	t_context_vtbl.VSSetShader							   = NULL;
+	gfx_frame_t frame								   = {.gfx = &gfx, .active = 1};
+
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
+
+	t_context_vtbl.VSSetShader = saved;
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_binds_render_target)
 {
 	START;
 
@@ -2421,7 +2562,7 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_render_target)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_om_set_render_targets_calls, 1);
 	EXPECT_EQ(t_render_target_count, 1);
@@ -2431,7 +2572,7 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_render_target)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer)
+TEST(gfx_d3d11_draw_binds_vertex_buffer)
 {
 	START;
 
@@ -2440,7 +2581,7 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_ia_set_vertex_buffers_calls, 1);
 	EXPECT_EQ(t_vertex_buffer_start_slot, 0);
@@ -2453,7 +2594,80 @@ TEST(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_uses_triangle_list)
+TEST(gfx_d3d11_buffer_bind_null_frame)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->buffer_bind(NULL, NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_zero_stride)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	struct {
+		void *input_layout;
+		void *vertex_shader;
+		void *pixel_shader;
+		UINT stride;
+	} pipeline_data		= {0};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = &pipeline_data};
+	gfx_frame_t frame	= {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	void (*saved)(t_d3d11_context_t *, UINT, UINT, t_d3d11_buffer_t *const *, const UINT *, const UINT *) =
+		t_context_vtbl.IASetVertexBuffers;
+	t_context_vtbl.IASetVertexBuffers = NULL;
+	gfx_frame_t frame		  = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
+
+	t_context_vtbl.IASetVertexBuffers = saved;
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_uses_triangle_list)
 {
 	START;
 
@@ -2462,7 +2676,7 @@ TEST(gfx_d3d11_draw_triangle_2d_uses_triangle_list)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
 	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -2472,7 +2686,26 @@ TEST(gfx_d3d11_draw_triangle_2d_uses_triangle_list)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_draws_three_vertices)
+TEST(gfx_d3d11_draw_missing_draw_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	void (*saved)(t_d3d11_context_t *, UINT, UINT) = t_context_vtbl.Draw;
+	t_context_vtbl.Draw			       = NULL;
+	gfx_frame_t frame			       = {.gfx = &gfx, .active = 1};
+
+	EXPECT_EQ(gfx.drv->draw(&frame, 3, 0), 1);
+
+	t_context_vtbl.Draw = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_draws_three_vertices)
 {
 	START;
 
@@ -2481,7 +2714,7 @@ TEST(gfx_d3d11_draw_triangle_2d_draws_three_vertices)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
 	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_draw_calls, 1);
 	EXPECT_EQ(t_draw_vertex_count, 3);
@@ -2492,7 +2725,7 @@ TEST(gfx_d3d11_draw_triangle_2d_draws_three_vertices)
 	END;
 }
 
-TEST(gfx_d3d11_draw_triangle_2d_uploads_first_vertex)
+TEST(gfx_d3d11_draw_uploads_first_vertex)
 {
 	START;
 
@@ -2505,7 +2738,7 @@ TEST(gfx_d3d11_draw_triangle_2d_uploads_first_vertex)
 		{.x = 0.0f, .y = 0.0f},
 		{.x = 0.0f, .y = 0.0f},
 	};
-	t_gfx_d3d11_draw(&gfx, vertices);
+	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
 
 	EXPECT_EQ(t_update_subresource_calls, 1);
 	EXPECT_EQ(t_uploaded_vertices[0].x, -0.5f);
@@ -2642,9 +2875,13 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_clear_without_target);
 	RUN(gfx_d3d11_clear_calls_context);
 	RUN(gfx_d3d11_clear_uses_red);
-	RUN(gfx_d3d11_draw_triangle_2d_null_data);
-	RUN(gfx_d3d11_draw_triangle_2d_null_buffer);
-	RUN(gfx_d3d11_draw_triangle_2d_without_target);
+	RUN(gfx_d3d11_begin_null_frame);
+	RUN(gfx_d3d11_begin_missing_render_target_callback);
+	RUN(gfx_d3d11_clear_missing_clear_callback);
+	RUN(gfx_d3d11_draw_null_data);
+	RUN(gfx_d3d11_end_null_frame);
+	RUN(gfx_d3d11_draw_null_buffer);
+	RUN(gfx_d3d11_draw_without_target);
 	RUN(gfx_d3d11_buffer_init_unsupported_type);
 	RUN(gfx_d3d11_buffer_free_null_data);
 	RUN(gfx_d3d11_buffer_init_null_config);
@@ -2674,15 +2911,22 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure);
 	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic);
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout);
-	RUN(gfx_d3d11_draw_triangle_2d_success);
-	RUN(gfx_d3d11_draw_triangle_2d_compiles_shaders);
-	RUN(gfx_d3d11_draw_triangle_2d_creates_buffer);
-	RUN(gfx_d3d11_draw_triangle_2d_creates_input_layout);
-	RUN(gfx_d3d11_draw_triangle_2d_binds_render_target);
-	RUN(gfx_d3d11_draw_triangle_2d_binds_vertex_buffer);
-	RUN(gfx_d3d11_draw_triangle_2d_uses_triangle_list);
-	RUN(gfx_d3d11_draw_triangle_2d_draws_three_vertices);
-	RUN(gfx_d3d11_draw_triangle_2d_uploads_first_vertex);
+	RUN(gfx_d3d11_draw_success);
+	RUN(gfx_d3d11_draw_compiles_shaders);
+	RUN(gfx_d3d11_draw_creates_buffer);
+	RUN(gfx_d3d11_buffer_set_data_missing_update_callback);
+	RUN(gfx_d3d11_draw_creates_input_layout);
+	RUN(gfx_d3d11_pipeline_bind_null_frame);
+	RUN(gfx_d3d11_pipeline_bind_missing_shader_callback);
+	RUN(gfx_d3d11_draw_binds_render_target);
+	RUN(gfx_d3d11_draw_binds_vertex_buffer);
+	RUN(gfx_d3d11_buffer_bind_null_frame);
+	RUN(gfx_d3d11_buffer_bind_zero_stride);
+	RUN(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback);
+	RUN(gfx_d3d11_draw_uses_triangle_list);
+	RUN(gfx_d3d11_draw_missing_draw_callback);
+	RUN(gfx_d3d11_draw_draws_three_vertices);
+	RUN(gfx_d3d11_draw_uploads_first_vertex);
 	RUN(gfx_d3d11_present_null_data);
 	RUN(gfx_d3d11_present_without_target);
 	RUN(gfx_d3d11_present_calls_surface);

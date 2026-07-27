@@ -34,3 +34,18 @@ int gfx_buffer_set_data(gfx_buffer_t *buf, const void *data, size_t size)
 
 	return buf->gfx->drv->buffer_set_data(buf, data, size);
 }
+
+int gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buf)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || !frame->active || frame->pipeline == NULL || buf == NULL ||
+	    buf->gfx != frame->gfx || buf->gfx->drv == NULL || buf->gfx->drv->buffer_bind == NULL) {
+		return 1;
+	}
+
+	if (buf->gfx->drv->buffer_bind(frame, buf)) {
+		return 1;
+	}
+
+	frame->vertex_buffer = buf;
+	return 0;
+}

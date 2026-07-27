@@ -5,8 +5,10 @@
 static int t_gfx_buffer_init_calls;
 static int t_gfx_buffer_free_calls;
 static int t_gfx_buffer_set_data_calls;
+static int t_gfx_buffer_bind_calls;
 static int t_gfx_buffer_init_ret;
 static int t_gfx_buffer_set_data_ret;
+static int t_gfx_buffer_bind_ret;
 static const gfx_buffer_config_t *t_gfx_buffer_config;
 static gfx_buffer_t *t_gfx_buffer;
 static const void *t_gfx_buffer_data;
@@ -36,12 +38,21 @@ static int t_gfx_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t 
 	return t_gfx_buffer_set_data_ret;
 }
 
+static int t_gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
+{
+	(void)frame;
+	t_gfx_buffer_bind_calls++;
+	t_gfx_buffer = (gfx_buffer_t *)buffer;
+	return t_gfx_buffer_bind_ret;
+}
+
 static gfx_driver_t t_gfx_buffer_driver = {
 	.name		 = "test-buffer",
 	.api		 = GFX_API_OPENGL,
 	.buffer_init	 = t_gfx_buffer_init,
 	.buffer_free	 = t_gfx_buffer_free,
 	.buffer_set_data = t_gfx_buffer_set_data,
+	.buffer_bind	 = t_gfx_buffer_bind,
 };
 
 static void t_gfx_buffer_reset(void)
@@ -49,8 +60,10 @@ static void t_gfx_buffer_reset(void)
 	t_gfx_buffer_init_calls	    = 0;
 	t_gfx_buffer_free_calls	    = 0;
 	t_gfx_buffer_set_data_calls = 0;
+	t_gfx_buffer_bind_calls	    = 0;
 	t_gfx_buffer_init_ret	    = 0;
 	t_gfx_buffer_set_data_ret   = 0;
+	t_gfx_buffer_bind_ret	    = 0;
 	t_gfx_buffer_config	    = NULL;
 	t_gfx_buffer		    = NULL;
 	t_gfx_buffer_data	    = NULL;
@@ -262,6 +275,25 @@ TEST(gfx_buffer_set_data_returns_driver_result)
 	END;
 }
 
+TEST(gfx_buffer_bind_returns_driver_result)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	t_gfx_buffer_bind_ret	= 1;
+	gfx_t gfx		= {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_frame_t frame	= {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer	= {.gfx = &gfx, .data = (void *)0x5678};
+	gfx.frame		= &frame;
+
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
+	EXPECT_EQ(t_gfx_buffer_bind_calls, 1);
+	EXPECT_NULL(frame.vertex_buffer);
+
+	END;
+}
+
 STEST(gfx_buffer)
 {
 	SSTART;
@@ -280,6 +312,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_set_data_zero_size);
 	RUN(gfx_buffer_set_data_calls_driver);
 	RUN(gfx_buffer_set_data_returns_driver_result);
+	RUN(gfx_buffer_bind_returns_driver_result);
 
 	SEND;
 }

@@ -10,7 +10,7 @@ static int t_gfx_set_target_calls;
 static int t_gfx_viewport_calls;
 static int t_gfx_clear_color_calls;
 static int t_gfx_clear_calls;
-static int t_gfx_draw_triangle_2d_calls;
+static int t_gfx_draw_calls;
 static int t_gfx_present_calls;
 static int t_gfx_init_ret;
 static int t_gfx_free_ret;
@@ -20,7 +20,9 @@ static int t_gfx_set_target_ret;
 static int t_gfx_viewport_ret;
 static int t_gfx_clear_color_ret;
 static int t_gfx_clear_ret;
-static int t_gfx_draw_triangle_2d_ret;
+static int t_gfx_draw_ret;
+static int t_gfx_begin_ret;
+static int t_gfx_end_ret;
 static int t_gfx_present_ret;
 static const gfx_config_t *t_gfx_config;
 static strv_t t_gfx_proc_name;
@@ -31,8 +33,6 @@ static u16 t_gfx_x;
 static u16 t_gfx_y;
 static u16 t_gfx_width;
 static u16 t_gfx_height;
-static const gfx_buffer_t *t_gfx_vertex_buffer;
-static const gfx_pipeline_t *t_gfx_pipeline;
 static float t_gfx_r;
 static float t_gfx_g;
 static float t_gfx_b;
@@ -109,12 +109,25 @@ static int t_gfx_clear(gfx_t *gfx, u32 buffers)
 	return t_gfx_clear_ret;
 }
 
-static int t_gfx_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *vertex_buffer)
+static int t_gfx_begin(gfx_frame_t *frame)
 {
-	t_gfx_draw_triangle_2d_calls++;
-	t_gfx_pipeline	    = pipeline;
-	t_gfx_vertex_buffer = vertex_buffer;
-	return t_gfx_draw_triangle_2d_ret;
+	(void)frame;
+	return t_gfx_begin_ret;
+}
+
+static int t_gfx_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
+{
+	(void)frame;
+	(void)vertex_count;
+	(void)first_vertex;
+	t_gfx_draw_calls++;
+	return t_gfx_draw_ret;
+}
+
+static int t_gfx_end(gfx_frame_t *frame)
+{
+	(void)frame;
+	return t_gfx_end_ret;
 }
 
 static int t_gfx_present(gfx_t *gfx)
@@ -125,59 +138,62 @@ static int t_gfx_present(gfx_t *gfx)
 }
 
 static gfx_driver_t t_gfx_driver = {
-	.name		  = "test",
-	.api		  = GFX_API_OPENGL,
-	.init		  = t_gfx_init,
-	.free		  = t_gfx_free,
-	.native		  = t_gfx_native,
-	.proc		  = t_gfx_proc,
-	.set_target	  = t_gfx_set_target,
-	.viewport	  = t_gfx_viewport,
-	.clear_color	  = t_gfx_clear_color,
-	.clear		  = t_gfx_clear,
-	.draw_triangle_2d = t_gfx_draw_triangle_2d,
-	.present	  = t_gfx_present,
+	.name	     = "test",
+	.api	     = GFX_API_OPENGL,
+	.init	     = t_gfx_init,
+	.free	     = t_gfx_free,
+	.native	     = t_gfx_native,
+	.proc	     = t_gfx_proc,
+	.set_target  = t_gfx_set_target,
+	.viewport    = t_gfx_viewport,
+	.begin	     = t_gfx_begin,
+	.clear_color = t_gfx_clear_color,
+	.clear	     = t_gfx_clear,
+	.draw	     = t_gfx_draw,
+	.end	     = t_gfx_end,
+	.present     = t_gfx_present,
 };
 
 DRIVER(t_gfx_non_gfx_driver, 1, NULL);
 
 static void t_gfx_reset(void)
 {
-	t_gfx_init_calls	     = 0;
-	t_gfx_free_calls	     = 0;
-	t_gfx_native_calls	     = 0;
-	t_gfx_proc_calls	     = 0;
-	t_gfx_set_target_calls	     = 0;
-	t_gfx_viewport_calls	     = 0;
-	t_gfx_clear_color_calls	     = 0;
-	t_gfx_clear_calls	     = 0;
-	t_gfx_draw_triangle_2d_calls = 0;
-	t_gfx_present_calls	     = 0;
-	t_gfx_init_ret		     = 0;
-	t_gfx_free_ret		     = 0;
-	t_gfx_native_ret	     = 0;
-	t_gfx_proc_ret		     = 0;
-	t_gfx_set_target_ret	     = 0;
-	t_gfx_viewport_ret	     = 0;
-	t_gfx_clear_color_ret	     = 0;
-	t_gfx_clear_ret		     = 0;
-	t_gfx_draw_triangle_2d_ret   = 0;
-	t_gfx_present_ret	     = 0;
-	t_gfx_config		     = NULL;
-	t_gfx_proc_name		     = STRV_NULL;
-	t_gfx_proc_sym		     = NULL;
-	t_gfx_native_value	     = (gfx_native_t){0};
-	t_gfx_target		     = NULL;
-	t_gfx_x			     = 0;
-	t_gfx_y			     = 0;
-	t_gfx_width		     = 0;
-	t_gfx_height		     = 0;
-	t_gfx_vertex_buffer	     = NULL;
-	t_gfx_r			     = 0.0f;
-	t_gfx_g			     = 0.0f;
-	t_gfx_b			     = 0.0f;
-	t_gfx_a			     = 0.0f;
-	t_gfx_buffers		     = 0;
+	t_gfx_init_calls	= 0;
+	t_gfx_free_calls	= 0;
+	t_gfx_native_calls	= 0;
+	t_gfx_proc_calls	= 0;
+	t_gfx_set_target_calls	= 0;
+	t_gfx_viewport_calls	= 0;
+	t_gfx_clear_color_calls = 0;
+	t_gfx_clear_calls	= 0;
+	t_gfx_draw_calls	= 0;
+	t_gfx_present_calls	= 0;
+	t_gfx_init_ret		= 0;
+	t_gfx_free_ret		= 0;
+	t_gfx_native_ret	= 0;
+	t_gfx_proc_ret		= 0;
+	t_gfx_set_target_ret	= 0;
+	t_gfx_viewport_ret	= 0;
+	t_gfx_clear_color_ret	= 0;
+	t_gfx_clear_ret		= 0;
+	t_gfx_draw_ret		= 0;
+	t_gfx_begin_ret		= 0;
+	t_gfx_end_ret		= 0;
+	t_gfx_present_ret	= 0;
+	t_gfx_config		= NULL;
+	t_gfx_proc_name		= STRV_NULL;
+	t_gfx_proc_sym		= NULL;
+	t_gfx_native_value	= (gfx_native_t){0};
+	t_gfx_target		= NULL;
+	t_gfx_x			= 0;
+	t_gfx_y			= 0;
+	t_gfx_width		= 0;
+	t_gfx_height		= 0;
+	t_gfx_r			= 0.0f;
+	t_gfx_g			= 0.0f;
+	t_gfx_b			= 0.0f;
+	t_gfx_a			= 0.0f;
+	t_gfx_buffers		= 0;
 }
 
 TEST(gfx_init_null_gfx)
@@ -795,63 +811,119 @@ TEST(gfx_clear_returns_driver_result)
 	END;
 }
 
-TEST(gfx_draw_triangle_2d_null_gfx)
+TEST(gfx_clear_active_frame)
 {
 	START;
 
-	gfx_buffer_t vertex_buffer = {0};
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {.gfx = &gfx, .active = 1};
+	gfx.frame	  = &frame;
 
-	EXPECT_EQ(gfx_draw_triangle_2d(NULL, &vertex_buffer), 1);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
 
 	END;
 }
 
-TEST(gfx_draw_triangle_2d_null_driver)
+TEST(gfx_begin_active_frame)
 {
 	START;
 
-	gfx_t gfx		   = {0};
-	gfx_pipeline_t pipeline	   = {.gfx = &gfx, .data = (void *)1};
-	gfx_buffer_t vertex_buffer = {.gfx = &gfx, .data = (void *)2};
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {.active = 1};
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, &vertex_buffer), 1);
+	EXPECT_EQ(gfx_begin(&gfx, &frame, NULL), 1);
 
 	END;
 }
 
-TEST(gfx_draw_triangle_2d_null_driver_callback)
+TEST(gfx_begin_target_failure_clears_frame)
 {
 	START;
 
-	gfx_driver_t drv     = t_gfx_driver;
-	drv.draw_triangle_2d = NULL;
+	t_gfx_reset();
+	t_gfx_set_target_ret = 1;
+	gfx_t gfx	     = {.drv = &t_gfx_driver};
+	gfx_target_t target  = {.type = GFX_TARGET_MEMORY};
+	gfx_frame_t frame    = {0};
+
+	EXPECT_EQ(gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target}), 1);
+	EXPECT_NULL(gfx.frame);
+	EXPECT_NULL(frame.gfx);
+
+	END;
+}
+
+TEST(gfx_begin_driver_failure_clears_frame)
+{
+	START;
+
+	t_gfx_reset();
+	t_gfx_begin_ret	  = 1;
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {0};
+
+	EXPECT_EQ(gfx_begin(&gfx, &frame, NULL), 1);
+	EXPECT_NULL(gfx.frame);
+	EXPECT_NULL(frame.gfx);
+
+	END;
+}
+
+TEST(gfx_draw_null_gfx)
+{
+	START;
+
+	EXPECT_EQ(gfx_draw(NULL, 3, 0), 1);
+
+	END;
+}
+
+TEST(gfx_draw_null_driver)
+{
+	START;
+
+	gfx_t gfx		= {0};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_buffer_t buffer	= {.gfx = &gfx};
+	gfx_frame_t frame	= {
+		      .gfx	     = &gfx,
+		      .pipeline	     = &pipeline,
+		      .vertex_buffer = &buffer,
+		      .active	     = 1,
+	      };
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
+
+	END;
+}
+
+TEST(gfx_draw_null_driver_callback)
+{
+	START;
+
+	gfx_driver_t drv = t_gfx_driver;
+	drv.draw	 = NULL;
 
 	gfx_t gfx = {
 		.drv = &drv,
 	};
-	gfx_buffer_t vertex_buffer = {.gfx = &gfx, .data = (void *)2};
-	gfx_pipeline_t pipeline	   = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_buffer_t buffer	= {.gfx = &gfx};
+	gfx_frame_t frame	= {
+		      .gfx	     = &gfx,
+		      .pipeline	     = &pipeline,
+		      .vertex_buffer = &buffer,
+		      .active	     = 1,
+	      };
+	gfx.frame = &frame;
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, &vertex_buffer), 1);
-
-	END;
-}
-
-TEST(gfx_draw_triangle_2d_null_buffer)
-{
-	START;
-
-	gfx_t gfx = {
-		.drv = &t_gfx_driver,
-	};
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
-
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, NULL), 1);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
 
 	END;
 }
 
-TEST(gfx_draw_triangle_2d_success)
+TEST(gfx_draw_success)
 {
 	START;
 
@@ -859,31 +931,56 @@ TEST(gfx_draw_triangle_2d_success)
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_pipeline_t pipeline	   = {.gfx = &gfx, .data = (void *)1};
-	gfx_buffer_t vertex_buffer = {.gfx = &gfx, .data = (void *)2};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_buffer_t buffer	= {.gfx = &gfx};
+	gfx_frame_t frame	= {
+		      .gfx	     = &gfx,
+		      .pipeline	     = &pipeline,
+		      .vertex_buffer = &buffer,
+		      .active	     = 1,
+	      };
+	gfx.frame = &frame;
 
-	gfx_draw_triangle_2d(&pipeline, &vertex_buffer);
+	gfx_draw(&frame, 3, 0);
 
-	EXPECT_EQ(t_gfx_draw_triangle_2d_calls, 1);
-	EXPECT_PTR(t_gfx_vertex_buffer, &vertex_buffer);
+	EXPECT_EQ(t_gfx_draw_calls, 1);
 
 	END;
 }
 
-TEST(gfx_draw_triangle_2d_returns_driver_result)
+TEST(gfx_draw_returns_driver_result)
 {
 	START;
 
 	t_gfx_reset();
-	t_gfx_draw_triangle_2d_ret = 1;
+	t_gfx_draw_ret = 1;
 
 	gfx_t gfx = {
 		.drv = &t_gfx_driver,
 	};
-	gfx_pipeline_t pipeline	   = {.gfx = &gfx, .data = (void *)1};
-	gfx_buffer_t vertex_buffer = {.gfx = &gfx, .data = (void *)2};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_buffer_t buffer	= {.gfx = &gfx};
+	gfx_frame_t frame	= {
+		      .gfx	     = &gfx,
+		      .pipeline	     = &pipeline,
+		      .vertex_buffer = &buffer,
+		      .active	     = 1,
+	      };
+	gfx.frame = &frame;
 
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, &vertex_buffer), 1);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
+
+	END;
+}
+
+TEST(gfx_draw_inactive_frame)
+{
+	START;
+
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
 
 	END;
 }
@@ -893,6 +990,31 @@ TEST(gfx_present_null_gfx)
 	START;
 
 	EXPECT_EQ(gfx_present(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_end_inactive_frame)
+{
+	START;
+
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	END;
+}
+
+TEST(gfx_present_active_frame)
+{
+	START;
+
+	gfx_t gfx	  = {.drv = &t_gfx_driver};
+	gfx_frame_t frame = {.gfx = &gfx, .active = 1};
+	gfx.frame	  = &frame;
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
 
 	END;
 }
@@ -1094,17 +1216,23 @@ STEST(gfx)
 	RUN(gfx_clear_null_driver_callback);
 	RUN(gfx_clear_calls_driver);
 	RUN(gfx_clear_returns_driver_result);
-	RUN(gfx_draw_triangle_2d_null_gfx);
-	RUN(gfx_draw_triangle_2d_null_driver);
-	RUN(gfx_draw_triangle_2d_null_driver_callback);
-	RUN(gfx_draw_triangle_2d_null_buffer);
-	RUN(gfx_draw_triangle_2d_success);
-	RUN(gfx_draw_triangle_2d_returns_driver_result);
+	RUN(gfx_clear_active_frame);
+	RUN(gfx_begin_active_frame);
+	RUN(gfx_begin_target_failure_clears_frame);
+	RUN(gfx_begin_driver_failure_clears_frame);
+	RUN(gfx_draw_null_gfx);
+	RUN(gfx_draw_null_driver);
+	RUN(gfx_draw_null_driver_callback);
+	RUN(gfx_draw_success);
+	RUN(gfx_draw_returns_driver_result);
+	RUN(gfx_draw_inactive_frame);
+	RUN(gfx_end_inactive_frame);
 	RUN(gfx_present_null_gfx);
 	RUN(gfx_present_null_driver);
 	RUN(gfx_present_null_driver_callback);
 	RUN(gfx_present_calls_driver);
 	RUN(gfx_present_returns_driver_result);
+	RUN(gfx_present_active_frame);
 	RUN(gfx_driver_list_counts_all_without_plan);
 	RUN(gfx_driver_find_returns_null_for_missing_driver);
 	RUN(gfx_driver_next_null_returns_first_real_api);

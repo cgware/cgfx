@@ -22,7 +22,7 @@ static const char *gfx_shader_hlsl_semantic(strv_t semantic, int output)
 	if (strv_eq(semantic, STRV("COLOR0"))) {
 		return "COLOR0";
 	}
-	return NULL; // LCOV_EXCL_LINE
+	return NULL;
 }
 
 static int gfx_shader_emit_hlsl_struct(buf_t *text, const gfx_shader_struct_ir_t *ir, int output)
@@ -35,7 +35,7 @@ static int gfx_shader_emit_hlsl_struct(buf_t *text, const gfx_shader_struct_ir_t
 		const char *sem	 = gfx_shader_hlsl_semantic(ir->members[i].semantic, output);
 		if (type == NULL || sem == NULL ||
 		    gfx_shader_text_putf(text, "    %s %.*s : %s;\n", type, ir->members[i].name.len, ir->members[i].name.data, sem)) {
-			return 1; // LCOV_EXCL_LINE
+			return 1;
 		}
 	}
 	return gfx_shader_text_put(text, STRV("};\n"));
@@ -139,7 +139,7 @@ static int gfx_shader_hlsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx
 					 ir->vs_out.name.data,
 					 ir->vs_in.name.len,
 					 ir->vs_in.name.data)) {
-			return 1; // LCOV_EXCL_LINE
+			return 1;
 		}
 	} else if (gfx_shader_emit_hlsl_struct(text, &ir->vs_out, 1) ||
 		   gfx_shader_text_putf(text, "float4 main(%.*s input) : SV_TARGET {\n", ir->vs_out.name.len, ir->vs_out.name.data)) {
@@ -160,8 +160,8 @@ static int gfx_shader_hlsl_emit(const gfx_shader_ir_t *ir, gfx_shader_stage_t st
 		return 1; // LCOV_EXCL_LINE
 	}
 	if (gfx_shader_hlsl_emit_text(&text, ir, stage) || gfx_shader_text_finish(&text, shader)) {
-		buf_free(&text); // LCOV_EXCL_LINE
-		return 1;	 // LCOV_EXCL_LINE
+		buf_free(&text);
+		return 1;
 	}
 	buf_free(&text);
 	return 0;

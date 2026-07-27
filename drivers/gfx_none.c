@@ -29,6 +29,15 @@ static int gfx_none_set_target(gfx_t *gfx, const gfx_target_t *target)
 	return 0;
 }
 
+static int gfx_none_begin(gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static int gfx_none_clear_color(gfx_t *gfx, float r, float g, float b, float a)
 {
 	(void)r;
@@ -88,6 +97,13 @@ static int gfx_none_buffer_set_data(gfx_buffer_t *buffer, const void *data, size
 	return 0;
 }
 
+static int gfx_none_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
+{
+	(void)frame;
+	(void)buffer;
+	return 0;
+}
+
 static int gfx_none_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	(void)shader;
@@ -112,9 +128,28 @@ static void gfx_none_pipeline_free(gfx_pipeline_t *pipeline)
 	(void)pipeline;
 }
 
-static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
+static int gfx_none_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || buffer == NULL) {
+	(void)frame;
+	(void)pipeline;
+	return 0;
+}
+
+static int gfx_none_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
+{
+	(void)vertex_count;
+	(void)first_vertex;
+
+	if (frame == NULL || frame->gfx == NULL) {
+		return 1;
+	}
+
+	return 0;
+}
+
+static int gfx_none_end(gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL) {
 		return 1;
 	}
 
@@ -122,22 +157,26 @@ static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_b
 }
 
 static gfx_driver_t gfx_none = {
-	.name		  = "none",
-	.api		  = GFX_API_NONE,
-	.init		  = gfx_none_init,
-	.free		  = gfx_none_free,
-	.set_target	  = gfx_none_set_target,
-	.viewport	  = gfx_none_viewport,
-	.clear_color	  = gfx_none_clear_color,
-	.clear		  = gfx_none_clear,
-	.buffer_init	  = gfx_none_buffer_init,
-	.buffer_free	  = gfx_none_buffer_free,
-	.buffer_set_data  = gfx_none_buffer_set_data,
-	.shader_init	  = gfx_none_shader_init,
-	.shader_free	  = gfx_none_shader_free,
-	.pipeline_init	  = gfx_none_pipeline_init,
-	.pipeline_free	  = gfx_none_pipeline_free,
-	.draw_triangle_2d = gfx_none_draw_triangle_2d,
+	.name		 = "none",
+	.api		 = GFX_API_NONE,
+	.init		 = gfx_none_init,
+	.free		 = gfx_none_free,
+	.set_target	 = gfx_none_set_target,
+	.viewport	 = gfx_none_viewport,
+	.begin		 = gfx_none_begin,
+	.clear_color	 = gfx_none_clear_color,
+	.clear		 = gfx_none_clear,
+	.buffer_init	 = gfx_none_buffer_init,
+	.buffer_free	 = gfx_none_buffer_free,
+	.buffer_set_data = gfx_none_buffer_set_data,
+	.buffer_bind	 = gfx_none_buffer_bind,
+	.shader_init	 = gfx_none_shader_init,
+	.shader_free	 = gfx_none_shader_free,
+	.pipeline_init	 = gfx_none_pipeline_init,
+	.pipeline_free	 = gfx_none_pipeline_free,
+	.pipeline_bind	 = gfx_none_pipeline_bind,
+	.draw		 = gfx_none_draw,
+	.end		 = gfx_none_end,
 };
 
 GFX_DRIVER(gfx_none, &gfx_none);

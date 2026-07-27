@@ -188,7 +188,7 @@ TEST(gfx_none_buffer_success)
 	END;
 }
 
-TEST(gfx_none_draw_triangle_2d_success)
+TEST(gfx_none_draw_success)
 {
 	START;
 
@@ -198,7 +198,13 @@ TEST(gfx_none_draw_triangle_2d_success)
 	EXPECT_NOT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("none")}));
 	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 	gfx_buffer_t buffer	= {.gfx = &gfx};
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, &buffer), 0);
+	gfx_target_t target	= {0};
+	gfx_frame_t frame	= {0};
+	EXPECT_EQ(gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target}), 0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
 
 	gfx_shader_free(&shader);
 	gfx_free(&gfx);
@@ -223,30 +229,47 @@ TEST(gfx_none_pipeline_success)
 	END;
 }
 
-TEST(gfx_none_draw_triangle_2d_null_gfx)
+TEST(gfx_none_draw_null_gfx)
 {
 	START;
 
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
-	gfx_buffer_t buffer	= {0};
-	gfx_pipeline_t pipeline = {.data = (void *)1};
 
-	EXPECT_EQ(drv->draw_triangle_2d(&pipeline, &buffer), 1);
+	EXPECT_EQ(drv->draw(NULL, 3, 0), 1);
 
 	END;
 }
 
-TEST(gfx_none_draw_triangle_2d_null_buffer)
+TEST(gfx_none_begin_null_frame)
 {
 	START;
 
-	gfx_t gfx	  = {0};
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(drv->draw_triangle_2d(&pipeline, NULL), 1);
+	EXPECT_EQ(drv->begin(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_none_end_null_frame)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_none_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->end(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_none_draw_null_buffer)
+{
+	START;
+
+	EXPECT_EQ(gfx_buffer_bind(NULL, NULL), 1);
 
 	END;
 }
@@ -269,9 +292,11 @@ STEST(gfx_none)
 	RUN(gfx_none_clear_null_gfx);
 	RUN(gfx_none_buffer_success);
 	RUN(gfx_none_pipeline_success);
-	RUN(gfx_none_draw_triangle_2d_success);
-	RUN(gfx_none_draw_triangle_2d_null_gfx);
-	RUN(gfx_none_draw_triangle_2d_null_buffer);
+	RUN(gfx_none_draw_success);
+	RUN(gfx_none_draw_null_gfx);
+	RUN(gfx_none_begin_null_frame);
+	RUN(gfx_none_end_null_frame);
+	RUN(gfx_none_draw_null_buffer);
 
 	SEND;
 }

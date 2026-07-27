@@ -25,12 +25,18 @@ void gfx_pipeline_free(gfx_pipeline_t *pipeline)
 	pipeline->gfx->drv->pipeline_free(pipeline);
 }
 
-int gfx_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *vertex_buffer)
+int gfx_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->drv == NULL || pipeline->gfx->drv->draw_triangle_2d == NULL ||
-	    vertex_buffer == NULL) {
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || !frame->active || pipeline == NULL ||
+	    pipeline->gfx != frame->gfx || pipeline->gfx->drv == NULL || pipeline->gfx->drv->pipeline_bind == NULL) {
 		return 1;
 	}
 
-	return pipeline->gfx->drv->draw_triangle_2d(pipeline, vertex_buffer);
+	if (pipeline->gfx->drv->pipeline_bind(frame, pipeline)) {
+		return 1;
+	}
+
+	frame->pipeline	     = pipeline;
+	frame->vertex_buffer = NULL;
+	return 0;
 }

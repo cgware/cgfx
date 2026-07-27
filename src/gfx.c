@@ -58,13 +58,22 @@ int gfx_native(gfx_t *gfx, gfx_native_t *native)
 	return 0;
 }
 
-int gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
+static int gfx_set_target_apply(gfx_t *gfx, const gfx_target_t *target)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->set_target == NULL || target == NULL) {
 		return 1;
 	}
 
 	return gfx->drv->set_target(gfx, target);
+}
+
+int gfx_set_target(gfx_t *gfx, const gfx_target_t *target)
+{
+	if (gfx == NULL || gfx->frame != NULL) {
+		return 1;
+	}
+
+	return gfx_set_target_apply(gfx, target);
 }
 
 int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
@@ -74,6 +83,31 @@ int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
 	}
 
 	return gfx->drv->viewport(gfx, x, y, width, height);
+}
+
+int gfx_begin(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config)
+{
+	if (gfx == NULL || gfx->drv == NULL || gfx->drv->begin == NULL || frame == NULL || frame->active || gfx->frame != NULL) {
+		return 1;
+	}
+
+	*frame = (gfx_frame_t){
+		.gfx	= gfx,
+		.target = config != NULL ? config->target : NULL,
+		.active = 1,
+	};
+	if (frame->target != NULL && gfx_set_target_apply(gfx, frame->target)) {
+		*frame = (gfx_frame_t){0};
+		return 1;
+	}
+	gfx->frame = frame;
+	if (gfx->drv->begin(frame)) {
+		gfx->frame = NULL;
+		*frame	   = (gfx_frame_t){0};
+		return 1;
+	}
+
+	return 0;
 }
 
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a)
@@ -90,13 +124,42 @@ int gfx_clear(gfx_t *gfx, u32 buffers)
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->clear == NULL) {
 		return 1;
 	}
+	if (gfx->frame != NULL) {
+		return 1;
+	}
 
 	return gfx->drv->clear(gfx, buffers);
+}
+
+int gfx_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || frame->gfx->drv == NULL || frame->gfx->drv->draw == NULL ||
+	    !frame->active || frame->pipeline == NULL || frame->vertex_buffer == NULL || vertex_count == 0) {
+		return 1;
+	}
+
+	return frame->gfx->drv->draw(frame, vertex_count, first_vertex);
+}
+
+int gfx_end(gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || frame->gfx->drv == NULL || frame->gfx->drv->end == NULL ||
+	    !frame->active) {
+		return 1;
+	}
+
+	int ret		  = frame->gfx->drv->end(frame);
+	frame->gfx->frame = NULL;
+	*frame		  = (gfx_frame_t){0};
+	return ret;
 }
 
 int gfx_present(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->drv == NULL || gfx->drv->present == NULL) {
+		return 1;
+	}
+	if (gfx->frame != NULL) {
 		return 1;
 	}
 

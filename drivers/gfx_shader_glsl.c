@@ -14,7 +14,7 @@ static int gfx_shader_emit_glsl_lhs(buf_t *text, const gfx_shader_ir_t *ir, gfx_
 		strv_t name			  = STRVN(lhs.data + STRV("output.").len, lhs.len - STRV("output.").len);
 		const gfx_shader_member_t *member = gfx_shader_struct_member(&ir->vs_out, name);
 		if (member != NULL && strv_eq(member->semantic, STRV("POSITION"))) {
-			return gfx_shader_text_put(text, STRV("gl_Position")); // LCOV_EXCL_LINE
+			return gfx_shader_text_put(text, STRV("gl_Position"));
 		}
 		if (member != NULL) {
 			return gfx_shader_emit_glsl_member_ref(text, "v_", member, STRV(""));
@@ -37,7 +37,7 @@ static const char *gfx_shader_glsl_type(strv_t type)
 	if (strv_eq(type, STRV("vec4f"))) {
 		return "vec4";
 	}
-	return NULL; // LCOV_EXCL_LINE
+	return NULL;
 }
 
 static int gfx_shader_is_ident_char(char c)
@@ -160,7 +160,7 @@ static int gfx_shader_glsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx
 								 type,
 								 ir->vs_in.members[i].name.len,
 								 ir->vs_in.members[i].name.data)) {
-				return 1; // LCOV_EXCL_LINE
+				return 1;
 			}
 		}
 		for (u32 i = 0; i < ir->vs_out.member_count; i++) {
@@ -221,8 +221,8 @@ static int gfx_shader_glsl_emit(const gfx_shader_ir_t *ir, gfx_shader_stage_t st
 		return 1; // LCOV_EXCL_LINE
 	}
 	if (gfx_shader_glsl_emit_text(&text, ir, stage) || gfx_shader_text_finish(&text, shader)) {
-		buf_free(&text); // LCOV_EXCL_LINE
-		return 1;	 // LCOV_EXCL_LINE
+		buf_free(&text);
+		return 1;
 	}
 	buf_free(&text);
 	return 0;

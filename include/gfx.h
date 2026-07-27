@@ -31,6 +31,7 @@ typedef enum gfx_api_e {
 } gfx_api_t;
 
 typedef struct gfx_target_s gfx_target_t;
+typedef struct gfx_frame_s gfx_frame_t;
 
 typedef struct gfx_native_s {
 	gfx_api_t api;
@@ -87,12 +88,26 @@ typedef struct gfx_config_s {
 	gfx_surface_t *surface;
 } gfx_config_t;
 
+typedef struct gfx_frame_config_s {
+	const gfx_target_t *target;
+} gfx_frame_config_t;
+
 typedef struct gfx_s {
 	const struct gfx_driver_s *drv;
 	proc_t *proc;
 	alloc_t alloc;
 	void *data;
+	gfx_frame_t *frame;
 } gfx_t;
+
+struct gfx_frame_s {
+	gfx_t *gfx;
+	const gfx_target_t *target;
+	const struct gfx_pipeline_s *pipeline;
+	const struct gfx_buffer_s *vertex_buffer;
+	int active;
+	void *data;
+};
 
 gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config, proc_t *proc, alloc_t alloc);
 void gfx_free(gfx_t *gfx);
@@ -101,8 +116,11 @@ int gfx_native(gfx_t *gfx, gfx_native_t *native);
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc);
 int gfx_set_target(gfx_t *gfx, const gfx_target_t *target);
 int gfx_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
+int gfx_begin(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config);
 int gfx_clear_color(gfx_t *gfx, float r, float g, float b, float a);
 int gfx_clear(gfx_t *gfx, u32 buffers);
+int gfx_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex);
+int gfx_end(gfx_frame_t *frame);
 int gfx_present(gfx_t *gfx);
 
 #endif

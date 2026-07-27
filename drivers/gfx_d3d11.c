@@ -530,6 +530,28 @@ static int gfx_d3d11_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
 	return 0;
 }
 
+static int gfx_d3d11_begin(gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11 = frame->gfx->data;
+	if (d3d11->target.type != GFX_TARGET_SURFACE || d3d11->render_target == NULL || d3d11->target.width == 0 ||
+	    d3d11->target.height == 0) {
+		return 1;
+	}
+
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->OMSetRenderTargets == NULL) {
+		return 1;
+	}
+
+	ID3D11RenderTargetView *views[1] = {d3d11->render_target};
+	context->OMSetRenderTargets(d3d11->context, 1, views, NULL);
+	return 0;
+}
+
 static int gfx_d3d11_clear(gfx_t *gfx, u32 buffers)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -545,6 +567,9 @@ static int gfx_d3d11_clear(gfx_t *gfx, u32 buffers)
 	}
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->ClearRenderTargetView == NULL) {
+		return 1;
+	}
 	context->ClearRenderTargetView(d3d11->context, d3d11->render_target, d3d11->color);
 	return 0;
 }
@@ -641,7 +666,7 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 {
 	(void)size;
 
-	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL) {
 		return 1;
 	}
 
@@ -649,8 +674,39 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 	gfx_d3d11_buffer_t *d3d_buffer = buffer->data;
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->UpdateSubresource == NULL) {
+		return 1;
+	}
 
 	context->UpdateSubresource(d3d11->context, d3d_buffer->buffer, 0, NULL, data, 0, 0);
+
+	return 0;
+}
+
+static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
+{
+	if (frame == NULL || frame->pipeline == NULL || frame->pipeline->data == NULL || buffer == NULL || buffer->gfx == NULL ||
+	    buffer->gfx->data == NULL || buffer->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11		   = buffer->gfx->data;
+	gfx_d3d11_buffer_t *d3d_buffer	   = buffer->data;
+	gfx_d3d11_pipeline_t *d3d_pipeline = frame->pipeline->data;
+	if (d3d_pipeline->stride == 0) {
+		return 1;
+	}
+
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->IASetVertexBuffers == NULL) {
+		return 1;
+	}
+
+	ID3D11Buffer *buffers[1] = {d3d_buffer->buffer};
+	UINT strides[1]		 = {d3d_pipeline->stride};
+	UINT offsets[1]		 = {0};
+
+	context->IASetVertexBuffers(d3d11->context, 0, 1, buffers, strides, offsets);
 
 	return 0;
 }
@@ -860,40 +916,49 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	return 0;
 }
 
-static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
+static int gfx_d3d11_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || buffer == NULL ||
-	    buffer->data == NULL) {
+	if (frame == NULL || pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
 		return 1;
 	}
 
 	gfx_d3d11_t *d3d11		   = pipeline->gfx->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
-	gfx_d3d11_buffer_t *d3d_buffer	   = buffer->data;
-	if (d3d11->target.type != GFX_TARGET_SURFACE || d3d11->render_target == NULL || d3d11->target.width == 0 ||
-	    d3d11->target.height == 0) {
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->IASetInputLayout == NULL || context->VSSetShader == NULL || context->PSSetShader == NULL) {
 		return 1;
 	}
 
-	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
-	if (context->OMSetRenderTargets == NULL || context->IASetInputLayout == NULL || context->IASetVertexBuffers == NULL ||
-	    context->IASetPrimitiveTopology == NULL || context->VSSetShader == NULL || context->PSSetShader == NULL ||
-	    context->UpdateSubresource == NULL || context->Draw == NULL) {
-		return 1; // LCOV_EXCL_LINE
-	}
-
-	ID3D11RenderTargetView *views[1] = {d3d11->render_target};
-	ID3D11Buffer *buffers[1]	 = {d3d_buffer->buffer};
-	UINT strides[1]			 = {d3d_pipeline->stride};
-	UINT offsets[1]			 = {0};
-
-	context->OMSetRenderTargets(d3d11->context, 1, views, NULL);
 	context->IASetInputLayout(d3d11->context, d3d_pipeline->input_layout);
-	context->IASetVertexBuffers(d3d11->context, 0, 1, buffers, strides, offsets);
-	context->IASetPrimitiveTopology(d3d11->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->VSSetShader(d3d11->context, d3d_pipeline->vertex_shader, NULL, 0);
 	context->PSSetShader(d3d11->context, d3d_pipeline->pixel_shader, NULL, 0);
-	context->Draw(d3d11->context, 3, 0);
+
+	return 0;
+}
+
+static int gfx_d3d11_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11		   = frame->gfx->data;
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->IASetPrimitiveTopology == NULL || context->Draw == NULL) {
+		return 1;
+	}
+
+	context->IASetPrimitiveTopology(d3d11->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	context->Draw(d3d11->context, vertex_count, first_vertex);
+	return 0;
+}
+
+static int gfx_d3d11_end(gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -913,24 +978,28 @@ static int gfx_d3d11_present(gfx_t *gfx)
 }
 
 static gfx_driver_t gfx_d3d11 = {
-	.name		  = "d3d11",
-	.api		  = GFX_API_D3D11,
-	.init		  = gfx_d3d11_init,
-	.free		  = gfx_d3d11_free,
-	.native		  = gfx_d3d11_native,
-	.set_target	  = gfx_d3d11_set_target,
-	.viewport	  = gfx_d3d11_viewport,
-	.clear_color	  = gfx_d3d11_clear_color,
-	.clear		  = gfx_d3d11_clear,
-	.buffer_init	  = gfx_d3d11_buffer_init,
-	.buffer_free	  = gfx_d3d11_buffer_free,
-	.buffer_set_data  = gfx_d3d11_buffer_set_data,
-	.shader_init	  = gfx_d3d11_shader_init,
-	.shader_free	  = gfx_d3d11_shader_free,
-	.pipeline_init	  = gfx_d3d11_pipeline_init,
-	.pipeline_free	  = gfx_d3d11_pipeline_free,
-	.draw_triangle_2d = gfx_d3d11_draw_triangle_2d,
-	.present	  = gfx_d3d11_present,
+	.name		 = "d3d11",
+	.api		 = GFX_API_D3D11,
+	.init		 = gfx_d3d11_init,
+	.free		 = gfx_d3d11_free,
+	.native		 = gfx_d3d11_native,
+	.set_target	 = gfx_d3d11_set_target,
+	.viewport	 = gfx_d3d11_viewport,
+	.begin		 = gfx_d3d11_begin,
+	.clear_color	 = gfx_d3d11_clear_color,
+	.clear		 = gfx_d3d11_clear,
+	.buffer_init	 = gfx_d3d11_buffer_init,
+	.buffer_free	 = gfx_d3d11_buffer_free,
+	.buffer_set_data = gfx_d3d11_buffer_set_data,
+	.buffer_bind	 = gfx_d3d11_buffer_bind,
+	.shader_init	 = gfx_d3d11_shader_init,
+	.shader_free	 = gfx_d3d11_shader_free,
+	.pipeline_init	 = gfx_d3d11_pipeline_init,
+	.pipeline_free	 = gfx_d3d11_pipeline_free,
+	.pipeline_bind	 = gfx_d3d11_pipeline_bind,
+	.draw		 = gfx_d3d11_draw,
+	.end		 = gfx_d3d11_end,
+	.present	 = gfx_d3d11_present,
 };
 
 GFX_DRIVER(gfx_d3d11, &gfx_d3d11);
