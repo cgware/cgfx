@@ -2167,30 +2167,17 @@ static int gfx_vulkan_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 	gfx_vulkan_t *vulkan	       = buffer->gfx->data;
 	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
 
-	const gfx_vertex_2d_t *vertices = data;
-	gfx_vulkan_vertex_2d_t vk_vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		vk_vertices[i] = (gfx_vulkan_vertex_2d_t){
-			.x = vertices[i].x,
-			.y = vertices[i].y,
-			.r = vertices[i].r,
-			.g = vertices[i].g,
-			.b = vertices[i].b,
-			.a = vertices[i].a,
-		};
-	}
-
 	void *mapped = NULL;
-	if (!vk_ok(vulkan->MapMemory(vulkan->device, vk_buffer->memory, 0, sizeof(vk_vertices), 0, &mapped))) {
+	if (!vk_ok(vulkan->MapMemory(vulkan->device, vk_buffer->memory, 0, size, 0, &mapped))) {
 		return 1;
 	}
-	mem_copy(mapped, sizeof(vk_vertices), vk_vertices, sizeof(vk_vertices));
+	mem_copy(mapped, size, data, size);
 	if (!vk_buffer->memory_coherent) {
 		VkMappedMemoryRange range = {
 			.sType	= VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
 			.memory = vk_buffer->memory,
 			.offset = 0,
-			.size	= sizeof(vk_vertices),
+			.size	= size,
 		};
 		if (!vk_ok(vulkan->FlushMappedMemoryRanges(vulkan->device, 1, &range))) {
 			vulkan->UnmapMemory(vulkan->device, vk_buffer->memory);
@@ -2279,7 +2266,8 @@ static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
-	    config->fs.data == NULL) {
+	    config->fs.data == NULL || config->input_layout == NULL || config->input_layout_size == 0 ||
+	    config->input_layout_size % sizeof(gfx_layout_t) != 0) {
 		return 1;
 	}
 
@@ -2321,20 +2309,53 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 			.pName	= "main",
 		},
 	};
+
+	size_t layout_cnt = config->input_layout_size / sizeof(gfx_layout_t);
+
+	VkVertexInputAttributeDescription *attributes =
+		alloc_alloc(&pipeline->gfx->alloc, layout_cnt * sizeof(VkVertexInputAttributeDescription));
+	if (attributes == NULL) {
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
+	}
+
+	size_t offset = 0;
+	for (size_t i = 0; i < layout_cnt; i++) {
+		attributes[i].location = config->input_layout[i].index;
+		attributes[i].binding  = 0;
+
+		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
+			attributes[i].format = VK_FORMAT_R32G32_SFLOAT;
+		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 4) {
+			attributes[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		} else {
+			log_error("cgfx",
+				  "gfx_vulkan",
+				  NULL,
+				  "unsupported input layout: %d x %d",
+				  config->input_layout[i].count,
+				  config->input_layout[i].type);
+			alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));
+			gfx_vulkan_pipeline_free(pipeline);
+			return 1;
+		}
+
+		attributes[i].offset = offset;
+
+		offset += sizeof(float) * config->input_layout[i].count;
+	}
+
 	VkVertexInputBindingDescription binding = {
 		.binding   = 0,
-		.stride	   = sizeof(gfx_vulkan_vertex_2d_t),
+		.stride	   = offset,
 		.inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
 	};
-	VkVertexInputAttributeDescription attributes[2] = {
-		{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32_SFLOAT, .offset = 0},
-		{.location = 1, .binding = 0, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = 2 * sizeof(float)},
-	};
+
 	VkPipelineVertexInputStateCreateInfo vertex_input = {
 		.sType				 = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 		.vertexBindingDescriptionCount	 = 1,
 		.pVertexBindingDescriptions	 = &binding,
-		.vertexAttributeDescriptionCount = 2,
+		.vertexAttributeDescriptionCount = layout_cnt,
 		.pVertexAttributeDescriptions	 = attributes,
 	};
 	VkPipelineInputAssemblyStateCreateInfo assembly = {
@@ -2392,9 +2413,12 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.renderPass	     = vulkan->render_pass,
 	};
 	if (!vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_pipeline->pipeline))) {
+		alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));
 		gfx_vulkan_pipeline_free(pipeline);
 		return 1;
 	}
+
+	alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));
 
 	return 0;
 }

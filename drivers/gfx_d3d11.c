@@ -258,6 +258,7 @@ typedef struct gfx_d3d11_pipeline_s {
 	ID3D11InputLayout *input_layout;
 	ID3D11VertexShader *vertex_shader;
 	ID3D11PixelShader *pixel_shader;
+	UINT stride;
 } gfx_d3d11_pipeline_t;
 
 static int hresult_ok(HRESULT hr)
@@ -649,20 +650,7 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
 
-	const gfx_vertex_2d_t *vertices = data;
-	gfx_d3d11_vertex_2d_t d3d_vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		d3d_vertices[i] = (gfx_d3d11_vertex_2d_t){
-			.x = vertices[i].x,
-			.y = vertices[i].y,
-			.r = vertices[i].r,
-			.g = vertices[i].g,
-			.b = vertices[i].b,
-			.a = vertices[i].a,
-		};
-	}
-
-	context->UpdateSubresource(d3d11->context, d3d_buffer->buffer, 0, NULL, d3d_vertices, 0, 0);
+	context->UpdateSubresource(d3d11->context, d3d_buffer->buffer, 0, NULL, data, 0, 0);
 
 	return 0;
 }
@@ -791,7 +779,8 @@ static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
-	    config->fs.data == NULL) {
+	    config->fs.data == NULL || config->input_layout == NULL || config->input_layout_size == 0 ||
+	    config->input_layout_size % sizeof(gfx_layout_t) != 0) {
 		return 1;
 	}
 
@@ -809,25 +798,57 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	*d3d_pipeline  = (gfx_d3d11_pipeline_t){0};
 	pipeline->data = d3d_pipeline;
 
-	D3D11_INPUT_ELEMENT_DESC elements[2] = {
-		{
-			.SemanticName	= "POSITION",
-			.Format		= DXGI_FORMAT_R32G32_FLOAT,
-			.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA,
-		},
-		{
-			.SemanticName	   = "COLOR",
-			.Format		   = DXGI_FORMAT_R32G32B32A32_FLOAT,
-			.AlignedByteOffset = 2 * sizeof(float),
+	size_t layout_cnt = config->input_layout_size / sizeof(gfx_layout_t);
+
+	D3D11_INPUT_ELEMENT_DESC *elements = alloc_alloc(&pipeline->gfx->alloc, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
+	if (elements == NULL) {
+		gfx_d3d11_pipeline_free(pipeline);
+		return 1;
+	}
+
+	size_t offset = 0;
+	for (size_t i = 0; i < layout_cnt; i++) {
+		if (config->input_layout[i].semantic == NULL) {
+			alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
+			gfx_d3d11_pipeline_free(pipeline);
+			return 1;
+		}
+
+		elements[i] = (D3D11_INPUT_ELEMENT_DESC){
+			.SemanticName	   = config->input_layout[i].semantic,
+			.SemanticIndex	   = config->input_layout[i].semantic_index,
+			.InputSlot	   = 0,
+			.AlignedByteOffset = offset,
 			.InputSlotClass	   = D3D11_INPUT_PER_VERTEX_DATA,
-		},
-	};
+		};
+
+		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
+			elements[i].Format = DXGI_FORMAT_R32G32_FLOAT;
+		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 4) {
+			elements[i].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+		} else {
+			log_error("cgfx",
+				  "gfx_d3d11",
+				  NULL,
+				  "unsupported input layout: %d x %d",
+				  config->input_layout[i].count,
+				  config->input_layout[i].type);
+			alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
+			gfx_d3d11_pipeline_free(pipeline);
+			return 1;
+		}
+
+		offset += sizeof(float) * config->input_layout[i].count;
+	}
+
+	d3d_pipeline->stride = offset;
 
 	gfx_d3d11_shader_t *vs = config->vs.data;
 	gfx_d3d11_shader_t *fs = config->fs.data;
 
 	HRESULT hr = device->CreateInputLayout(
-		d3d11->device, elements, 2, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
+		d3d11->device, elements, layout_cnt, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
+	alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
 	if (!hresult_ok(hr) || d3d_pipeline->input_layout == NULL) {
 		gfx_d3d11_pipeline_free(pipeline);
 		return 1;
@@ -863,7 +884,7 @@ static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_
 
 	ID3D11RenderTargetView *views[1] = {d3d11->render_target};
 	ID3D11Buffer *buffers[1]	 = {d3d_buffer->buffer};
-	UINT strides[1]			 = {sizeof(gfx_d3d11_vertex_2d_t)};
+	UINT strides[1]			 = {d3d_pipeline->stride};
 	UINT offsets[1]			 = {0};
 
 	context->OMSetRenderTargets(d3d11->context, 1, views, NULL);

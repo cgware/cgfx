@@ -261,14 +261,15 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	gfx_shader_code_t shader = {0};
 	int ret			 = gfx_shader_compiler_transpile(
-		 &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_STRN(shader.text, "#version 120", 12);
-		EXPECT_NOT_NULL(strstr(shader.text, "attribute vec2 a_pos;"));
+		EXPECT_STRN(shader.text, "#version 330 core", 17);
+		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 0) in vec2 position;"));
+		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 1) in vec4 color;"));
 		EXPECT_NOT_NULL(strstr(shader.text, "vec2 local = vec2"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec2 pos = a_pos.xy;"));
+		EXPECT_NOT_NULL(strstr(shader.text, "vec2 pos = position.xy;"));
 		EXPECT_NOT_NULL(strstr(shader.text, "gl_Position = vec4("));
 		EXPECT_NOT_NULL(strstr(shader.text, "local.x"));
 		EXPECT_NOT_NULL(strstr(shader.text, "local.y"));
@@ -278,19 +279,20 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "varying vec4 v_color;"));
+		EXPECT_NOT_NULL(strstr(shader.text, "in vec4 v_color;"));
+		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 0) out vec4 o_color;"));
 		EXPECT_NOT_NULL(strstr(shader.text, "vec4 color = v_color.rgba;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "gl_FragColor = color;"));
+		EXPECT_NOT_NULL(strstr(shader.text, "o_color = color;"));
 	}
 	gfx_shader_code_free(&shader);
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -303,7 +305,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -316,7 +318,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_SPIRV, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -330,7 +332,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
@@ -342,7 +344,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	shader = (gfx_shader_code_t){0};
 	ret    = gfx_shader_compiler_transpile(
-		   &compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
+		&compiler, strv_cstr(t_gfx_shader_compiler_expr_source), GFX_SHADER_STAGE_FRAGMENT, GFX_SHADER_LANGUAGE_HLSL, &shader);
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {

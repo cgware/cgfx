@@ -1,22 +1,11 @@
 #include "gfx_shader_driver.h"
 
-static const char *gfx_shader_glsl_in_name(strv_t semantic)
+static int gfx_shader_emit_glsl_member_ref(buf_t *text, const char *prefix, const gfx_shader_member_t *member, strv_t suffix)
 {
-	if (strv_eq(semantic, STRV("POSITION"))) {
-		return "a_pos";
+	if (member == NULL) {
+		return 1; // LCOV_EXCL_LINE
 	}
-	if (strv_eq(semantic, STRV("COLOR0"))) {
-		return "a_color";
-	}
-	return NULL; // LCOV_EXCL_LINE
-}
-
-static const char *gfx_shader_glsl_varying_name(strv_t semantic)
-{
-	if (strv_eq(semantic, STRV("COLOR0"))) {
-		return "v_color";
-	}
-	return NULL;
+	return gfx_shader_text_putf(text, "%s%.*s%.*s", prefix, member->name.len, member->name.data, suffix.len, suffix.data);
 }
 
 static int gfx_shader_emit_glsl_lhs(buf_t *text, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage, strv_t lhs)
@@ -27,15 +16,14 @@ static int gfx_shader_emit_glsl_lhs(buf_t *text, const gfx_shader_ir_t *ir, gfx_
 		if (member != NULL && strv_eq(member->semantic, STRV("POSITION"))) {
 			return gfx_shader_text_put(text, STRV("gl_Position")); // LCOV_EXCL_LINE
 		}
-		const char *varying = member ? gfx_shader_glsl_varying_name(member->semantic) : NULL;
-		if (varying != NULL) {
-			return gfx_shader_text_put(text, strv_cstr(varying));
+		if (member != NULL) {
+			return gfx_shader_emit_glsl_member_ref(text, "v_", member, STRV(""));
 		}
 	} else if (stage == GFX_SHADER_STAGE_FRAGMENT && gfx_shader_strv_prefix(lhs, STRV("output."))) {
 		strv_t name			  = STRVN(lhs.data + STRV("output.").len, lhs.len - STRV("output.").len);
 		const gfx_shader_member_t *member = gfx_shader_struct_member(&ir->fs_out, name);
-		if (member != NULL && strv_eq(member->semantic, STRV("COLOR0"))) {
-			return gfx_shader_text_put(text, STRV("gl_FragColor"));
+		if (member != NULL) {
+			return gfx_shader_emit_glsl_member_ref(text, "o_", member, STRV(""));
 		}
 	}
 	return gfx_shader_text_put(text, lhs);
@@ -81,10 +69,9 @@ static int gfx_shader_emit_glsl_expr(buf_t *text, const gfx_shader_ir_t *ir, gfx
 					}
 				}
 				const gfx_shader_member_t *member = gfx_shader_struct_member(&ir->vs_in, member_name);
-				const char *base		  = member ? gfx_shader_glsl_in_name(member->semantic) : NULL;
-				if (base != NULL) {
-					if (gfx_shader_text_putf(
-						    text, "%s%.*s", base, (int)(name.len - member_name.len), name.data + member_name.len)) {
+				if (member != NULL) {
+					if (gfx_shader_emit_glsl_member_ref(
+						    text, "", member, STRVN(name.data + member_name.len, name.len - member_name.len))) {
 						return 1; // LCOV_EXCL_LINE
 					}
 					continue;
@@ -99,10 +86,9 @@ static int gfx_shader_emit_glsl_expr(buf_t *text, const gfx_shader_ir_t *ir, gfx
 					}
 				}
 				const gfx_shader_member_t *member = gfx_shader_struct_member(&ir->fs_in, member_name);
-				const char *base		  = member ? gfx_shader_glsl_varying_name(member->semantic) : NULL;
-				if (base != NULL) {
-					if (gfx_shader_text_putf(
-						    text, "%s%.*s", base, (int)(name.len - member_name.len), name.data + member_name.len)) {
+				if (member != NULL) {
+					if (gfx_shader_emit_glsl_member_ref(
+						    text, "v_", member, STRVN(name.data + member_name.len, name.len - member_name.len))) {
 						return 1; // LCOV_EXCL_LINE
 					}
 					continue;
@@ -162,21 +148,29 @@ static int gfx_shader_emit_glsl_statement(buf_t *text, const gfx_shader_ir_t *ir
 
 static int gfx_shader_glsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage)
 {
-	if (gfx_shader_text_put(text, STRV("#version 120\n"))) {
+	if (gfx_shader_text_put(text, STRV("#version 330 core\n"))) {
 		return 1; // LCOV_EXCL_LINE
 	}
 	if (stage == GFX_SHADER_STAGE_VERTEX) {
 		for (u32 i = 0; i < ir->vs_in.member_count; i++) {
 			const char *type = gfx_shader_glsl_type(ir->vs_in.members[i].type);
-			const char *name = gfx_shader_glsl_in_name(ir->vs_in.members[i].semantic);
-			if (type == NULL || name == NULL || gfx_shader_text_putf(text, "%s %s %s;\n", "attribute", type, name)) {
+			if (type == NULL || gfx_shader_text_putf(text,
+								 "layout(location = %u) in %s %.*s;\n",
+								 i,
+								 type,
+								 ir->vs_in.members[i].name.len,
+								 ir->vs_in.members[i].name.data)) {
 				return 1; // LCOV_EXCL_LINE
 			}
 		}
 		for (u32 i = 0; i < ir->vs_out.member_count; i++) {
+			if (strv_eq(ir->vs_out.members[i].semantic, STRV("POSITION"))) {
+				continue;
+			}
 			const char *type = gfx_shader_glsl_type(ir->vs_out.members[i].type);
-			const char *name = gfx_shader_glsl_varying_name(ir->vs_out.members[i].semantic);
-			if (name != NULL && (type == NULL || gfx_shader_text_putf(text, "%s %s %s;\n", "varying", type, name))) {
+			if (type == NULL ||
+			    gfx_shader_text_putf(
+				    text, "out %s v_%.*s;\n", type, ir->vs_out.members[i].name.len, ir->vs_out.members[i].name.data)) {
 				return 1; // LCOV_EXCL_LINE
 			}
 		}
@@ -191,8 +185,20 @@ static int gfx_shader_glsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx
 	} else {
 		for (u32 i = 0; i < ir->fs_in.member_count; i++) {
 			const char *type = gfx_shader_glsl_type(ir->fs_in.members[i].type);
-			const char *name = gfx_shader_glsl_varying_name(ir->fs_in.members[i].semantic);
-			if (type == NULL || name == NULL || gfx_shader_text_putf(text, "%s %s %s;\n", "varying", type, name)) {
+			if (type == NULL ||
+			    gfx_shader_text_putf(
+				    text, "in %s v_%.*s;\n", type, ir->fs_in.members[i].name.len, ir->fs_in.members[i].name.data)) {
+				return 1; // LCOV_EXCL_LINE
+			}
+		}
+		for (u32 i = 0; i < ir->fs_out.member_count; i++) {
+			const char *type = gfx_shader_glsl_type(ir->fs_out.members[i].type);
+			if (type == NULL || gfx_shader_text_putf(text,
+								 "layout(location = %u) out %s o_%.*s;\n",
+								 i,
+								 type,
+								 ir->fs_out.members[i].name.len,
+								 ir->fs_out.members[i].name.data)) {
 				return 1; // LCOV_EXCL_LINE
 			}
 		}

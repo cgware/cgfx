@@ -19,7 +19,7 @@ static const char *gfx_shader_stage_name(gfx_shader_stage_t stage)
 static const char *gfx_shader_language_name(gfx_shader_language_t language)
 {
 	if (language == GFX_SHADER_LANGUAGE_GLSL) {
-		return "GLSL 120";
+		return "GLSL 330";
 	}
 	if (language == GFX_SHADER_LANGUAGE_HLSL) {
 		return "HLSL";

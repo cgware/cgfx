@@ -33,8 +33,6 @@ enum {
 	GL_LINK_STATUS		    = 0x8B82,
 	GL_INFO_LOG_LENGTH	    = 0x8B84,
 	GL_NO_ERROR		    = 0,
-	GFX_OPENGL_POS_ATTR	    = 0,
-	GFX_OPENGL_COLOR_ATTR	    = 1,
 };
 
 typedef struct gfx_opengl_vertex_2d_s {
@@ -76,7 +74,6 @@ typedef struct gfx_opengl_s {
 	void (*DeleteShader)(unsigned int);
 	unsigned int (*CreateProgram)(void);
 	void (*AttachShader)(unsigned int, unsigned int);
-	void (*BindAttribLocation)(unsigned int, unsigned int, const char *);
 	void (*LinkProgram)(unsigned int);
 	void (*GetProgramiv)(unsigned int, unsigned int, int *);
 	void (*GetProgramInfoLog)(unsigned int, int, int *, char *);
@@ -102,6 +99,9 @@ typedef struct gfx_opengl_shader_s {
 
 typedef struct gfx_opengl_pipeline_s {
 	unsigned int program;
+	const gfx_layout_t *input_layout;
+	size_t input_layout_size;
+	int stride;
 } gfx_opengl_pipeline_t;
 
 static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation);
@@ -200,13 +200,13 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	    LOAD_GL(gfx, opengl, surface, CreateShader) || LOAD_GL(gfx, opengl, surface, ShaderSource) ||
 	    LOAD_GL(gfx, opengl, surface, CompileShader) || LOAD_GL(gfx, opengl, surface, GetShaderiv) ||
 	    LOAD_GL(gfx, opengl, surface, DeleteShader) || LOAD_GL(gfx, opengl, surface, CreateProgram) ||
-	    LOAD_GL(gfx, opengl, surface, AttachShader) || LOAD_GL(gfx, opengl, surface, BindAttribLocation) ||
-	    LOAD_GL(gfx, opengl, surface, LinkProgram) || LOAD_GL(gfx, opengl, surface, GetProgramiv) ||
-	    LOAD_GL(gfx, opengl, surface, DeleteProgram) || LOAD_GL(gfx, opengl, surface, GenBuffers) ||
-	    LOAD_GL(gfx, opengl, surface, DeleteBuffers) || LOAD_GL(gfx, opengl, surface, BindBuffer) ||
-	    LOAD_GL(gfx, opengl, surface, BufferData) || LOAD_GL(gfx, opengl, surface, UseProgram) ||
-	    LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) ||
-	    LOAD_GL(gfx, opengl, surface, VertexAttribPointer) || LOAD_GL(gfx, opengl, surface, DrawArrays)) {
+	    LOAD_GL(gfx, opengl, surface, AttachShader) || LOAD_GL(gfx, opengl, surface, LinkProgram) ||
+	    LOAD_GL(gfx, opengl, surface, GetProgramiv) || LOAD_GL(gfx, opengl, surface, DeleteProgram) ||
+	    LOAD_GL(gfx, opengl, surface, GenBuffers) || LOAD_GL(gfx, opengl, surface, DeleteBuffers) ||
+	    LOAD_GL(gfx, opengl, surface, BindBuffer) || LOAD_GL(gfx, opengl, surface, BufferData) ||
+	    LOAD_GL(gfx, opengl, surface, UseProgram) || LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) ||
+	    LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, VertexAttribPointer) ||
+	    LOAD_GL(gfx, opengl, surface, DrawArrays)) {
 		return 1;
 	}
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetShaderInfoLog);
@@ -656,21 +656,8 @@ static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 
 	gfx_opengl_buffer_t *gl_buffer = buffer->data;
 
-	const gfx_vertex_2d_t *vertices = data;
-	gfx_opengl_vertex_2d_t gl_vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		gl_vertices[i] = (gfx_opengl_vertex_2d_t){
-			.x = vertices[i].x,
-			.y = vertices[i].y,
-			.r = vertices[i].r,
-			.g = vertices[i].g,
-			.b = vertices[i].b,
-			.a = vertices[i].a,
-		};
-	}
-
 	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
-	opengl->BufferData(GL_ARRAY_BUFFER, size, gl_vertices, GL_DYNAMIC_DRAW);
+	opengl->BufferData(GL_ARRAY_BUFFER, size, data, GL_DYNAMIC_DRAW);
 	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
 
 	return 0;
@@ -781,7 +768,8 @@ static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
 static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
-	    config->fs.data == NULL) {
+	    config->fs.data == NULL || config->input_layout == NULL || config->input_layout_size == 0 ||
+	    config->input_layout_size % sizeof(gfx_layout_t) != 0) {
 		return 1;
 	}
 
@@ -811,8 +799,24 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 
 	opengl->AttachShader(gl_pipeline->program, vs->shader);
 	opengl->AttachShader(gl_pipeline->program, fs->shader);
-	opengl->BindAttribLocation(gl_pipeline->program, GFX_OPENGL_POS_ATTR, "a_pos");
-	opengl->BindAttribLocation(gl_pipeline->program, GFX_OPENGL_COLOR_ATTR, "a_color");
+
+	gl_pipeline->input_layout      = config->input_layout;
+	gl_pipeline->input_layout_size = config->input_layout_size;
+
+	gl_pipeline->stride = 0;
+	for (size_t i = 0; i < config->input_layout_size / sizeof(gfx_layout_t); i++) {
+		size_t size;
+		if (gl_pipeline->input_layout[i].type == GFX_VALUE_FLOAT32) {
+			size = sizeof(float);
+		} else {
+			log_error("cgfx", "gfx_opengl", NULL, "unsupported value type: %d", gl_pipeline->input_layout[i].type);
+			gfx_opengl_pipeline_free(pipeline);
+			return 1;
+		}
+
+		gl_pipeline->stride += size * config->input_layout[i].count;
+	}
+
 	opengl->LinkProgram(gl_pipeline->program);
 
 	int linked = 0;
@@ -846,14 +850,22 @@ static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx
 
 	opengl->UseProgram(gl_pipeline->program);
 	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
-	opengl->EnableVertexAttribArray(GFX_OPENGL_POS_ATTR);
-	opengl->EnableVertexAttribArray(GFX_OPENGL_COLOR_ATTR);
-	opengl->VertexAttribPointer(GFX_OPENGL_POS_ATTR, 2, GL_FLOAT, GL_FALSE, sizeof(gfx_opengl_vertex_2d_t), (const void *)0);
-	opengl->VertexAttribPointer(
-		GFX_OPENGL_COLOR_ATTR, 4, GL_FLOAT, GL_FALSE, sizeof(gfx_opengl_vertex_2d_t), (const void *)(2 * sizeof(float)));
+
+	size_t offset = 0;
+	for (size_t i = 0; i < gl_pipeline->input_layout_size / sizeof(gfx_layout_t); i++) {
+		opengl->EnableVertexAttribArray(gl_pipeline->input_layout[i].index);
+		opengl->VertexAttribPointer(gl_pipeline->input_layout[i].index,
+					    gl_pipeline->input_layout[i].count,
+					    GL_FLOAT,
+					    GL_FALSE,
+					    gl_pipeline->stride,
+					    (const void *)offset);
+		offset += sizeof(float) * gl_pipeline->input_layout[i].count;
+	}
 	opengl->DrawArrays(GL_TRIANGLES, 0, 3);
-	opengl->DisableVertexAttribArray(GFX_OPENGL_COLOR_ATTR);
-	opengl->DisableVertexAttribArray(GFX_OPENGL_POS_ATTR);
+	for (size_t i = 0; i < gl_pipeline->input_layout_size / sizeof(gfx_layout_t); i++) {
+		opengl->DisableVertexAttribArray(gl_pipeline->input_layout[i].index);
+	}
 	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
 	opengl->UseProgram(0);
 

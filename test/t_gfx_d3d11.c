@@ -299,6 +299,8 @@ static UINT t_create_sdk_version;
 static UINT t_resize_width;
 static UINT t_resize_height;
 static UINT t_input_element_count;
+static const char *t_input_semantic_name[2];
+static UINT t_input_semantic_index[2];
 static UINT t_render_target_count;
 static UINT t_vertex_buffer_start_slot;
 static UINT t_vertex_buffer_count;
@@ -334,11 +336,38 @@ static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
 
+static const gfx_layout_t t_gfx_d3d11_input_layout[] = {
+	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+	{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+};
+
+static gfx_pipeline_config_t t_gfx_d3d11_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
+{
+	return (gfx_pipeline_config_t){
+		.vs		   = vs,
+		.fs		   = fs,
+		.input_layout	   = t_gfx_d3d11_input_layout,
+		.input_layout_size = sizeof(t_gfx_d3d11_input_layout),
+	};
+}
+
 static void *t_gfx_d3d11_alloc_fail(alloc_t *alloc, size_t size)
 {
 	(void)alloc;
 	(void)size;
 	return NULL;
+}
+
+static int t_gfx_d3d11_alloc_count;
+static int t_gfx_d3d11_alloc_fail_at;
+
+static void *t_gfx_d3d11_alloc_fail_n(alloc_t *alloc, size_t size)
+{
+	t_gfx_d3d11_alloc_count++;
+	if (t_gfx_d3d11_alloc_count == t_gfx_d3d11_alloc_fail_at) {
+		return NULL;
+	}
+	return alloc_alloc_std(alloc, size);
 }
 
 static void *t_gfx_d3d11_symbol(t_gfx_d3d11_symbol_t fn)
@@ -449,12 +478,15 @@ static HRESULT t_CreateInputLayout(t_d3d11_device_t *self, const D3D11_INPUT_ELE
 				   const void *shader_bytecode, size_t bytecode_length, t_d3d11_input_layout_t **input_layout)
 {
 	(void)self;
-	(void)elements;
 	(void)shader_bytecode;
 	(void)bytecode_length;
 	t_create_input_layout_calls++;
 	t_input_element_count = element_count;
-	*input_layout	      = &t_input_layout;
+	for (UINT i = 0; i < element_count && i < 2; i++) {
+		t_input_semantic_name[i]  = elements[i].SemanticName;
+		t_input_semantic_index[i] = elements[i].SemanticIndex;
+	}
+	*input_layout = &t_input_layout;
 	return t_create_input_layout_ret;
 }
 
@@ -747,6 +779,10 @@ static void t_gfx_d3d11_reset(void)
 	t_resize_width			  = 0;
 	t_resize_height			  = 0;
 	t_input_element_count		  = 0;
+	t_input_semantic_name[0]	  = NULL;
+	t_input_semantic_name[1]	  = NULL;
+	t_input_semantic_index[0]	  = 0;
+	t_input_semantic_index[1]	  = 0;
 	t_render_target_count		  = 0;
 	t_vertex_buffer_start_slot	  = 0;
 	t_vertex_buffer_count		  = 0;
@@ -897,8 +933,9 @@ static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 		gfx_buffer_free(&buffer);
 		return 1;
 	}
-	gfx_pipeline_t pipeline = {0};
-	int ret			= gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}) != &pipeline;
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+	int ret			     = gfx_pipeline_init(&pipeline, gfx, &config) != &pipeline;
 	if (ret == 0) {
 		ret = gfx_draw_triangle_2d(&pipeline, &buffer);
 	}
@@ -2151,8 +2188,9 @@ TEST(gfx_d3d11_pipeline_init_missing_input_layout_callback)
 	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
 	t_device_vtbl.CreateInputLayout = NULL;
 	gfx_pipeline_t pipeline		= {0};
+	gfx_pipeline_config_t config	= t_gfx_d3d11_pipeline_config(vs, fs);
 
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}));
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
 
 	t_device_vtbl.CreateInputLayout = t_CreateInputLayout;
 	gfx_shader_free(&fs);
@@ -2173,10 +2211,38 @@ TEST(gfx_d3d11_pipeline_init_alloc_failure)
 	gfx_shader_t fs = {0};
 	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
 	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx.alloc		= (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
-	gfx_pipeline_t pipeline = {0};
+	gfx.alloc		     = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
 
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}));
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+
+	gfx.alloc = ALLOC_STD;
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_element_alloc_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	gfx.alloc		     = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	t_gfx_d3d11_alloc_count	     = 0;
+	t_gfx_d3d11_alloc_fail_at    = 2;
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
 
 	gfx.alloc = ALLOC_STD;
 	gfx_shader_free(&fs);
@@ -2197,10 +2263,69 @@ TEST(gfx_d3d11_pipeline_init_create_input_layout_failure)
 	gfx_shader_t fs = {0};
 	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
 	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	t_create_input_layout_ret = -1;
-	gfx_pipeline_t pipeline	  = {0};
+	t_create_input_layout_ret    = -1;
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
 
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = vs, .fs = fs}));
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_missing_layout_semantic)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	const gfx_layout_t layout[] = {
+		{.index = 0, .count = 2, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = sizeof(layout);
+
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_unsupported_input_layout)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs = {0};
+	gfx_shader_t fs = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	const gfx_layout_t layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_t pipeline	     = {0};
+	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = sizeof(layout);
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	log_set_quiet(0, 0);
 
 	gfx_shader_free(&fs);
 	gfx_shader_free(&vs);
@@ -2277,6 +2402,10 @@ TEST(gfx_d3d11_draw_triangle_2d_creates_input_layout)
 
 	EXPECT_EQ(t_create_input_layout_calls, 1);
 	EXPECT_EQ(t_input_element_count, 2);
+	EXPECT_STR(t_input_semantic_name[0], "POSITION");
+	EXPECT_EQ(t_input_semantic_index[0], 0);
+	EXPECT_STR(t_input_semantic_name[1], "COLOR");
+	EXPECT_EQ(t_input_semantic_index[1], 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -2541,7 +2670,10 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_null_data);
 	RUN(gfx_d3d11_pipeline_init_missing_input_layout_callback);
 	RUN(gfx_d3d11_pipeline_init_alloc_failure);
+	RUN(gfx_d3d11_pipeline_init_element_alloc_failure);
 	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure);
+	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic);
+	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout);
 	RUN(gfx_d3d11_draw_triangle_2d_success);
 	RUN(gfx_d3d11_draw_triangle_2d_compiles_shaders);
 	RUN(gfx_d3d11_draw_triangle_2d_creates_buffer);

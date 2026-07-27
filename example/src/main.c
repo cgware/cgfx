@@ -155,7 +155,17 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to initialize triangle fragment shader");
 		ret = 1;
 	}
-	if (ret == 0 && gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.vs = vertex, .fs = fragment}) == NULL) {
+	static const gfx_layout_t input_layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+		{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_config_t pipeline_config = {
+		.vs		   = vertex,
+		.fs		   = fragment,
+		.input_layout	   = input_layout,
+		.input_layout_size = sizeof(input_layout),
+	};
+	if (ret == 0 && gfx_pipeline_init(&pipeline, &gfx, &pipeline_config) == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to initialize pipeline");
 		ret = 1;
 	}
