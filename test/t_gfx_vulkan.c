@@ -210,6 +210,12 @@ typedef struct VkMappedMemoryRange_s {
 	VkDeviceSize size;
 } VkMappedMemoryRange;
 
+typedef struct VkImageSubresource_s {
+	VkFlags aspectMask;
+	u32 mipLevel;
+	u32 arrayLayer;
+} VkImageSubresource;
+
 typedef struct VkSubresourceLayout_s {
 	VkDeviceSize offset;
 	VkDeviceSize size;
@@ -287,7 +293,7 @@ static VkFlags t_vk_linear_features;
 static VkFlags t_vk_memory_flags;
 static u32 t_vk_memory_type_bits;
 static VkDeviceSize t_vk_row_pitch;
-static u8 t_vk_memory[64];
+static u8 t_vk_memory[256];
 static float t_vk_clear_color[4];
 static u32 t_vk_clear_layout;
 static VkImage t_vk_destroyed_image;
@@ -695,7 +701,8 @@ static int t_vkBindBufferMemory(VkDevice device, VkBuffer buffer, VkDeviceMemory
 	return t_vk_bind_buffer_memory_ret;
 }
 
-static void t_vkGetImageSubresourceLayout(VkDevice device, VkImage image, const void *subresource, VkSubresourceLayout *layout)
+static void t_vkGetImageSubresourceLayout(VkDevice device, VkImage image, const VkImageSubresource *subresource,
+					  VkSubresourceLayout *layout)
 {
 	(void)device;
 	(void)image;
