@@ -28,6 +28,7 @@ static int t_gl_get_shader_iv_calls;
 static int t_gl_get_shader_info_log_calls;
 static int t_gl_delete_shader_calls;
 static int t_gl_create_program_calls;
+static int t_gl_get_program_info_log_calls;
 static int t_gl_attach_shader_calls;
 static int t_gl_bind_attrib_location_calls;
 static int t_gl_link_program_calls;
@@ -77,6 +78,7 @@ static int t_gl_shader_status;
 static unsigned int t_gl_error_ret;
 static const unsigned char *t_gl_string_ret;
 static int t_gl_shader_info_log_available;
+static int t_gl_program_info_log_available;
 static int t_gl_program_status;
 static int t_gl_shader_fail_call;
 static unsigned int t_gl_create_shader_ret;
@@ -314,6 +316,19 @@ static void t_glGetProgramiv(unsigned int program, unsigned int name, int *param
 	*params	     = t_gl_program_status;
 }
 
+static void t_glGetProgramInfoLog(unsigned int program, int max_length, int *length, char *info)
+{
+	(void)program;
+	t_gl_get_program_info_log_calls++;
+	if (max_length > 0 && info != NULL) {
+		info[0] = 'x';
+		info[1] = '\0';
+	}
+	if (length != NULL) {
+		*length = 1;
+	}
+}
+
 static void t_glDeleteProgram(unsigned int program)
 {
 	t_gl_delete_program_calls++;
@@ -546,6 +561,7 @@ static void t_gfx_opengl_reset(void)
 	t_gl_get_shader_info_log_calls	       = 0;
 	t_gl_delete_shader_calls	       = 0;
 	t_gl_create_program_calls	       = 0;
+	t_gl_get_program_info_log_calls	       = 0;
 	t_gl_attach_shader_calls	       = 0;
 	t_gl_bind_attrib_location_calls	       = 0;
 	t_gl_link_program_calls		       = 0;
@@ -595,6 +611,7 @@ static void t_gfx_opengl_reset(void)
 	t_gl_error_ret			       = 0;
 	t_gl_string_ret			       = (const unsigned char *)"test";
 	t_gl_shader_info_log_available	       = 1;
+	t_gl_program_info_log_available	       = 0;
 	t_gl_program_status		       = 1;
 	t_gl_shader_fail_call		       = 0;
 	t_gl_create_shader_ret		       = 30;
@@ -643,6 +660,9 @@ static void t_gfx_opengl_gl_symbols(proc_t *proc, strv_t lib)
 	proc_setdlsym(proc, lib, STRV("glBindAttribLocation"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindAttribLocation));
 	proc_setdlsym(proc, lib, STRV("glLinkProgram"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glLinkProgram));
 	proc_setdlsym(proc, lib, STRV("glGetProgramiv"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetProgramiv));
+	if (t_gl_program_info_log_available) {
+		proc_setdlsym(proc, lib, STRV("glGetProgramInfoLog"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetProgramInfoLog));
+	}
 	proc_setdlsym(proc, lib, STRV("glDeleteProgram"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteProgram));
 	proc_setdlsym(proc, lib, STRV("glGenBuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenBuffers));
 	proc_setdlsym(proc, lib, STRV("glDeleteBuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteBuffers));
@@ -2269,6 +2289,37 @@ TEST(gfx_opengl_pipeline_init_surface_make_current_failure)
 	END;
 }
 
+TEST(gfx_opengl_pipeline_init_null_config)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_pipeline_t pipeline = {0};
+
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, NULL));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_init_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_opengl_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_pipeline_t pipeline = {0};
+
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){0}));
+
+	END;
+}
+
 TEST(gfx_opengl_draw_triangle_2d_link_failure)
 {
 	START;
@@ -2286,6 +2337,32 @@ TEST(gfx_opengl_draw_triangle_2d_link_failure)
 	log_set_quiet(0, 1);
 	EXPECT_EQ(t_gfx_opengl_draw(&gfx, vertices), 1);
 	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_draw_triangle_2d_link_failure_with_info_log)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	t_gl_program_status		= 0;
+	t_gl_program_info_log_available = 1;
+	proc_t proc			= {0};
+	gfx_t gfx			= {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	gfx_set_target(&gfx, &target);
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_opengl_draw(&gfx, vertices), 1);
+	log_set_quiet(0, 0);
+
+	EXPECT_EQ(t_gl_get_program_info_log_calls, 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3433,7 +3510,10 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_draw_triangle_2d_create_program_failure);
 	RUN(gfx_opengl_pipeline_init_alloc_failure);
 	RUN(gfx_opengl_pipeline_init_surface_make_current_failure);
+	RUN(gfx_opengl_pipeline_init_null_config);
+	RUN(gfx_opengl_pipeline_init_null_data);
 	RUN(gfx_opengl_draw_triangle_2d_link_failure);
+	RUN(gfx_opengl_draw_triangle_2d_link_failure_with_info_log);
 	RUN(gfx_opengl_draw_triangle_2d_surface_make_current_failure);
 	RUN(gfx_opengl_draw_triangle_2d_create_buffer_failure);
 	RUN(gfx_opengl_draw_triangle_2d_memory_reads_pixels);

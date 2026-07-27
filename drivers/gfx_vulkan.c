@@ -2259,7 +2259,7 @@ static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
-		return; // LCOV_EXCL_LINE
+		return;
 	}
 
 	gfx_vulkan_t *vulkan		   = pipeline->gfx->data;
@@ -2280,18 +2280,18 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
 	    config->fs.data == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_vulkan_t *vulkan = pipeline->gfx->data;
 
 	if (gfx_vulkan_create_render_pass(vulkan)) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_vulkan_pipeline_t));
 	if (vk_pipeline == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	*vk_pipeline   = (gfx_vulkan_pipeline_t){0};
 	pipeline->data = vk_pipeline;
@@ -2300,8 +2300,8 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
 	};
 	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_pipeline->pipeline_layout))) {
-		gfx_vulkan_pipeline_free(pipeline); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
 	}
 
 	gfx_vulkan_shader_t *vk_vs = config->vs.data;
@@ -2392,8 +2392,8 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.renderPass	     = vulkan->render_pass,
 	};
 	if (!vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_pipeline->pipeline))) {
-		gfx_vulkan_pipeline_free(pipeline); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
 	}
 
 	return 0;

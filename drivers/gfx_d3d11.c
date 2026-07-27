@@ -776,7 +776,7 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->data == NULL) {
-		return; // LCOV_EXCL_LINE
+		return;
 	}
 
 	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
@@ -792,19 +792,19 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
 	    config->fs.data == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_d3d11_t *d3d11 = pipeline->gfx->data;
 
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
 	if (device->CreateInputLayout == NULL || device->CreateVertexShader == NULL || device->CreatePixelShader == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_d3d11_pipeline_t *d3d_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_d3d11_pipeline_t));
 	if (d3d_pipeline == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	*d3d_pipeline  = (gfx_d3d11_pipeline_t){0};
 	pipeline->data = d3d_pipeline;
@@ -829,8 +829,8 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	HRESULT hr = device->CreateInputLayout(
 		d3d11->device, elements, 2, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
 	if (!hresult_ok(hr) || d3d_pipeline->input_layout == NULL) {
-		gfx_d3d11_pipeline_free(pipeline); // LCOV_EXCL_LINE
-		return 1;			   // LCOV_EXCL_LINE
+		gfx_d3d11_pipeline_free(pipeline);
+		return 1;
 	}
 
 	d3d_pipeline->vertex_shader = vs->shader.vertex;

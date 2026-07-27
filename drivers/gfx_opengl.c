@@ -586,10 +586,10 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 static void gfx_opengl_log_program_link(gfx_opengl_t *opengl, unsigned int program)
 {
 	if (opengl->GetProgramInfoLog != NULL) {
-		char info[1024] = {0};									 // LCOV_EXCL_LINE
-		int len		= 0;									 // LCOV_EXCL_LINE
-		opengl->GetProgramInfoLog(program, (int)sizeof(info) - 1, &len, info);			 // LCOV_EXCL_LINE
-		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program: %s", info); // LCOV_EXCL_LINE
+		char info[1024] = {0};
+		int len		= 0;
+		opengl->GetProgramInfoLog(program, (int)sizeof(info) - 1, &len, info);
+		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program: %s", info);
 	} else {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program");
 	}
@@ -782,7 +782,7 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
 	    config->fs.data == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_opengl_t *opengl = pipeline->gfx->data;
