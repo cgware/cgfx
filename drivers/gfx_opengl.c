@@ -1,5 +1,4 @@
 #include "gfx_driver.h"
-#include "gfx_shader_compiler.h"
 
 #include "log.h"
 
@@ -52,7 +51,6 @@ typedef struct gfx_opengl_s {
 	gfx_target_t target;
 	unsigned int framebuffer;
 	unsigned int texture;
-	unsigned int triangle_buffer;
 	gfx_surface_t *surface;
 	void (*ClearColor)(float, float, float, float);
 	void (*Clear)(unsigned int);
@@ -88,13 +86,15 @@ typedef struct gfx_opengl_s {
 	void (*BindBuffer)(unsigned int, unsigned int);
 	void (*BufferData)(unsigned int, size_t, const void *, unsigned int);
 	void (*UseProgram)(unsigned int);
-	int (*GetUniformLocation)(unsigned int, const char *);
-	void (*Uniform2f)(int, float, float);
 	void (*EnableVertexAttribArray)(unsigned int);
 	void (*DisableVertexAttribArray)(unsigned int);
 	void (*VertexAttribPointer)(unsigned int, int, unsigned int, unsigned char, int, const void *);
 	void (*DrawArrays)(unsigned int, int, int);
 } gfx_opengl_t;
+
+typedef struct gfx_opengl_buffer_s {
+	unsigned int buffer;
+} gfx_opengl_buffer_t;
 
 typedef struct gfx_opengl_shader_s {
 	unsigned int shader;
@@ -102,11 +102,8 @@ typedef struct gfx_opengl_shader_s {
 
 typedef struct gfx_opengl_pipeline_s {
 	unsigned int program;
-	int target_size;
 } gfx_opengl_pipeline_t;
 
-static void gfx_opengl_draw_free(gfx_opengl_t *opengl);
-static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl);
 static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation);
 static int gfx_opengl_begin(gfx_t *gfx, const char *operation, gfx_opengl_t **out);
 
@@ -150,7 +147,6 @@ static int gfx_opengl_clear_surface(gfx_surface_t *surface)
 
 static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl, gfx_surface_t *surface)
 {
-	gfx_opengl_draw_free(opengl);
 	gfx_opengl_clear_surface(surface);
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(gfx->proc, opengl->gl_lib);
@@ -209,7 +205,6 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	    LOAD_GL(gfx, opengl, surface, DeleteProgram) || LOAD_GL(gfx, opengl, surface, GenBuffers) ||
 	    LOAD_GL(gfx, opengl, surface, DeleteBuffers) || LOAD_GL(gfx, opengl, surface, BindBuffer) ||
 	    LOAD_GL(gfx, opengl, surface, BufferData) || LOAD_GL(gfx, opengl, surface, UseProgram) ||
-	    LOAD_GL(gfx, opengl, surface, GetUniformLocation) || LOAD_GL(gfx, opengl, surface, Uniform2f) ||
 	    LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) ||
 	    LOAD_GL(gfx, opengl, surface, VertexAttribPointer) || LOAD_GL(gfx, opengl, surface, DrawArrays)) {
 		return 1;
@@ -275,14 +270,6 @@ static void gfx_opengl_target_free(gfx_opengl_t *opengl)
 	opengl->target	= (gfx_target_t){0};
 }
 
-static void gfx_opengl_draw_free(gfx_opengl_t *opengl)
-{
-	if (opengl->triangle_buffer != 0 && opengl->DeleteBuffers != NULL) {
-		opengl->DeleteBuffers(1, &opengl->triangle_buffer);
-		opengl->triangle_buffer = 0;
-	}
-}
-
 static int gfx_opengl_free(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -290,7 +277,6 @@ static int gfx_opengl_free(gfx_t *gfx)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	gfx_opengl_draw_free(opengl);
 	gfx_opengl_target_free(opengl);
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(gfx->proc, opengl->gl_lib);
@@ -615,19 +601,103 @@ static void gfx_opengl_log_program_link(gfx_opengl_t *opengl, unsigned int progr
 	}
 }
 
-static int gfx_opengl_create_draw_state(gfx_opengl_t *opengl)
+static void gfx_opengl_buffer_free(gfx_buffer_t *buffer)
 {
-	if (opengl->triangle_buffer != 0) {
-		return 0;
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL) {
+		return;
+	}
+	gfx_opengl_t *opengl	       = buffer->gfx->data;
+	gfx_opengl_buffer_t *gl_buffer = buffer->data;
+	if (gfx_opengl_make_current(opengl, "buffer destruction")) {
+		return;
+	}
+	if (gl_buffer->buffer != 0 && opengl->DeleteBuffers != NULL) {
+		opengl->DeleteBuffers(1, &gl_buffer->buffer);
+		gl_buffer->buffer = 0;
+	}
+	alloc_free(&buffer->gfx->alloc, gl_buffer, sizeof(gfx_opengl_buffer_t));
+	buffer->data = NULL;
+}
+
+static int gfx_opengl_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+		return 1;
 	}
 
-	unsigned int buffer = 0;
-	opengl->GenBuffers(1, &buffer);
-	if (buffer == 0) {
-		return 1; // LCOV_EXCL_LINE
+	gfx_opengl_t *opengl = buffer->gfx->data;
+
+	if (gfx_opengl_make_current(opengl, "buffer initialization")) {
+		return 1;
 	}
-	opengl->triangle_buffer = buffer;
+
+	gfx_opengl_buffer_t *gl_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_opengl_buffer_t));
+	if (gl_buffer == NULL) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to allocate OpenGL buffer");
+		return 1;
+	}
+	*gl_buffer   = (gfx_opengl_buffer_t){0};
+	buffer->data = gl_buffer;
+
+	opengl->GenBuffers(1, &gl_buffer->buffer);
+	if (gl_buffer->buffer == 0) {
+		gfx_opengl_buffer_free(buffer);
+		return 1;
+	}
+
 	return 0;
+}
+
+static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = buffer->gfx->data;
+
+	if (gfx_opengl_make_current(opengl, "set buffer data")) {
+		return 1;
+	}
+
+	gfx_opengl_buffer_t *gl_buffer = buffer->data;
+
+	const gfx_vertex_2d_t *vertices = data;
+	gfx_opengl_vertex_2d_t gl_vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		gl_vertices[i] = (gfx_opengl_vertex_2d_t){
+			.x = vertices[i].x,
+			.y = vertices[i].y,
+			.r = vertices[i].r,
+			.g = vertices[i].g,
+			.b = vertices[i].b,
+			.a = vertices[i].a,
+		};
+	}
+
+	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
+	opengl->BufferData(GL_ARRAY_BUFFER, size, gl_vertices, GL_DYNAMIC_DRAW);
+	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
+
+	return 0;
+}
+
+static void gfx_opengl_shader_free(gfx_shader_t *shader)
+{
+	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
+		return; // LCOV_EXCL_LINE
+	}
+	gfx_opengl_t *opengl	       = shader->gfx->data;
+	gfx_opengl_shader_t *gl_shader = shader->data;
+	if (gfx_opengl_make_current(opengl, "shader destruction")) {
+		return;
+	}
+	if (gl_shader->shader != 0 && opengl->DeleteShader != NULL) {
+		opengl->DeleteShader(gl_shader->shader);
+		gl_shader->shader = 0;
+	}
+	alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+	shader->data = NULL;
 }
 
 static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
@@ -650,18 +720,19 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		return 1;								// LCOV_EXCL_LINE
 	}
 
-	gfx_opengl_shader_t *gl_shader = alloc_alloc(&shader->gfx->alloc, sizeof(*gl_shader));
+	gfx_opengl_shader_t *gl_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_opengl_shader_t));
 	if (gl_shader == NULL) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to allocate OpenGL shader");
 		return 1;
 	}
-	*gl_shader = (gfx_opengl_shader_t){0};
+	*gl_shader   = (gfx_opengl_shader_t){0};
+	shader->data = gl_shader;
 
 	gfx_shader_code_t shader_code = {0};
 	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_GLSL, &shader_code)) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to transpile OpenGL shader");
 		gfx_shader_code_free(&shader_code);
-		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+		gfx_opengl_shader_free(shader);
 		return 1;
 	}
 
@@ -678,7 +749,7 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	default: {
 		log_error("cgfx", "gfx_opengl", NULL, "unsupported shader stage: %d", config->stage);
 		gfx_shader_code_free(&shader_code);
-		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+		gfx_opengl_shader_free(shader);
 		return 1;
 	}
 	}
@@ -687,29 +758,30 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	if (gl_shader->shader == 0) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to build OpenGL shader");
 		gfx_shader_code_free(&shader_code);
-		alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+		gfx_opengl_shader_free(shader);
 		return 1;
 	}
 	gfx_shader_code_free(&shader_code);
 
-	shader->data = gl_shader;
-
 	return 0;
 }
 
-static void gfx_opengl_shader_free(gfx_shader_t *shader)
+static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
-		return; // LCOV_EXCL_LINE
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
+		return;
 	}
-	gfx_opengl_t *opengl	       = shader->gfx->data;
-	gfx_opengl_shader_t *gl_shader = shader->data;
+	gfx_opengl_t *opengl		   = pipeline->gfx->data;
+	gfx_opengl_pipeline_t *gl_pipeline = pipeline->data;
 	if (gfx_opengl_make_current(opengl, "shader destruction")) {
 		return;
 	}
-	opengl->DeleteShader(gl_shader->shader);
-	alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
-	shader->data = NULL;
+	if (gl_pipeline->program != 0 && opengl->DeleteProgram != NULL) {
+		opengl->DeleteProgram(gl_pipeline->program);
+		gl_pipeline->program = 0;
+	}
+	alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
+	pipeline->data = NULL;
 }
 
 static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
@@ -730,12 +802,13 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		log_error("cgfx", "gfx_opengl", NULL, "failed to allocate OpenGL pipeline");
 		return 1;
 	}
-	*gl_pipeline = (gfx_opengl_pipeline_t){0};
+	*gl_pipeline   = (gfx_opengl_pipeline_t){0};
+	pipeline->data = gl_pipeline;
 
 	gl_pipeline->program = opengl->CreateProgram();
 	if (gl_pipeline->program == 0) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to create OpenGL shader program");
-		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
+		gfx_opengl_pipeline_free(pipeline);
 		return 1;
 	}
 
@@ -753,73 +826,32 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	if (!linked) {
 		gfx_opengl_log_program_link(opengl, gl_pipeline->program);
 		log_error("cgfx", "gfx_opengl", NULL, "failed to link OpenGL shader program");
-		opengl->DeleteProgram(gl_pipeline->program);
-		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
+		gfx_opengl_pipeline_free(pipeline);
 		return 1;
 	}
-
-	gl_pipeline->target_size = opengl->GetUniformLocation(gl_pipeline->program, "u_target_size");
-	if (gl_pipeline->target_size < 0) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to find OpenGL shader uniform: u_target_size");
-		opengl->DeleteProgram(gl_pipeline->program);
-		alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
-		return 1;
-	}
-
-	pipeline->data = gl_pipeline;
 
 	return 0;
 }
 
-static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
+static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL) {
-		return;
-	}
-	gfx_opengl_t *opengl		   = pipeline->gfx->data;
-	gfx_opengl_pipeline_t *gl_pipeline = pipeline->data;
-	if (gfx_opengl_make_current(opengl, "shader destruction")) {
-		return;
-	}
-	opengl->DeleteProgram(gl_pipeline->program);
-	alloc_free(&pipeline->gfx->alloc, gl_pipeline, sizeof(gfx_opengl_pipeline_t));
-	pipeline->data = NULL;
-}
-
-static int gfx_opengl_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
-{
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || buffer == NULL ||
+	    buffer->data == NULL) {
 		return 1;
 	}
 
 	gfx_opengl_t *opengl		   = pipeline->gfx->data;
 	gfx_opengl_pipeline_t *gl_pipeline = pipeline->data;
+	gfx_opengl_buffer_t *gl_buffer	   = buffer->data;
 	if (gfx_opengl_make_current(opengl, "triangle draw")) {
 		return 1;
-	}
-	if (gfx_opengl_create_draw_state(opengl)) {
-		return 1; // LCOV_EXCL_LINE
 	}
 	if (gfx_opengl_bind_target(opengl)) {
 		return 1;
 	}
 
-	gfx_opengl_vertex_2d_t gl_vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		gl_vertices[i] = (gfx_opengl_vertex_2d_t){
-			.x = vertices[i].x,
-			.y = vertices[i].y,
-			.r = vertices[i].r,
-			.g = vertices[i].g,
-			.b = vertices[i].b,
-			.a = vertices[i].a,
-		};
-	}
-
 	opengl->UseProgram(gl_pipeline->program);
-	opengl->Uniform2f(gl_pipeline->target_size, (float)opengl->target.width, (float)opengl->target.height);
-	opengl->BindBuffer(GL_ARRAY_BUFFER, opengl->triangle_buffer);
-	opengl->BufferData(GL_ARRAY_BUFFER, sizeof(gl_vertices), gl_vertices, GL_DYNAMIC_DRAW);
+	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
 	opengl->EnableVertexAttribArray(GFX_OPENGL_POS_ATTR);
 	opengl->EnableVertexAttribArray(GFX_OPENGL_COLOR_ATTR);
 	opengl->VertexAttribPointer(GFX_OPENGL_POS_ATTR, 2, GL_FLOAT, GL_FALSE, sizeof(gfx_opengl_vertex_2d_t), (const void *)0);
@@ -893,6 +925,9 @@ static gfx_driver_t gfx_opengl = {
 	.viewport	  = gfx_opengl_viewport,
 	.clear_color	  = gfx_opengl_clear_color,
 	.clear		  = gfx_opengl_clear,
+	.buffer_init	  = gfx_opengl_buffer_init,
+	.buffer_free	  = gfx_opengl_buffer_free,
+	.buffer_set_data  = gfx_opengl_buffer_set_data,
 	.shader_init	  = gfx_opengl_shader_init,
 	.shader_free	  = gfx_opengl_shader_free,
 	.pipeline_init	  = gfx_opengl_pipeline_init,

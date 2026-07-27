@@ -23,12 +23,25 @@ static int t_gfx_software_init(gfx_t *gfx)
 
 static int t_gfx_software_draw(gfx_t *gfx, const gfx_vertex_2d_t vertices[3])
 {
-	gfx_pipeline_t pipeline = {0};
-	if (gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){0}) != &pipeline) {
+	if (vertices == NULL) {
 		return 1;
 	}
-	int ret = gfx_draw_triangle_2d(&pipeline, vertices);
+	gfx_buffer_t buffer = {0};
+	if (gfx_buffer_init(&buffer, gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) != &buffer) {
+		return 1;
+	}
+	if (gfx_buffer_set_data(&buffer, vertices, sizeof(gfx_vertex_2d_t) * 3)) {
+		gfx_buffer_free(&buffer);
+		return 1;
+	}
+	gfx_pipeline_t pipeline = {0};
+	if (gfx_pipeline_init(&pipeline, gfx, &(gfx_pipeline_config_t){0}) != &pipeline) {
+		gfx_buffer_free(&buffer);
+		return 1;
+	}
+	int ret = gfx_draw_triangle_2d(&pipeline, &buffer);
 	gfx_pipeline_free(&pipeline);
+	gfx_buffer_free(&buffer);
 	return ret;
 }
 
@@ -274,15 +287,14 @@ TEST(gfx_software_draw_triangle_2d_null_data)
 		.drv = t_gfx_software_driver(),
 	};
 	EXPECT_NOT_NULL(gfx.drv);
-	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_pipeline_t pipeline	    = {.gfx = &gfx, .data = (void *)1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
 
-	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, vertices), 1);
+	EXPECT_EQ(gfx.drv->draw_triangle_2d(&pipeline, NULL), 1);
 
 	END;
 }
 
-TEST(gfx_software_draw_triangle_2d_null_vertices)
+TEST(gfx_software_draw_triangle_2d_null_buffer)
 {
 	START;
 
@@ -324,6 +336,54 @@ TEST(gfx_software_shader_success)
 	END;
 }
 
+TEST(gfx_software_buffer_init_alloc_failure)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_buffer_t buffer = {0};
+	gfx.alloc	    = (alloc_t){.alloc = t_gfx_software_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_buffer_free_null_data)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_buffer_t buffer = {.gfx = &gfx};
+
+	gfx_buffer_free(&buffer);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_buffer_set_data_resizes_existing_buffer)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_draw_triangle_2d_writes_inside_pixel)
 {
 	START;
@@ -333,9 +393,9 @@ TEST(gfx_software_draw_triangle_2d_writes_inside_pixel)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -354,9 +414,9 @@ TEST(gfx_software_draw_triangle_2d_accepts_positive_winding)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -376,9 +436,9 @@ TEST(gfx_software_draw_triangle_2d_clamps_viewport_to_target)
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 2, 2, 8), 0);
 	EXPECT_EQ(gfx_viewport(&gfx, 1, 1, 4, 4), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -397,9 +457,9 @@ TEST(gfx_software_draw_triangle_2d_leaves_outside_pixel)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 1.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -0.5f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 0.5f, .r = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -419,9 +479,9 @@ TEST(gfx_software_draw_triangle_2d_respects_viewport)
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	EXPECT_EQ(gfx_viewport(&gfx, 1, 1, 3, 3), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 4.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 4.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -440,9 +500,9 @@ TEST(gfx_software_draw_triangle_2d_interpolates_first_vertex_color)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f, .y = 0.0f, .r = 1.0f, .a = 1.0f},
-		{.x = 4.0f, .y = 0.0f, .g = 1.0f, .a = 1.0f},
-		{.x = 0.0f, .y = 4.0f, .b = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = 1.0f, .g = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = -1.0f, .b = 1.0f, .a = 1.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -461,9 +521,9 @@ TEST(gfx_software_draw_triangle_2d_degenerate_succeeds)
 	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
 	EXPECT_EQ(t_gfx_software_set_target(&gfx, pixels, 4, 4, 16), 0);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 1.0f, .y = 1.0f},
-		{.x = 1.0f, .y = 1.0f},
-		{.x = 1.0f, .y = 1.0f},
+		{.x = 0.0f, .y = 0.0f},
+		{.x = 0.0f, .y = 0.0f},
+		{.x = 0.0f, .y = 0.0f},
 	};
 
 	EXPECT_EQ(t_gfx_software_draw(&gfx, vertices), 0);
@@ -746,8 +806,11 @@ STEST(gfx_software)
 	RUN(gfx_software_viewport_success);
 	RUN(gfx_software_viewport_null_data);
 	RUN(gfx_software_draw_triangle_2d_null_data);
-	RUN(gfx_software_draw_triangle_2d_null_vertices);
+	RUN(gfx_software_draw_triangle_2d_null_buffer);
 	RUN(gfx_software_draw_triangle_2d_without_target);
+	RUN(gfx_software_buffer_init_alloc_failure);
+	RUN(gfx_software_buffer_free_null_data);
+	RUN(gfx_software_buffer_set_data_resizes_existing_buffer);
 	RUN(gfx_software_shader_success);
 	RUN(gfx_software_draw_triangle_2d_writes_inside_pixel);
 	RUN(gfx_software_draw_triangle_2d_accepts_positive_winding);

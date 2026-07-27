@@ -147,11 +147,6 @@ static int gfx_shader_emit_glsl_statement(buf_t *text, const gfx_shader_ir_t *ir
 		return gfx_shader_text_put(text, STRV(";\n"));
 	}
 	if (stmt->kind == GFX_SHADER_STMT_ASSIGN) {
-		if (stage == GFX_SHADER_STAGE_VERTEX && strv_eq(stmt->lhs, STRV("output.position"))) {
-			return gfx_shader_text_put(text,
-						   STRV("    vec2 p = a_pos / u_target_size * 2.0 - 1.0;\n"
-							"    gl_Position = vec4(p.x, -p.y, 0.0, 1.0);\n"));
-		}
 		if (gfx_shader_text_put(text, STRV("    ")) || gfx_shader_emit_glsl_lhs(text, ir, stage, stmt->lhs) ||
 		    gfx_shader_text_putf(text, " %.*s ", stmt->op.len, stmt->op.data) ||
 		    gfx_shader_emit_glsl_expr(text, ir, stage, stmt->expr) || gfx_shader_text_put(text, STRV(";\n"))) {
@@ -177,9 +172,6 @@ static int gfx_shader_glsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx
 			if (type == NULL || name == NULL || gfx_shader_text_putf(text, "%s %s %s;\n", "attribute", type, name)) {
 				return 1; // LCOV_EXCL_LINE
 			}
-		}
-		if (gfx_shader_text_put(text, STRV("uniform vec2 u_target_size;\n"))) {
-			return 1; // LCOV_EXCL_LINE
 		}
 		for (u32 i = 0; i < ir->vs_out.member_count; i++) {
 			const char *type = gfx_shader_glsl_type(ir->vs_out.members[i].type);

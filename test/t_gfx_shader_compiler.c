@@ -8,6 +8,10 @@
 static int t_gfx_shader_compiler_alloc_count;
 static int t_gfx_shader_compiler_alloc_fail_at;
 
+enum {
+	T_GFX_SHADER_SPV_OP_F_NEGATE = 127,
+};
+
 static const char *t_gfx_shader_compiler_source = "vs_in 0 VertexIn {\n"
 						  "\tvec2f position : POSITION;\n"
 						  "\tvec4f color : COLOR0;\n"
@@ -69,6 +73,24 @@ static void t_gfx_shader_compiler_reset(void)
 {
 	t_gfx_shader_compiler_alloc_count   = 0;
 	t_gfx_shader_compiler_alloc_fail_at = 0;
+}
+
+static int t_gfx_shader_spv_has_op(const gfx_shader_code_t *shader, u32 op)
+{
+	const u32 *words = shader->code.data;
+	u32 count	 = (u32)(shader->code.used / sizeof(u32));
+	for (u32 i = 5; i < count;) {
+		u32 word_count = words[i] >> 16;
+		u32 word_op    = words[i] & 0xffffu;
+		if (word_op == op) {
+			return 1;
+		}
+		if (word_count == 0) {
+			return 0;
+		}
+		i += word_count;
+	}
+	return 0;
 }
 
 static void *t_gfx_shader_compiler_alloc_fail_n(alloc_t *alloc, size_t size)
@@ -247,7 +269,10 @@ TEST(gfx_shader_compiler_transpile_outputs)
 		EXPECT_NOT_NULL(strstr(shader.text, "attribute vec2 a_pos;"));
 		EXPECT_NOT_NULL(strstr(shader.text, "vec2 local = vec2"));
 		EXPECT_NOT_NULL(strstr(shader.text, "vec2 pos = a_pos.xy;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "gl_Position"));
+		EXPECT_NOT_NULL(strstr(shader.text, "gl_Position = vec4("));
+		EXPECT_NOT_NULL(strstr(shader.text, "local.x"));
+		EXPECT_NOT_NULL(strstr(shader.text, "local.y"));
+		EXPECT_NULL(strstr(shader.text, "u_target_size"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -298,6 +323,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 		EXPECT_EQ(shader.language, GFX_SHADER_LANGUAGE_SPIRV);
 		EXPECT_EQ(shader.stage, GFX_SHADER_STAGE_VERTEX);
 		EXPECT_NE(shader.code.used, 0);
+		EXPECT_EQ(t_gfx_shader_spv_has_op(&shader, T_GFX_SHADER_SPV_OP_F_NEGATE), 1);
 	}
 
 	gfx_shader_code_free(&shader);

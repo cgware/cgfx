@@ -171,17 +171,34 @@ TEST(gfx_none_clear_null_gfx)
 	END;
 }
 
+TEST(gfx_none_buffer_success)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_EQ(t_gfx_none_init(&gfx), 0);
+	gfx_buffer_t buffer = {0};
+	int data	    = 1;
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, &data, sizeof(data)), 0);
+	gfx_buffer_free(&buffer);
+
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_none_draw_triangle_2d_success)
 {
 	START;
 
 	gfx_t gfx = {0};
 	EXPECT_EQ(t_gfx_none_init(&gfx), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_shader_t shader	    = {0};
+	gfx_shader_t shader = {0};
 	EXPECT_NOT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("none")}));
 	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)1};
-	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, vertices), 0);
+	gfx_buffer_t buffer	= {.gfx = &gfx};
+	EXPECT_EQ(gfx_draw_triangle_2d(&pipeline, &buffer), 0);
 
 	gfx_shader_free(&shader);
 	gfx_free(&gfx);
@@ -212,15 +229,15 @@ TEST(gfx_none_draw_triangle_2d_null_gfx)
 
 	gfx_driver_t *drv = t_gfx_none_driver();
 	EXPECT_NOT_NULL(drv);
-	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_pipeline_t pipeline	    = {.data = (void *)1};
+	gfx_buffer_t buffer	= {0};
+	gfx_pipeline_t pipeline = {.data = (void *)1};
 
-	EXPECT_EQ(drv->draw_triangle_2d(&pipeline, vertices), 1);
+	EXPECT_EQ(drv->draw_triangle_2d(&pipeline, &buffer), 1);
 
 	END;
 }
 
-TEST(gfx_none_draw_triangle_2d_null_vertices)
+TEST(gfx_none_draw_triangle_2d_null_buffer)
 {
 	START;
 
@@ -250,10 +267,11 @@ STEST(gfx_none)
 	RUN(gfx_none_set_target_null_gfx);
 	RUN(gfx_none_clear_success);
 	RUN(gfx_none_clear_null_gfx);
+	RUN(gfx_none_buffer_success);
 	RUN(gfx_none_pipeline_success);
 	RUN(gfx_none_draw_triangle_2d_success);
 	RUN(gfx_none_draw_triangle_2d_null_gfx);
-	RUN(gfx_none_draw_triangle_2d_null_vertices);
+	RUN(gfx_none_draw_triangle_2d_null_buffer);
 
 	SEND;
 }

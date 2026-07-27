@@ -35,6 +35,7 @@ enum {
 	GFX_SHADER_SPV_OP_MEMBER_DECORATE     = 72,
 	GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT = 80,
 	GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT   = 81,
+	GFX_SHADER_SPV_OP_F_NEGATE	      = 127,
 	GFX_SHADER_SPV_OP_LABEL		      = 248,
 	GFX_SHADER_SPV_OP_RETURN	      = 253,
 };
@@ -302,13 +303,22 @@ static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, cons
 	u32 loaded = gfx_shader_spv_id(spv);
 	u32 x	   = gfx_shader_spv_id(spv);
 	u32 y	   = gfx_shader_spv_id(spv);
+	u32 neg_y  = gfx_shader_spv_id(spv);
 	u32 pos	   = gfx_shader_spv_id(spv);
 	u32 ptr	   = gfx_shader_spv_id(spv);
 	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LOAD, 4, input->type_id, loaded, input->var_id) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, x, loaded, 0) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, y, loaded, 1) ||
-	       gfx_shader_spv_inst(
-		       code, GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT, 7, spv->vec4_id, pos, x, y, spv->float_zero_id, spv->float_one_id) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_NEGATE, 4, spv->float_id, neg_y, y) ||
+	       gfx_shader_spv_inst(code,
+				   GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT,
+				   7,
+				   spv->vec4_id,
+				   pos,
+				   x,
+				   neg_y,
+				   spv->float_zero_id,
+				   spv->float_one_id) ||
 	       gfx_shader_spv_inst(code,
 				   GFX_SHADER_SPV_OP_ACCESS_CHAIN,
 				   5,

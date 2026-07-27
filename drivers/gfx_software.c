@@ -1,15 +1,19 @@
 #include "gfx_driver.h"
+
 #include "log.h"
 
 typedef struct gfx_software_s {
 	gfx_target_t target;
-	alloc_t alloc;
 	u16 viewport_x;
 	u16 viewport_y;
 	u16 viewport_width;
 	u16 viewport_height;
 	u8 color[4];
 } gfx_software_t;
+
+typedef struct gfx_software_buffer_s {
+	buf_t buf;
+} gfx_software_buffer_t;
 
 static u8 color_u8(float value)
 {
@@ -43,7 +47,6 @@ static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
 		return 1;
 	}
 	*render = (gfx_software_t){
-		.alloc = gfx->alloc,
 		.color = {0, 0, 0, 255},
 	};
 	gfx->data = render;
@@ -57,7 +60,7 @@ static int gfx_software_free(gfx_t *gfx)
 	}
 
 	gfx_software_t *render = gfx->data;
-	alloc_free(&render->alloc, render, sizeof(*render));
+	alloc_free(&gfx->alloc, render, sizeof(gfx_software_t));
 	gfx->data = NULL;
 	return 0;
 }
@@ -121,6 +124,66 @@ static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 	pixel[3]  = color[3];
 }
 
+static void vertex_to_screen(gfx_vertex_2d_t *out, const gfx_vertex_2d_t *vertex, const gfx_software_t *render)
+{
+	*out = (gfx_vertex_2d_t){
+		.x = (float)render->viewport_x + (vertex->x + 1.0f) * 0.5f * (float)render->viewport_width,
+		.y = (float)render->viewport_y + (1.0f - vertex->y) * 0.5f * (float)render->viewport_height,
+		.r = vertex->r,
+		.g = vertex->g,
+		.b = vertex->b,
+		.a = vertex->a,
+	};
+}
+
+static int gfx_software_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	(void)config;
+
+	gfx_software_buffer_t *sw_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_software_buffer_t));
+	if (sw_buffer == NULL) {
+		return 1;
+	}
+	*sw_buffer   = (gfx_software_buffer_t){0};
+	buffer->data = sw_buffer;
+
+	return 0;
+}
+
+static int gfx_software_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+{
+	(void)buffer;
+	(void)data;
+	(void)size;
+
+	gfx_software_buffer_t *sw_buffer = buffer->data;
+	if (sw_buffer->buf.data == NULL) {
+		buf_init(&sw_buffer->buf, size, buffer->gfx->alloc);
+	} else {
+		buf_resize(&sw_buffer->buf, size);
+	}
+
+	buf_set(&sw_buffer->buf, 0, size, data);
+
+	return 0;
+}
+
+static void gfx_software_buffer_free(gfx_buffer_t *buffer)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL) {
+		return;
+	}
+
+	gfx_software_buffer_t *sw_buffer = buffer->data;
+
+	if (sw_buffer->buf.data != NULL) {
+		buf_free(&sw_buffer->buf);
+		sw_buffer->buf.data = NULL;
+	}
+	alloc_free(&buffer->gfx->alloc, sw_buffer, sizeof(gfx_software_buffer_t));
+	buffer->data = NULL;
+}
+
 static int gfx_software_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	(void)shader;
@@ -145,15 +208,22 @@ static void gfx_software_pipeline_free(gfx_pipeline_t *pipeline)
 	(void)pipeline;
 }
 
-static int gfx_software_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
+static int gfx_software_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || buffer == NULL) {
 		return 1;
 	}
 
-	gfx_software_t *render = pipeline->gfx->data;
+	gfx_software_t *render		 = pipeline->gfx->data;
+	gfx_software_buffer_t *sw_buffer = buffer->data;
 	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
 		return 1;
+	}
+
+	const gfx_vertex_2d_t *buffer_vertices = sw_buffer->buf.data;
+	gfx_vertex_2d_t vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		vertex_to_screen(&vertices[i], &buffer_vertices[i], render);
 	}
 
 	float area = edge(&vertices[0], &vertices[1], vertices[2].x, vertices[2].y);
@@ -251,6 +321,9 @@ static gfx_driver_t gfx_software = {
 	.viewport	  = gfx_software_viewport,
 	.clear_color	  = gfx_software_clear_color,
 	.clear		  = gfx_software_clear,
+	.buffer_init	  = gfx_software_buffer_init,
+	.buffer_free	  = gfx_software_buffer_free,
+	.buffer_set_data  = gfx_software_buffer_set_data,
 	.shader_init	  = gfx_software_shader_init,
 	.shader_free	  = gfx_software_shader_free,
 	.pipeline_init	  = gfx_software_pipeline_init,

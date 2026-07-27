@@ -68,6 +68,26 @@ static int gfx_none_clear(gfx_t *gfx, u32 buffers)
 	return 0;
 }
 
+static int gfx_none_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	(void)buffer;
+	(void)config;
+	return 0;
+}
+
+static void gfx_none_buffer_free(gfx_buffer_t *buffer)
+{
+	(void)buffer;
+}
+
+static int gfx_none_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+{
+	(void)buffer;
+	(void)data;
+	(void)size;
+	return 0;
+}
+
 static int gfx_none_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	(void)shader;
@@ -92,9 +112,9 @@ static void gfx_none_pipeline_free(gfx_pipeline_t *pipeline)
 	(void)pipeline;
 }
 
-static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
+static int gfx_none_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || buffer == NULL) {
 		return 1;
 	}
 
@@ -110,6 +130,9 @@ static gfx_driver_t gfx_none = {
 	.viewport	  = gfx_none_viewport,
 	.clear_color	  = gfx_none_clear_color,
 	.clear		  = gfx_none_clear,
+	.buffer_init	  = gfx_none_buffer_init,
+	.buffer_free	  = gfx_none_buffer_free,
+	.buffer_set_data  = gfx_none_buffer_set_data,
 	.shader_init	  = gfx_none_shader_init,
 	.shader_free	  = gfx_none_shader_free,
 	.pipeline_init	  = gfx_none_pipeline_init,

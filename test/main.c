@@ -3,6 +3,7 @@
 #include "test.h"
 
 STEST(gfx);
+STEST(gfx_buffer);
 STEST(gfx_shader);
 STEST(gfx_shader_compiler);
 STEST(gfx_pipeline);
@@ -16,6 +17,7 @@ TEST(cgfx)
 {
 	SSTART;
 	RUN(gfx);
+	RUN(gfx_buffer);
 	RUN(gfx_shader);
 	RUN(gfx_shader_compiler);
 	RUN(gfx_pipeline);

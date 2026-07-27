@@ -1,6 +1,5 @@
 #include "buf.h"
 #include "fs.h"
-#include "gfx.h"
 #include "gfx_driver.h"
 #include "log.h"
 #include "proc.h"
@@ -75,6 +74,7 @@ int main(void)
 	fs_t fs			= {0};
 	proc_t proc		= {0};
 	gfx_t gfx		= {0};
+	gfx_buffer_t vb		= {0};
 	gfx_shader_t vertex	= {0};
 	gfx_shader_t fragment	= {0};
 	gfx_pipeline_t pipeline = {0};
@@ -93,6 +93,34 @@ int main(void)
 		ret = 1;
 	}
 
+	if (ret == 0 && gfx_buffer_init(&vb, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize triangle vertex shader");
+		ret = 1;
+	}
+	gfx_vertex_2d_t vertices[3] = {
+		{
+			.x = 0.0f,
+			.y = 0.7f,
+			.r = 1.0f,
+			.a = 1.0f,
+		},
+		{
+			.x = 0.7f,
+			.y = -0.7f,
+			.g = 1.0f,
+			.a = 1.0f,
+		},
+		{
+			.x = -0.7f,
+			.y = -0.7f,
+			.b = 1.0f,
+			.a = 1.0f,
+		},
+	};
+	if (ret == 0 && gfx_buffer_set_data(&vb, vertices, sizeof(vertices))) {
+		log_error("cgfx_example", "main", NULL, "failed to set triangle vertex data");
+		ret = 1;
+	}
 	const char *triangle_src = "vs_in 0 VertexIn {\n"
 				   "\tvec2f position : POSITION;\n"
 				   "\tvec4f color : COLOR0;\n"
@@ -155,27 +183,7 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
 		ret = 1;
 	}
-	gfx_vertex_2d_t vertices[3] = {
-		{
-			.x = WIDTH * 0.5f,
-			.y = HEIGHT * 0.15f,
-			.r = 1.0f,
-			.a = 1.0f,
-		},
-		{
-			.x = WIDTH * 0.85f,
-			.y = HEIGHT * 0.85f,
-			.g = 1.0f,
-			.a = 1.0f,
-		},
-		{
-			.x = WIDTH * 0.15f,
-			.y = HEIGHT * 0.85f,
-			.b = 1.0f,
-			.a = 1.0f,
-		},
-	};
-	if (ret == 0 && gfx_draw_triangle_2d(&pipeline, vertices)) {
+	if (ret == 0 && gfx_draw_triangle_2d(&pipeline, &vb)) {
 		log_error("cgfx_example", "main", NULL, "failed to draw triangle");
 		ret = 1;
 	}

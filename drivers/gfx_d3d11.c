@@ -236,14 +236,18 @@ typedef struct gfx_d3d11_s {
 	ID3D11DeviceContext *context;
 	IDXGISwapChain *swapchain;
 	ID3D11RenderTargetView *render_target;
-	ID3D11Buffer *triangle_buffer;
 	float color[4];
 	PFN_D3D11CreateDevice D3D11CreateDevice;
 	PFN_D3DCompile D3DCompile;
 } gfx_d3d11_t;
 
+typedef struct gfx_d3d11_buffer_s {
+	ID3D11Buffer *buffer;
+} gfx_d3d11_buffer_t;
+
 typedef struct gfx_d3d11_shader_s {
 	ID3DBlob *code;
+	gfx_shader_stage_t stage;
 	union {
 		ID3D11VertexShader *vertex;
 		ID3D11PixelShader *pixel;
@@ -277,17 +281,8 @@ static size_t cstr_len(const char *str)
 	return len;
 }
 
-static void gfx_d3d11_draw_free(gfx_d3d11_t *d3d11)
-{
-	if (d3d11->triangle_buffer != NULL) {
-		d3d11_release(d3d11->triangle_buffer);
-	}
-	d3d11->triangle_buffer = NULL;
-}
-
 static int gfx_d3d11_init_free(gfx_t *gfx, gfx_d3d11_t *d3d11)
 {
-	gfx_d3d11_draw_free(d3d11);
 	if (d3d11->context != NULL) {
 		d3d11_release(d3d11->context);
 	}
@@ -385,7 +380,6 @@ static int gfx_d3d11_free(gfx_t *gfx)
 	}
 
 	gfx_d3d11_t *d3d11 = gfx->data;
-	gfx_d3d11_draw_free(d3d11);
 	gfx_d3d11_target_free(d3d11);
 	d3d11_release(d3d11->context);
 	d3d11_release(d3d11->device);
@@ -582,27 +576,119 @@ static int gfx_d3d11_compile_shader(gfx_d3d11_t *d3d11, const char *source, cons
 	return 0;
 }
 
-static int gfx_d3d11_create_draw_state(gfx_d3d11_t *d3d11)
+static void gfx_d3d11_buffer_free(gfx_buffer_t *buffer)
 {
-	if (d3d11->triangle_buffer != NULL) {
-		return 0; // LCOV_EXCL_LINE
+	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL) {
+		return;
 	}
+
+	gfx_d3d11_buffer_t *d3d_buffer = buffer->data;
+
+	if (d3d_buffer->buffer != NULL) {
+		d3d11_release(d3d_buffer->buffer);
+		d3d_buffer->buffer = NULL;
+	}
+	alloc_free(&buffer->gfx->alloc, d3d_buffer, sizeof(gfx_d3d11_buffer_t));
+	buffer->data = NULL;
+}
+
+static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11 = buffer->gfx->data;
 
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
 	if (device->CreateBuffer == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
-	D3D11_BUFFER_DESC buffer = {
+	UINT flags = 0;
+	switch (config->type) {
+	case GFX_BUFFER_VERTEX: {
+		flags |= D3D11_BIND_VERTEX_BUFFER;
+		break;
+	}
+	default: {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", config->type);
+		return 1;
+	}
+	}
+
+	gfx_d3d11_buffer_t *d3d_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_d3d11_buffer_t));
+	if (d3d_buffer == NULL) {
+		return 1;
+	}
+	*d3d_buffer  = (gfx_d3d11_buffer_t){0};
+	buffer->data = d3d_buffer;
+
+	D3D11_BUFFER_DESC desc = {
 		.ByteWidth = (UINT)(sizeof(gfx_d3d11_vertex_2d_t) * 3),
 		.Usage	   = D3D11_USAGE_DEFAULT,
-		.BindFlags = D3D11_BIND_VERTEX_BUFFER,
+		.BindFlags = flags,
 	};
-	if (!hresult_ok(device->CreateBuffer(d3d11->device, &buffer, NULL, &d3d11->triangle_buffer)) || d3d11->triangle_buffer == NULL) {
-		gfx_d3d11_draw_free(d3d11); // LCOV_EXCL_LINE
-		return 1;		    // LCOV_EXCL_LINE
+	if (!hresult_ok(device->CreateBuffer(d3d11->device, &desc, NULL, &d3d_buffer->buffer)) || d3d_buffer->buffer == NULL) {
+		gfx_d3d11_buffer_free(buffer);
+		return 1;
 	}
 	return 0;
+}
+
+static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+{
+	(void)size;
+
+	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11	       = buffer->gfx->data;
+	gfx_d3d11_buffer_t *d3d_buffer = buffer->data;
+
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+
+	const gfx_vertex_2d_t *vertices = data;
+	gfx_d3d11_vertex_2d_t d3d_vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		d3d_vertices[i] = (gfx_d3d11_vertex_2d_t){
+			.x = vertices[i].x,
+			.y = vertices[i].y,
+			.r = vertices[i].r,
+			.g = vertices[i].g,
+			.b = vertices[i].b,
+			.a = vertices[i].a,
+		};
+	}
+
+	context->UpdateSubresource(d3d11->context, d3d_buffer->buffer, 0, NULL, d3d_vertices, 0, 0);
+
+	return 0;
+}
+
+static void gfx_d3d11_shader_free(gfx_shader_t *shader)
+{
+	if (shader == NULL || shader->gfx == NULL || shader->data == NULL) {
+		return; // LCOV_EXCL_LINE
+	}
+
+	gfx_d3d11_shader_t *d3d_shader = shader->data;
+
+	if (d3d_shader->stage == GFX_SHADER_STAGE_VERTEX && d3d_shader->shader.vertex != NULL) {
+		d3d11_release(d3d_shader->shader.vertex);
+		d3d_shader->shader.vertex = NULL;
+	}
+	if (d3d_shader->stage == GFX_SHADER_STAGE_FRAGMENT && d3d_shader->shader.pixel != NULL) {
+		d3d11_release(d3d_shader->shader.pixel);
+		d3d_shader->shader.pixel = NULL;
+	}
+	if (d3d_shader->code != NULL) {
+		d3d11_release(d3d_shader->code);
+		d3d_shader->code = NULL;
+	}
+	alloc_free(&shader->gfx->alloc, d3d_shader, sizeof(gfx_d3d11_shader_t));
+	shader->data = NULL;
 }
 
 static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
@@ -640,17 +726,19 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 	}
 	}
 
-	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&shader->gfx->alloc, sizeof(*d3d_shader));
+	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_d3d11_shader_t));
 	if (d3d_shader == NULL) {
 		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
 		return 1;			    // LCOV_EXCL_LINE
 	}
-	*d3d_shader = (gfx_d3d11_shader_t){0};
+	*d3d_shader	  = (gfx_d3d11_shader_t){0};
+	d3d_shader->stage = config->stage;
+	shader->data	  = d3d_shader;
 
 	if (gfx_d3d11_compile_shader(d3d11, shader_code.text, target, &d3d_shader->code)) {
-		gfx_shader_code_free(&shader_code);				  // LCOV_EXCL_LINE
-		alloc_free(&shader->gfx->alloc, d3d_shader, sizeof(*d3d_shader)); // LCOV_EXCL_LINE
-		return 1;							  // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
+		gfx_d3d11_shader_free(shader);	    // LCOV_EXCL_LINE
+		return 1;			    // LCOV_EXCL_LINE
 	}
 
 	gfx_shader_code_free(&shader_code);
@@ -663,9 +751,8 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 							NULL,
 							&d3d_shader->shader.vertex);
 		if (!hresult_ok(hr) || d3d_shader->shader.vertex == NULL) {
-			d3d11_release(d3d_shader->code);				  // LCOV_EXCL_LINE
-			alloc_free(&shader->gfx->alloc, d3d_shader, sizeof(*d3d_shader)); // LCOV_EXCL_LINE
-			return 1;							  // LCOV_EXCL_LINE
+			gfx_d3d11_shader_free(shader); // LCOV_EXCL_LINE
+			return 1;		       // LCOV_EXCL_LINE
 		}
 		break;
 	}
@@ -676,31 +763,29 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 						       NULL,
 						       &d3d_shader->shader.pixel);
 		if (!hresult_ok(hr) || d3d_shader->shader.pixel == NULL) {
-			d3d11_release(d3d_shader->code);				  // LCOV_EXCL_LINE
-			alloc_free(&shader->gfx->alloc, d3d_shader, sizeof(*d3d_shader)); // LCOV_EXCL_LINE
-			return 1;							  // LCOV_EXCL_LINE
+			gfx_d3d11_shader_free(shader); // LCOV_EXCL_LINE
+			return 1;		       // LCOV_EXCL_LINE
 		}
 		break;
 	}
 	}
 
-	shader->data = d3d_shader;
 	return 0;
 }
 
-static void gfx_d3d11_shader_free(gfx_shader_t *shader)
+static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 {
-	if (shader == NULL || shader->gfx == NULL || shader->data == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->data == NULL) {
 		return; // LCOV_EXCL_LINE
 	}
 
-	gfx_d3d11_shader_t *d3d_shader = shader->data;
-
-	d3d11_release(d3d_shader->shader.vertex);
-	d3d11_release(d3d_shader->shader.pixel);
-	d3d11_release(d3d_shader->code);
-	alloc_free(&shader->gfx->alloc, d3d_shader, sizeof(*d3d_shader));
-	shader->data = NULL;
+	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
+	if (d3d_pipeline->input_layout != NULL) {
+		d3d11_release(d3d_pipeline->input_layout);
+		d3d_pipeline->input_layout = NULL;
+	}
+	alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
+	pipeline->data = NULL;
 }
 
 static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
@@ -721,7 +806,8 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	if (d3d_pipeline == NULL) {
 		return 1; // LCOV_EXCL_LINE
 	}
-	*d3d_pipeline = (gfx_d3d11_pipeline_t){0};
+	*d3d_pipeline  = (gfx_d3d11_pipeline_t){0};
+	pipeline->data = d3d_pipeline;
 
 	D3D11_INPUT_ELEMENT_DESC elements[2] = {
 		{
@@ -743,42 +829,29 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	HRESULT hr = device->CreateInputLayout(
 		d3d11->device, elements, 2, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
 	if (!hresult_ok(hr) || d3d_pipeline->input_layout == NULL) {
-		alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t)); // LCOV_EXCL_LINE
-		return 1;								       // LCOV_EXCL_LINE
+		gfx_d3d11_pipeline_free(pipeline); // LCOV_EXCL_LINE
+		return 1;			   // LCOV_EXCL_LINE
 	}
 
 	d3d_pipeline->vertex_shader = vs->shader.vertex;
 	d3d_pipeline->pixel_shader  = fs->shader.pixel;
-	pipeline->data		    = d3d_pipeline;
+
 	return 0;
 }
 
-static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
+static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_buffer_t *buffer)
 {
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->data == NULL) {
-		return; // LCOV_EXCL_LINE
-	}
-
-	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
-	d3d11_release(d3d_pipeline->input_layout);
-	alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
-	pipeline->data = NULL;
-}
-
-static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_vertex_2d_t vertices[3])
-{
-	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || vertices == NULL) {
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || pipeline->data == NULL || buffer == NULL ||
+	    buffer->data == NULL) {
 		return 1;
 	}
 
 	gfx_d3d11_t *d3d11		   = pipeline->gfx->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
+	gfx_d3d11_buffer_t *d3d_buffer	   = buffer->data;
 	if (d3d11->target.type != GFX_TARGET_SURFACE || d3d11->render_target == NULL || d3d11->target.width == 0 ||
 	    d3d11->target.height == 0) {
 		return 1;
-	}
-	if (gfx_d3d11_create_draw_state(d3d11)) {
-		return 1; // LCOV_EXCL_LINE
 	}
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
@@ -788,20 +861,8 @@ static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_
 		return 1; // LCOV_EXCL_LINE
 	}
 
-	gfx_d3d11_vertex_2d_t d3d_vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		d3d_vertices[i] = (gfx_d3d11_vertex_2d_t){
-			.x = vertices[i].x / (float)d3d11->target.width * 2.0f - 1.0f,
-			.y = 1.0f - vertices[i].y / (float)d3d11->target.height * 2.0f,
-			.r = vertices[i].r,
-			.g = vertices[i].g,
-			.b = vertices[i].b,
-			.a = vertices[i].a,
-		};
-	}
-
 	ID3D11RenderTargetView *views[1] = {d3d11->render_target};
-	ID3D11Buffer *buffers[1]	 = {d3d11->triangle_buffer};
+	ID3D11Buffer *buffers[1]	 = {d3d_buffer->buffer};
 	UINT strides[1]			 = {sizeof(gfx_d3d11_vertex_2d_t)};
 	UINT offsets[1]			 = {0};
 
@@ -811,7 +872,6 @@ static int gfx_d3d11_draw_triangle_2d(const gfx_pipeline_t *pipeline, const gfx_
 	context->IASetPrimitiveTopology(d3d11->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->VSSetShader(d3d11->context, d3d_pipeline->vertex_shader, NULL, 0);
 	context->PSSetShader(d3d11->context, d3d_pipeline->pixel_shader, NULL, 0);
-	context->UpdateSubresource(d3d11->context, d3d11->triangle_buffer, 0, NULL, d3d_vertices, 0, 0);
 	context->Draw(d3d11->context, 3, 0);
 	return 0;
 }
@@ -841,6 +901,9 @@ static gfx_driver_t gfx_d3d11 = {
 	.viewport	  = gfx_d3d11_viewport,
 	.clear_color	  = gfx_d3d11_clear_color,
 	.clear		  = gfx_d3d11_clear,
+	.buffer_init	  = gfx_d3d11_buffer_init,
+	.buffer_free	  = gfx_d3d11_buffer_free,
+	.buffer_set_data  = gfx_d3d11_buffer_set_data,
 	.shader_init	  = gfx_d3d11_shader_init,
 	.shader_free	  = gfx_d3d11_shader_free,
 	.pipeline_init	  = gfx_d3d11_pipeline_init,
