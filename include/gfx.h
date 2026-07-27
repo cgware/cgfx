@@ -30,6 +30,8 @@ typedef enum gfx_api_e {
 	GFX_API_D3D11,
 } gfx_api_t;
 
+typedef struct gfx_target_s gfx_target_t;
+
 typedef struct gfx_native_s {
 	gfx_api_t api;
 	u64 instance;
@@ -44,6 +46,7 @@ typedef struct gfx_surface_ops_s {
 	int (*make_current)(gfx_surface_t *surface);
 	int (*clear_current)(gfx_surface_t *surface);
 	int (*present)(gfx_surface_t *surface);
+	int (*target)(gfx_surface_t *surface, gfx_target_t *target);
 } gfx_surface_ops_t;
 
 struct gfx_surface_s {
@@ -60,7 +63,7 @@ typedef struct gfx_plan_s {
 	u32 device_extension_count;
 } gfx_plan_t;
 
-typedef struct gfx_target_s {
+struct gfx_target_s {
 	gfx_target_type_t type;
 	gfx_format_t format;
 	void *data;
@@ -68,7 +71,7 @@ typedef struct gfx_target_s {
 	u16 width;
 	u16 height;
 	size_t stride;
-} gfx_target_t;
+};
 
 typedef struct gfx_vertex_2d_s {
 	float x;

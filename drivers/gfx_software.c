@@ -4,6 +4,7 @@
 
 typedef struct gfx_software_s {
 	gfx_target_t target;
+	gfx_surface_t *surface;
 	u16 viewport_x;
 	u16 viewport_y;
 	u16 viewport_width;
@@ -26,14 +27,25 @@ static u8 color_u8(float value)
 	return (u8)(value * 255.0f + 0.5f);
 }
 
-static int target_valid(const gfx_target_t *target)
+static int memory_target_valid(const gfx_target_t *target)
 {
-	if (target == NULL || target->type != GFX_TARGET_MEMORY || target->format != GFX_FORMAT_RGBA8 || target->data == NULL ||
-	    target->width == 0 || target->height == 0) {
+	if (target == NULL || target->format != GFX_FORMAT_RGBA8 || target->data == NULL || target->width == 0 || target->height == 0) {
 		return 0;
 	}
 
 	return target->stride >= (size_t)target->width * 4;
+}
+
+static int surface_target_valid(const gfx_target_t *target)
+{
+	return target != NULL && target->type == GFX_TARGET_SURFACE && target->format == GFX_FORMAT_RGBA8 && target->surface != NULL &&
+	       target->surface->api == GFX_API_SOFTWARE && target->surface->ops != NULL && target->surface->ops->present != NULL &&
+	       target->surface->ops->target != NULL && target->width != 0 && target->height != 0;
+}
+
+static int target_valid(const gfx_target_t *target)
+{
+	return target != NULL && (target->type == GFX_TARGET_MEMORY || target->type == GFX_TARGET_SURFACE) && memory_target_valid(target);
 }
 
 static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
@@ -72,18 +84,42 @@ static int gfx_software_set_target(gfx_t *gfx, const gfx_target_t *target)
 	}
 
 	gfx_software_t *render = gfx->data;
-	if (target->type == GFX_TARGET_NONE) {
-		render->target = (gfx_target_t){0};
+	switch (target->type) {
+	case GFX_TARGET_NONE: {
+		render->target	= (gfx_target_t){0};
+		render->surface = NULL;
 		return 0;
 	}
-	if (!target_valid(target)) {
+	case GFX_TARGET_SURFACE: {
+		if (!surface_target_valid(target)) {
+			return 1;
+		}
+
+		gfx_target_t surface_target = *target;
+		if (target->surface->ops->target(target->surface, &surface_target) || !target_valid(&surface_target)) {
+			return 1;
+		}
+		render->target	= surface_target;
+		render->surface = target->surface;
+		break;
+	}
+	case GFX_TARGET_MEMORY: {
+		if (!target_valid(target)) {
+			return 1;
+		}
+		render->target	= *target;
+		render->surface = NULL;
+		break;
+	}
+	default: {
 		return 1;
 	}
-	render->target		= *target;
+	}
+
 	render->viewport_x	= 0;
 	render->viewport_y	= 0;
-	render->viewport_width	= target->width;
-	render->viewport_height = target->height;
+	render->viewport_width	= render->target.width;
+	render->viewport_height = render->target.height;
 	return 0;
 }
 
@@ -312,6 +348,21 @@ static int gfx_software_clear(gfx_t *gfx, u32 buffers)
 	return 0;
 }
 
+static int gfx_software_present(gfx_t *gfx)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_software_t *render = gfx->data;
+	if (render->target.type != GFX_TARGET_SURFACE || render->surface == NULL || render->surface->ops == NULL ||
+	    render->surface->ops->present == NULL) {
+		return 1;
+	}
+
+	return render->surface->ops->present(render->surface);
+}
+
 static gfx_driver_t gfx_software = {
 	.name		  = "software",
 	.api		  = GFX_API_SOFTWARE,
@@ -329,6 +380,7 @@ static gfx_driver_t gfx_software = {
 	.pipeline_init	  = gfx_software_pipeline_init,
 	.pipeline_free	  = gfx_software_pipeline_free,
 	.draw_triangle_2d = gfx_software_draw_triangle_2d,
+	.present	  = gfx_software_present,
 };
 
 GFX_DRIVER(gfx_software, &gfx_software);

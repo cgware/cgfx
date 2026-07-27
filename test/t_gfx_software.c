@@ -10,6 +10,63 @@ static void *t_gfx_software_alloc_fail(alloc_t *alloc, size_t size)
 	return NULL;
 }
 
+static u8 t_gfx_software_surface_pixels[4];
+static int t_gfx_software_surface_target_calls;
+static int t_gfx_software_surface_target_ret;
+static int t_gfx_software_surface_present_calls;
+static int t_gfx_software_surface_present_ret;
+
+static int t_gfx_software_surface_target(gfx_surface_t *surface, gfx_target_t *target)
+{
+	t_gfx_software_surface_target_calls++;
+	if (surface == NULL || target == NULL) {
+		return 1;
+	}
+	if (t_gfx_software_surface_target_ret) {
+		return t_gfx_software_surface_target_ret;
+	}
+
+	target->type   = GFX_TARGET_SURFACE;
+	target->format = GFX_FORMAT_RGBA8;
+	target->data   = t_gfx_software_surface_pixels;
+	target->width  = 1;
+	target->height = 1;
+	target->stride = 4;
+	return 0;
+}
+
+static int t_gfx_software_surface_present(gfx_surface_t *surface)
+{
+	t_gfx_software_surface_present_calls++;
+	return surface == NULL ? 1 : t_gfx_software_surface_present_ret;
+}
+
+static const gfx_surface_ops_t t_gfx_software_surface_ops = {
+	.present = t_gfx_software_surface_present,
+	.target	 = t_gfx_software_surface_target,
+};
+
+static gfx_surface_t t_gfx_software_surface(void)
+{
+	return (gfx_surface_t){
+		.api  = GFX_API_SOFTWARE,
+		.data = t_gfx_software_surface_pixels,
+		.ops  = &t_gfx_software_surface_ops,
+	};
+}
+
+static void t_gfx_software_surface_reset(void)
+{
+	t_gfx_software_surface_pixels[0]     = 0;
+	t_gfx_software_surface_pixels[1]     = 0;
+	t_gfx_software_surface_pixels[2]     = 0;
+	t_gfx_software_surface_pixels[3]     = 0;
+	t_gfx_software_surface_target_calls  = 0;
+	t_gfx_software_surface_target_ret    = 0;
+	t_gfx_software_surface_present_calls = 0;
+	t_gfx_software_surface_present_ret   = 0;
+}
+
 static gfx_driver_t *t_gfx_software_driver(void)
 {
 	return gfx_driver_find(STRV("software"));
@@ -247,6 +304,110 @@ TEST(gfx_software_set_target_invalid_type)
 	};
 
 	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_target_unknown_type)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	= (gfx_target_type_t)0xFF,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_surface_target_callback_failure)
+{
+	START;
+
+	t_gfx_software_surface_reset();
+	t_gfx_software_surface_target_ret = 1;
+	gfx_surface_t surface		  = t_gfx_software_surface();
+	gfx_t gfx			  = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &surface,
+		.width	 = 1,
+		.height	 = 1,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+	EXPECT_EQ(t_gfx_software_surface_target_calls, 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_surface_target_success)
+{
+	START;
+
+	t_gfx_software_surface_reset();
+	gfx_surface_t surface = t_gfx_software_surface();
+	gfx_t gfx	      = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	gfx_target_t target = {
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &surface,
+		.width	 = 1,
+		.height	 = 1,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(t_gfx_software_surface_target_calls, 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_set_memory_target_clears_surface)
+{
+	START;
+
+	t_gfx_software_surface_reset();
+	gfx_surface_t surface = t_gfx_software_surface();
+	u8 pixels[4]	      = {0};
+	gfx_t gfx	      = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(gfx_set_target(&gfx,
+				 &(gfx_target_t){
+					 .type	  = GFX_TARGET_SURFACE,
+					 .format  = GFX_FORMAT_RGBA8,
+					 .surface = &surface,
+					 .width	  = 1,
+					 .height  = 1,
+				 }),
+		  0);
+
+	EXPECT_EQ(gfx_set_target(&gfx,
+				 &(gfx_target_t){
+					 .type	 = GFX_TARGET_MEMORY,
+					 .format = GFX_FORMAT_RGBA8,
+					 .data	 = pixels,
+					 .width	 = 1,
+					 .height = 1,
+					 .stride = 4,
+				 }),
+		  0);
+	EXPECT_EQ(gfx_present(&gfx), 1);
 
 	gfx_free(&gfx);
 	END;
@@ -787,6 +948,71 @@ TEST(gfx_software_clear_uses_stride)
 	END;
 }
 
+TEST(gfx_software_present_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_software_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+
+	EXPECT_EQ(gfx.drv->present(&gfx), 1);
+
+	END;
+}
+
+TEST(gfx_software_present_surface_target)
+{
+	START;
+
+	t_gfx_software_surface_reset();
+	gfx_surface_t surface = t_gfx_software_surface();
+	gfx_t gfx	      = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(gfx_set_target(&gfx,
+				 &(gfx_target_t){
+					 .type	  = GFX_TARGET_SURFACE,
+					 .format  = GFX_FORMAT_RGBA8,
+					 .surface = &surface,
+					 .width	  = 1,
+					 .height  = 1,
+				 }),
+		  0);
+
+	EXPECT_EQ(gfx_present(&gfx), 0);
+	EXPECT_EQ(t_gfx_software_surface_present_calls, 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_present_surface_failure)
+{
+	START;
+
+	t_gfx_software_surface_reset();
+	t_gfx_software_surface_present_ret = 1;
+	gfx_surface_t surface		   = t_gfx_software_surface();
+	gfx_t gfx			   = {0};
+	EXPECT_EQ(t_gfx_software_init(&gfx), 0);
+	EXPECT_EQ(gfx_set_target(&gfx,
+				 &(gfx_target_t){
+					 .type	  = GFX_TARGET_SURFACE,
+					 .format  = GFX_FORMAT_RGBA8,
+					 .surface = &surface,
+					 .width	  = 1,
+					 .height  = 1,
+				 }),
+		  0);
+
+	EXPECT_EQ(gfx_present(&gfx), 1);
+	EXPECT_EQ(t_gfx_software_surface_present_calls, 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
 STEST(gfx_software)
 {
 	SSTART;
@@ -803,6 +1029,10 @@ STEST(gfx_software)
 	RUN(gfx_software_set_target_none_clears_target);
 	RUN(gfx_software_set_target_null_target);
 	RUN(gfx_software_set_target_invalid_type);
+	RUN(gfx_software_set_target_unknown_type);
+	RUN(gfx_software_set_surface_target_callback_failure);
+	RUN(gfx_software_set_surface_target_success);
+	RUN(gfx_software_set_memory_target_clears_surface);
 	RUN(gfx_software_viewport_success);
 	RUN(gfx_software_viewport_null_data);
 	RUN(gfx_software_draw_triangle_2d_null_data);
@@ -834,6 +1064,9 @@ STEST(gfx_software)
 	RUN(gfx_software_clear_zero_buffers);
 	RUN(gfx_software_clear_writes_pixels);
 	RUN(gfx_software_clear_uses_stride);
+	RUN(gfx_software_present_null_data);
+	RUN(gfx_software_present_surface_target);
+	RUN(gfx_software_present_surface_failure);
 
 	SEND;
 }
