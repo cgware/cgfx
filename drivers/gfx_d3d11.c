@@ -322,14 +322,14 @@ static int gfx_d3d11_load_compiler(gfx_t *gfx)
 		return 0;
 	}
 	if (proc_dlopen(gfx->proc, STRV("d3dcompiler_47.dll"), &d3d11->compiler_lib)) {
-		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler library"); // LCOV_EXCL_LINE
-		return 1;								    // LCOV_EXCL_LINE
+		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler library");
+		return 1;
 	}
 	if (proc_dlsym(gfx->proc, d3d11->compiler_lib, STRV("D3DCompile"), (void **)&d3d11->D3DCompile)) {
-		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler symbol: D3DCompile"); // LCOV_EXCL_LINE
-		proc_dlclose(gfx->proc, d3d11->compiler_lib);					       // LCOV_EXCL_LINE
-		d3d11->compiler_lib = NULL;							       // LCOV_EXCL_LINE
-		return 1;									       // LCOV_EXCL_LINE
+		log_error("cgfx", "gfx_d3d11", NULL, "failed to load D3DCompiler symbol: D3DCompile");
+		proc_dlclose(gfx->proc, d3d11->compiler_lib);
+		d3d11->compiler_lib = NULL;
+		return 1;
 	}
 
 	return 0;
@@ -565,13 +565,13 @@ static int gfx_d3d11_compile_shader(gfx_d3d11_t *d3d11, const char *source, cons
 	ID3DBlob *errors = NULL;
 	if (!hresult_ok(d3d11->D3DCompile(source, cstr_len(source), NULL, NULL, NULL, "main", target, 0, 0, code, &errors)) ||
 	    *code == NULL) {
-		if (errors != NULL) {	       // LCOV_EXCL_LINE
-			d3d11_release(errors); // LCOV_EXCL_LINE
+		if (errors != NULL) {
+			d3d11_release(errors);
 		}
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	if (errors != NULL) {
-		d3d11_release(errors); // LCOV_EXCL_LINE
+		d3d11_release(errors);
 	}
 	return 0;
 }
@@ -670,7 +670,7 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 static void gfx_d3d11_shader_free(gfx_shader_t *shader)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->data == NULL) {
-		return; // LCOV_EXCL_LINE
+		return;
 	}
 
 	gfx_d3d11_shader_t *d3d_shader = shader->data;
@@ -694,19 +694,19 @@ static void gfx_d3d11_shader_free(gfx_shader_t *shader)
 static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_d3d11_t *d3d11 = shader->gfx->data;
 	if (gfx_d3d11_load_compiler(shader->gfx)) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
 
 	gfx_shader_code_t shader_code = {0};
 	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_HLSL, &shader_code)) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		return 1;
 	}
 
 	const char *target;
@@ -719,26 +719,26 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 		target = "ps_4_0";
 		break;
 	}
-	default: {										     // LCOV_EXCL_LINE
-		log_error("cgfx", "gfx_d3d11", NULL, "unsupported shader stage: %d", config->stage); // LCOV_EXCL_LINE
-		gfx_shader_code_free(&shader_code);						     // LCOV_EXCL_LINE
-		return 1;									     // LCOV_EXCL_LINE
+	default: {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported shader stage: %d", config->stage);
+		gfx_shader_code_free(&shader_code);
+		return 1;
 	}
 	}
 
 	gfx_d3d11_shader_t *d3d_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_d3d11_shader_t));
 	if (d3d_shader == NULL) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		return 1;
 	}
 	*d3d_shader	  = (gfx_d3d11_shader_t){0};
 	d3d_shader->stage = config->stage;
 	shader->data	  = d3d_shader;
 
 	if (gfx_d3d11_compile_shader(d3d11, shader_code.text, target, &d3d_shader->code)) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		gfx_d3d11_shader_free(shader);	    // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		gfx_d3d11_shader_free(shader);
+		return 1;
 	}
 
 	gfx_shader_code_free(&shader_code);
@@ -751,8 +751,8 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 							NULL,
 							&d3d_shader->shader.vertex);
 		if (!hresult_ok(hr) || d3d_shader->shader.vertex == NULL) {
-			gfx_d3d11_shader_free(shader); // LCOV_EXCL_LINE
-			return 1;		       // LCOV_EXCL_LINE
+			gfx_d3d11_shader_free(shader);
+			return 1;
 		}
 		break;
 	}
@@ -763,8 +763,8 @@ static int gfx_d3d11_shader_init(gfx_shader_t *shader, const gfx_shader_config_t
 						       NULL,
 						       &d3d_shader->shader.pixel);
 		if (!hresult_ok(hr) || d3d_shader->shader.pixel == NULL) {
-			gfx_d3d11_shader_free(shader); // LCOV_EXCL_LINE
-			return 1;		       // LCOV_EXCL_LINE
+			gfx_d3d11_shader_free(shader);
+			return 1;
 		}
 		break;
 	}

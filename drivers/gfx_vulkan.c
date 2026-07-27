@@ -2204,7 +2204,7 @@ static int gfx_vulkan_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 static void gfx_vulkan_shader_free(gfx_shader_t *shader)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
-		return; // LCOV_EXCL_LINE
+		return;
 	}
 
 	gfx_vulkan_t *vulkan	       = shader->gfx->data;
@@ -2220,21 +2220,21 @@ static void gfx_vulkan_shader_free(gfx_shader_t *shader)
 static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_vulkan_t *vulkan = shader->gfx->data;
 
 	gfx_shader_code_t shader_code = {0};
 	if (gfx_shader_compiler_transpile(config->compiler, config->source, config->stage, GFX_SHADER_LANGUAGE_SPIRV, &shader_code)) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		return 1;
 	}
 
 	gfx_vulkan_shader_t *vk_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_vulkan_shader_t));
 	if (vk_shader == NULL) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		return 1;
 	}
 	*vk_shader   = (gfx_vulkan_shader_t){0};
 	shader->data = vk_shader;
@@ -2246,9 +2246,9 @@ static int gfx_vulkan_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	};
 
 	if (!vk_ok(vulkan->CreateShaderModule(vulkan->device, &shader_create, NULL, &vk_shader->module))) {
-		gfx_shader_code_free(&shader_code); // LCOV_EXCL_LINE
-		gfx_vulkan_shader_free(shader);	    // LCOV_EXCL_LINE
-		return 1;			    // LCOV_EXCL_LINE
+		gfx_shader_code_free(&shader_code);
+		gfx_vulkan_shader_free(shader);
+		return 1;
 	}
 
 	gfx_shader_code_free(&shader_code);

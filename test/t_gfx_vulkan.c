@@ -4381,6 +4381,119 @@ TEST(gfx_vulkan_buffer_set_data_flush_failure)
 	END;
 }
 
+TEST(gfx_vulkan_shader_free_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_vulkan_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_shader_t shader = {.gfx = &gfx};
+
+	gfx_shader_free(&shader);
+
+	END;
+}
+
+TEST(gfx_vulkan_shader_init_null_config)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader, &gfx, NULL));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_shader_init_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_vulkan_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){0}));
+	log_set_quiet(0, 0);
+
+	END;
+}
+
+TEST(gfx_vulkan_shader_init_transpile_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader,
+				    &gfx,
+				    &(gfx_shader_config_t){
+					    .compiler = &t_gfx_vulkan_compiler,
+					    .source   = STRV("not shader source\n"),
+					    .stage    = GFX_SHADER_STAGE_VERTEX,
+				    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_shader_init_alloc_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx.alloc	    = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_shader_init_create_shader_module_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_shader_module_ret = 1;
+	gfx_shader_t shader	      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_draw_triangle_2d_success)
 {
 	START;
@@ -4724,6 +4837,12 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_buffer_set_data_map_memory_failure);
 	RUN(gfx_vulkan_buffer_set_data_flushes_non_coherent_memory);
 	RUN(gfx_vulkan_buffer_set_data_flush_failure);
+	RUN(gfx_vulkan_shader_free_null_data);
+	RUN(gfx_vulkan_shader_init_null_config);
+	RUN(gfx_vulkan_shader_init_null_data);
+	RUN(gfx_vulkan_shader_init_transpile_failure);
+	RUN(gfx_vulkan_shader_init_alloc_failure);
+	RUN(gfx_vulkan_shader_init_create_shader_module_failure);
 	RUN(gfx_vulkan_draw_triangle_2d_success);
 	RUN(gfx_vulkan_draw_triangle_2d_creates_pipeline);
 	RUN(gfx_vulkan_draw_triangle_2d_binds_vertex_buffer);

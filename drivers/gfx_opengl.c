@@ -540,7 +540,7 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 	unsigned int error  = gfx_opengl_get_error(opengl);
 	if (shader == 0) {
 		if (log_errors) {
-			log_error("cgfx", // LCOV_EXCL_LINE
+			log_error("cgfx",
 				  "gfx_opengl",
 				  NULL,
 				  "failed to create OpenGL %s shader: glCreateShader returned 0, glGetError=0x%04x",
@@ -551,13 +551,7 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 		return 0;
 	}
 	if (log_errors && error != GL_NO_ERROR) {
-		log_error( // LCOV_EXCL_LINE
-			"cgfx",
-			"gfx_opengl",
-			NULL,
-			"OpenGL shader %u was created but glGetError=0x%04x",
-			shader,
-			error); // LCOV_EXCL_LINE
+		log_error("cgfx", "gfx_opengl", NULL, "OpenGL shader %u was created but glGetError=0x%04x", shader, error);
 	}
 
 	opengl->ShaderSource(shader, 1, &source, NULL);
@@ -566,17 +560,17 @@ static unsigned int gfx_opengl_compile_shader(gfx_opengl_t *opengl, unsigned int
 	opengl->GetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
 	if (!compiled) {
 		if (log_errors && opengl->GetShaderInfoLog != NULL) {
-			char info[1024] = {0};						     // LCOV_EXCL_LINE
-			int len		= 0;						     // LCOV_EXCL_LINE
-			opengl->GetShaderInfoLog(shader, (int)sizeof(info) - 1, &len, info); // LCOV_EXCL_LINE
-			log_error("cgfx",						     // LCOV_EXCL_LINE
+			char info[1024] = {0};
+			int len		= 0;
+			opengl->GetShaderInfoLog(shader, (int)sizeof(info) - 1, &len, info);
+			log_error("cgfx",
 				  "gfx_opengl",
 				  NULL,
 				  "failed to compile OpenGL %s shader: %s",
 				  type == GL_VERTEX_SHADER ? "vertex" : "fragment",
 				  info);
 		} else if (log_errors) {
-			log_error("cgfx", // LCOV_EXCL_LINE
+			log_error("cgfx",
 				  "gfx_opengl",
 				  NULL,
 				  "failed to compile OpenGL %s shader",
@@ -685,7 +679,7 @@ static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 static void gfx_opengl_shader_free(gfx_shader_t *shader)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || shader->data == NULL) {
-		return; // LCOV_EXCL_LINE
+		return;
 	}
 	gfx_opengl_t *opengl	       = shader->gfx->data;
 	gfx_opengl_shader_t *gl_shader = shader->data;
@@ -703,7 +697,7 @@ static void gfx_opengl_shader_free(gfx_shader_t *shader)
 static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
 	if (shader == NULL || shader->gfx == NULL || shader->gfx->data == NULL || config == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	gfx_opengl_t *opengl = shader->gfx->data;
@@ -712,12 +706,12 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		return 1;
 	}
 	if (opengl->GetString != NULL && gfx_opengl_get_string(opengl, GL_VERSION) == NULL) {
-		log_error("cgfx", // LCOV_EXCL_LINE
+		log_error("cgfx",
 			  "gfx_opengl",
 			  NULL,
 			  "failed to initialize OpenGL shader: surface make_current succeeded but GL_VERSION is null");
-		gfx_opengl_log_context(opengl, "OpenGL shader initialization context"); // LCOV_EXCL_LINE
-		return 1;								// LCOV_EXCL_LINE
+		gfx_opengl_log_context(opengl, "OpenGL shader initialization context");
+		return 1;
 	}
 
 	gfx_opengl_shader_t *gl_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_opengl_shader_t));

@@ -320,6 +320,7 @@ static HRESULT t_create_pixel_shader_ret;
 static HRESULT t_get_buffer_ret;
 static HRESULT t_create_render_target_view_ret;
 static HRESULT t_resize_buffers_ret;
+static int t_d3d_compile_error_msgs;
 static t_d3d_blob_t t_vertex_blob;
 static t_d3d_blob_t t_pixel_blob;
 static t_d3d11_buffer_t t_buffer;
@@ -642,7 +643,7 @@ static HRESULT t_D3DCompile(const void *src_data, size_t src_data_size, const ch
 	} else {
 		*code = &t_pixel_blob;
 	}
-	*error_msgs = NULL;
+	*error_msgs = t_d3d_compile_error_msgs ? &t_pixel_blob : NULL;
 	return t_d3d_compile_ret;
 }
 
@@ -772,6 +773,7 @@ static void t_gfx_d3d11_reset(void)
 	t_get_buffer_ret		  = S_OK;
 	t_create_render_target_view_ret	  = S_OK;
 	t_resize_buffers_ret		  = S_OK;
+	t_d3d_compile_error_msgs	  = 0;
 	t_vertex_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "vertex", .size = 6};
 	t_pixel_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "pixel", .size = 5};
 	t_buffer.vtbl			  = &t_buffer_vtbl;
@@ -1857,6 +1859,239 @@ TEST(gfx_d3d11_shader_free_releases_pixel_shader)
 	END;
 }
 
+TEST(gfx_d3d11_shader_free_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_shader_t shader = {.gfx = &gfx};
+
+	gfx_shader_free(&shader);
+
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_null_config)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader, &gfx, NULL));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_null_data)
+{
+	START;
+
+	gfx_t gfx = {
+		.drv = t_gfx_d3d11_driver(),
+	};
+	EXPECT_NOT_NULL(gfx.drv);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){0}));
+	log_set_quiet(0, 0);
+
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_missing_compiler_library)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	proc_setdlsym(&proc, STRV("d3d11.dll"), STRV("D3D11CreateDevice"), t_gfx_d3d11_symbol((t_gfx_d3d11_symbol_t)t_D3D11CreateDevice));
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_missing_compiler_symbol)
+{
+	START;
+
+	t_gfx_d3d11_reset();
+	proc_t proc = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	proc_setdlsym(&proc, STRV("d3d11.dll"), STRV("D3D11CreateDevice"), t_gfx_d3d11_symbol((t_gfx_d3d11_symbol_t)t_D3D11CreateDevice));
+	proc_setdlsym(&proc, STRV("d3dcompiler_47.dll"), STRV("unused"), &t_device);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_d3d11_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_transpile_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader,
+				    &gfx,
+				    &(gfx_shader_config_t){
+					    .compiler = &t_gfx_d3d11_compiler,
+					    .source   = STRV("not shader source\n"),
+					    .stage    = GFX_SHADER_STAGE_VERTEX,
+				    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_unsupported_stage)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, (gfx_shader_stage_t)99), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_alloc_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx.alloc	    = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_compile_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_d3d_compile_ret	 = -1;
+	t_d3d_compile_error_msgs = 1;
+	gfx_shader_t shader	 = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_releases_compile_messages)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_d3d_compile_error_msgs = 1;
+	gfx_shader_t shader	 = {0};
+
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 0);
+
+	EXPECT_EQ(t_release_blob_calls, 1);
+
+	gfx_shader_free(&shader);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_create_vertex_shader_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_create_vertex_shader_ret = -1;
+	gfx_shader_t shader	   = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_shader_init_create_pixel_shader_failure)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_create_pixel_shader_ret = -1;
+	gfx_shader_t shader	  = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &shader, GFX_SHADER_STAGE_FRAGMENT), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_draw_triangle_2d_success)
 {
 	START;
@@ -2172,6 +2407,18 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_buffer_init_create_buffer_failure);
 	RUN(gfx_d3d11_buffer_set_data_null_data);
 	RUN(gfx_d3d11_shader_free_releases_pixel_shader);
+	RUN(gfx_d3d11_shader_free_null_data);
+	RUN(gfx_d3d11_shader_init_null_config);
+	RUN(gfx_d3d11_shader_init_null_data);
+	RUN(gfx_d3d11_shader_init_missing_compiler_library);
+	RUN(gfx_d3d11_shader_init_missing_compiler_symbol);
+	RUN(gfx_d3d11_shader_init_transpile_failure);
+	RUN(gfx_d3d11_shader_init_unsupported_stage);
+	RUN(gfx_d3d11_shader_init_alloc_failure);
+	RUN(gfx_d3d11_shader_init_compile_failure);
+	RUN(gfx_d3d11_shader_init_releases_compile_messages);
+	RUN(gfx_d3d11_shader_init_create_vertex_shader_failure);
+	RUN(gfx_d3d11_shader_init_create_pixel_shader_failure);
 	RUN(gfx_d3d11_draw_triangle_2d_success);
 	RUN(gfx_d3d11_draw_triangle_2d_compiles_shaders);
 	RUN(gfx_d3d11_draw_triangle_2d_creates_buffer);
