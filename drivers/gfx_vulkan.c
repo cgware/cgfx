@@ -101,6 +101,7 @@ enum {
 	VK_COMMAND_BUFFER_LEVEL_PRIMARY				    = 0,
 	VK_IMAGE_VIEW_TYPE_2D					    = 1,
 	VK_ATTACHMENT_LOAD_OP_LOAD				    = 0,
+	VK_ATTACHMENT_LOAD_OP_CLEAR				    = 1,
 	VK_ATTACHMENT_STORE_OP_STORE				    = 0,
 	VK_ATTACHMENT_LOAD_OP_DONT_CARE				    = 2,
 	VK_ATTACHMENT_STORE_OP_DONT_CARE			    = 1,
@@ -735,7 +736,7 @@ typedef struct gfx_vulkan_frame_s {
 
 typedef struct gfx_vulkan_s {
 	void *lib;
-	gfx_target_t target;
+	gfx_target_t *target;
 	VkInstance instance;
 	VkPhysicalDevice physical_device;
 	VkDevice device;
@@ -744,26 +745,6 @@ typedef struct gfx_vulkan_s {
 	VkCommandPool command_pool;
 	VkCommandBuffer command_buffer;
 	VkFence fence;
-	VkImage image;
-	VkDeviceMemory memory;
-	VkDeviceSize memory_size;
-	int memory_coherent;
-	VkSubresourceLayout layout;
-	VkImageView image_view;
-	VkRenderPass render_pass;
-	VkFramebuffer framebuffer;
-	VkSwapchainKHR swapchain;
-	VkImage swapchain_images[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
-	VkImageView swapchain_image_views[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
-	VkFramebuffer swapchain_framebuffers[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
-	u32 swapchain_image_layouts[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
-	u32 swapchain_image_count;
-	u32 swapchain_image_index;
-	int swapchain_acquired;
-	u16 viewport_x;
-	u16 viewport_y;
-	u16 viewport_width;
-	u16 viewport_height;
 	VkClearColorValue clear_color;
 	gfx_vulkan_frame_t frame;
 	int surface_enabled;
@@ -836,6 +817,31 @@ typedef struct gfx_vulkan_s {
 	PFN_vkAcquireNextImageKHR AcquireNextImageKHR;
 	PFN_vkQueuePresentKHR QueuePresentKHR;
 } gfx_vulkan_t;
+
+typedef struct gfx_vulkan_render_pass_s {
+	VkRenderPass render_pass;
+} gfx_vulkan_render_pass_t;
+
+typedef struct gfx_vulkan_target_s {
+	VkImage image;
+	VkDeviceMemory memory;
+	VkDeviceSize memory_size;
+	int memory_coherent;
+	VkSubresourceLayout layout;
+	VkImageView image_view;
+	VkSwapchainKHR swapchain;
+	VkImage swapchain_images[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+	VkImageView swapchain_image_views[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+	u32 swapchain_image_layouts[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+	u32 swapchain_image_count;
+	u32 swapchain_image_index;
+	int swapchain_acquired;
+} gfx_vulkan_target_t;
+
+typedef struct gfx_vulkan_framebuffer_s {
+	VkFramebuffer framebuffer;
+	VkFramebuffer swapchain_framebuffers[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES];
+} gfx_vulkan_framebuffer_t;
 
 typedef struct gfx_vulkan_buffer_s {
 	VkBuffer buffer;
@@ -936,54 +942,42 @@ static int extension_enabled(const char *const *extensions, u32 count, const cha
 	return 0;
 }
 
-static void gfx_vulkan_swapchain_free(gfx_vulkan_t *vulkan)
+static void gfx_vulkan_swapchain_free(gfx_vulkan_t *vulkan, gfx_vulkan_target_t *target)
 {
-	for (u32 i = 0; i < vulkan->swapchain_image_count; i++) {
-		if (vulkan->swapchain_framebuffers[i] != 0) {
-			vulkan->DestroyFramebuffer(vulkan->device, vulkan->swapchain_framebuffers[i], NULL); // LCOV_EXCL_LINE
-		}
-		if (vulkan->swapchain_image_views[i] != 0) {
-			vulkan->DestroyImageView(vulkan->device, vulkan->swapchain_image_views[i], NULL); // LCOV_EXCL_LINE
+	for (u32 i = 0; i < target->swapchain_image_count; i++) {
+		if (target->swapchain_image_views[i] != 0) {
+			vulkan->DestroyImageView(vulkan->device, target->swapchain_image_views[i], NULL); // LCOV_EXCL_LINE
 		}
 	}
-	if (vulkan->swapchain != 0) {
+	if (target->swapchain != 0) {
 		if (vulkan->DeviceWaitIdle != NULL) {
 			vulkan->DeviceWaitIdle(vulkan->device);
 		}
-		vulkan->DestroySwapchainKHR(vulkan->device, vulkan->swapchain, NULL);
+		vulkan->DestroySwapchainKHR(vulkan->device, target->swapchain, NULL);
 	}
-	vulkan->swapchain	      = 0;
-	vulkan->swapchain_image_count = 0;
-	vulkan->swapchain_image_index = 0;
-	vulkan->swapchain_acquired    = 0;
-	mem_set(vulkan->swapchain_images, 0, sizeof(vulkan->swapchain_images));
-	mem_set(vulkan->swapchain_image_views, 0, sizeof(vulkan->swapchain_image_views));
-	mem_set(vulkan->swapchain_framebuffers, 0, sizeof(vulkan->swapchain_framebuffers));
-	mem_set(vulkan->swapchain_image_layouts, 0, sizeof(vulkan->swapchain_image_layouts));
+	target->swapchain	      = 0;
+	target->swapchain_image_count = 0;
+	target->swapchain_image_index = 0;
+	target->swapchain_acquired    = 0;
+	mem_set(target->swapchain_images, 0, sizeof(target->swapchain_images));
+	mem_set(target->swapchain_image_views, 0, sizeof(target->swapchain_image_views));
+	mem_set(target->swapchain_image_layouts, 0, sizeof(target->swapchain_image_layouts));
 }
 
-static void gfx_vulkan_draw_target_free(gfx_vulkan_t *vulkan)
+static void gfx_vulkan_draw_target_free(gfx_vulkan_t *vulkan, gfx_vulkan_target_t *target)
 {
-	if (vulkan->framebuffer != 0) {
-		vulkan->DestroyFramebuffer(vulkan->device, vulkan->framebuffer, NULL);
-		vulkan->framebuffer = 0;
-	}
-	if (vulkan->image_view != 0) {
-		vulkan->DestroyImageView(vulkan->device, vulkan->image_view, NULL);
-		vulkan->image_view = 0;
+	if (target->image_view != 0) {
+		vulkan->DestroyImageView(vulkan->device, target->image_view, NULL);
+		target->image_view = 0;
 	}
 }
 
-static void gfx_vulkan_swapchain_draw_targets_free(gfx_vulkan_t *vulkan)
+static void gfx_vulkan_swapchain_draw_targets_free(gfx_vulkan_t *vulkan, gfx_vulkan_target_t *target)
 {
-	for (u32 i = 0; i < vulkan->swapchain_image_count; i++) {
-		if (vulkan->swapchain_framebuffers[i] != 0) {
-			vulkan->DestroyFramebuffer(vulkan->device, vulkan->swapchain_framebuffers[i], NULL);
-			vulkan->swapchain_framebuffers[i] = 0;
-		}
-		if (vulkan->swapchain_image_views[i] != 0) {
-			vulkan->DestroyImageView(vulkan->device, vulkan->swapchain_image_views[i], NULL);
-			vulkan->swapchain_image_views[i] = 0;
+	for (u32 i = 0; i < target->swapchain_image_count; i++) {
+		if (target->swapchain_image_views[i] != 0) {
+			vulkan->DestroyImageView(vulkan->device, target->swapchain_image_views[i], NULL);
+			target->swapchain_image_views[i] = 0;
 		}
 	}
 }
@@ -991,46 +985,43 @@ static void gfx_vulkan_swapchain_draw_targets_free(gfx_vulkan_t *vulkan)
 static void gfx_vulkan_draw_resources_free(gfx_vulkan_t *vulkan)
 {
 	vulkan->frame = (gfx_vulkan_frame_t){0};
-	gfx_vulkan_draw_target_free(vulkan);
-	gfx_vulkan_swapchain_draw_targets_free(vulkan);
+	if (vulkan->target == NULL || vulkan->target->driver_data == NULL) {
+		return;
+	}
+	gfx_vulkan_target_t *target = vulkan->target->driver_data;
+	gfx_vulkan_draw_target_free(vulkan, target);
+	gfx_vulkan_swapchain_draw_targets_free(vulkan, target);
 }
 
 static void gfx_vulkan_draw_free(gfx_vulkan_t *vulkan)
 {
 	gfx_vulkan_draw_resources_free(vulkan);
-	if (vulkan->render_pass != 0) {
-		vulkan->DestroyRenderPass(vulkan->device, vulkan->render_pass, NULL);
-		vulkan->render_pass = 0;
-	}
 }
 
-static void gfx_vulkan_target_free(gfx_vulkan_t *vulkan)
+static void gfx_vulkan_target_data_free(gfx_vulkan_t *vulkan, gfx_vulkan_target_t *target)
 {
-	if (vulkan->device == 0 && vulkan->image == 0 && vulkan->memory == 0 && vulkan->swapchain == 0) {
-		vulkan->target = (gfx_target_t){0};
-		return;
+	if (target == NULL) {
+		return; // LCOV_EXCL_LINE
 	}
 
-	gfx_vulkan_draw_target_free(vulkan);
-	gfx_vulkan_swapchain_free(vulkan);
-	if (vulkan->image != 0) {
-		vulkan->DestroyImage(vulkan->device, vulkan->image, NULL);
-		vulkan->image = 0;
+	gfx_vulkan_draw_target_free(vulkan, target);
+	gfx_vulkan_swapchain_free(vulkan, target);
+	if (target->image != 0) {
+		vulkan->DestroyImage(vulkan->device, target->image, NULL);
+		target->image = 0;
 	}
-	if (vulkan->memory != 0) {
-		vulkan->FreeMemory(vulkan->device, vulkan->memory, NULL);
-		vulkan->memory = 0;
+	if (target->memory != 0) {
+		vulkan->FreeMemory(vulkan->device, target->memory, NULL);
+		target->memory = 0;
 	}
-	vulkan->memory_size	= 0;
-	vulkan->memory_coherent = 0;
-	vulkan->layout		= (VkSubresourceLayout){0};
-	vulkan->target		= (gfx_target_t){0};
+	target->memory_size	= 0;
+	target->memory_coherent = 0;
+	target->layout		= (VkSubresourceLayout){0};
 }
 
 static void gfx_vulkan_device_free(gfx_vulkan_t *vulkan)
 {
 	gfx_vulkan_draw_free(vulkan);
-	gfx_vulkan_target_free(vulkan);
 	if (vulkan->device != 0) {
 		if (vulkan->command_buffer != 0) {
 			vulkan->FreeCommandBuffers(vulkan->device, vulkan->command_pool, 1, &vulkan->command_buffer);
@@ -1058,7 +1049,7 @@ static int gfx_vulkan_init_free(gfx_t *gfx, gfx_vulkan_t *vulkan)
 	if (vulkan->lib != NULL) {
 		proc_dlclose(gfx->proc, vulkan->lib);
 	}
-	alloc_free(&gfx->alloc, vulkan, sizeof(*vulkan));
+	alloc_free(&gfx->alloc, vulkan, sizeof(gfx_vulkan_t));
 	gfx->data = NULL;
 	return 1;
 }
@@ -1136,7 +1127,7 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 	if (add_swapchain && plan_extension_count == 0) {
 		device_extensions = swapchain_extensions;
 	} else if (add_swapchain) {
-		owned_extensions = alloc_alloc(&gfx->alloc, sizeof(*owned_extensions) * device_extension_count);
+		owned_extensions = alloc_alloc(&gfx->alloc, sizeof(char *) * device_extension_count);
 		if (owned_extensions == NULL) {
 			return 1;
 		}
@@ -1155,7 +1146,7 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 	};
 	int create_failed = !vk_ok(vulkan->CreateDevice(vulkan->physical_device, &create, NULL, &vulkan->device));
 	if (owned_extensions != NULL) {
-		alloc_free(&gfx->alloc, owned_extensions, sizeof(*owned_extensions) * device_extension_count);
+		alloc_free(&gfx->alloc, owned_extensions, sizeof(char *) * device_extension_count);
 	}
 	if (create_failed) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to create Vulkan device");
@@ -1317,8 +1308,25 @@ static int gfx_vulkan_free(gfx_t *gfx)
 	if (vulkan->lib != NULL) {
 		proc_dlclose(gfx->proc, vulkan->lib);
 	}
-	alloc_free(&gfx->alloc, vulkan, sizeof(*vulkan));
+	alloc_free(&gfx->alloc, vulkan, sizeof(gfx_vulkan_t));
 	gfx->data = NULL;
+	return 0;
+}
+
+static int gfx_vulkan_native(gfx_t *gfx, gfx_native_t *native)
+{
+	if (gfx == NULL || gfx->data == NULL || native == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan = gfx->data;
+
+	*native = (gfx_native_t){
+		.api		 = GFX_API_VULKAN,
+		.instance	 = vulkan->instance,
+		.physical_device = vulkan->physical_device,
+		.device		 = vulkan->device,
+	};
 	return 0;
 }
 
@@ -1350,24 +1358,105 @@ static int gfx_vulkan_proc(gfx_t *gfx, strv_t name, void **proc)
 	return *proc == NULL;
 }
 
-static int gfx_vulkan_native(gfx_t *gfx, gfx_native_t *native)
+static void gfx_vulkan_render_pass_free(gfx_render_pass_t *render_pass)
 {
-	if (gfx == NULL || gfx->data == NULL || native == NULL) {
+	if (render_pass == NULL || render_pass->gfx == NULL || render_pass->gfx->data == NULL || render_pass->data == NULL) {
+		return;
+	}
+
+	gfx_vulkan_t *vulkan			 = render_pass->gfx->data;
+	gfx_vulkan_render_pass_t *vk_render_pass = render_pass->data;
+	if (vk_render_pass->render_pass != 0) {
+		vulkan->DestroyRenderPass(vulkan->device, vk_render_pass->render_pass, NULL);
+		vk_render_pass->render_pass = 0;
+	}
+	alloc_free(&render_pass->gfx->alloc, vk_render_pass, sizeof(gfx_vulkan_render_pass_t));
+	render_pass->data = NULL;
+}
+
+static u32 gfx_vulkan_format(gfx_format_t format)
+{
+	switch (format) {
+	case GFX_FORMAT_RGBA8_UNORM:
+		return VK_FORMAT_R8G8B8A8_UNORM;
+	case GFX_FORMAT_BGRA8_UNORM:
+		return VK_FORMAT_B8G8R8A8_UNORM;
+	case GFX_FORMAT_RGBA8_SRGB:
+		return VK_FORMAT_R8G8B8A8_SRGB;
+	case GFX_FORMAT_BGRA8_SRGB:
+		return VK_FORMAT_B8G8R8A8_SRGB;
+	default:
+		return 0;
+	}
+}
+
+static u32 gfx_vulkan_load_op(gfx_load_op_t load)
+{
+	switch (load) {
+	case GFX_LOAD_CLEAR:
+		return VK_ATTACHMENT_LOAD_OP_CLEAR;
+	case GFX_LOAD_LOAD:
+		return VK_ATTACHMENT_LOAD_OP_LOAD;
+	default:
+		return VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	}
+}
+
+static u32 gfx_vulkan_store_op(gfx_store_op_t store)
+{
+	return store == GFX_STORE_STORE ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
+}
+
+static int gfx_vulkan_render_pass_init(gfx_render_pass_t *render_pass, const gfx_render_pass_config_t *config)
+{
+	if (render_pass == NULL || render_pass->gfx == NULL || render_pass->gfx->data == NULL || config == NULL ||
+	    gfx_vulkan_format(config->color_format) == 0) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan = gfx->data;
+	gfx_vulkan_render_pass_t *vk_render_pass = alloc_alloc(&render_pass->gfx->alloc, sizeof(gfx_vulkan_render_pass_t));
+	if (vk_render_pass == NULL) {
+		return 1;
+	}
+	*vk_render_pass	  = (gfx_vulkan_render_pass_t){0};
+	render_pass->data = vk_render_pass;
 
-	*native = (gfx_native_t){
-		.api		 = GFX_API_VULKAN,
-		.instance	 = vulkan->instance,
-		.physical_device = vulkan->physical_device,
-		.device		 = vulkan->device,
+	gfx_vulkan_t *vulkan = render_pass->gfx->data;
+
+	VkAttachmentDescription attachment = {
+		.format		= gfx_vulkan_format(config->color_format),
+		.samples	= VK_SAMPLE_COUNT_1_BIT,
+		.loadOp		= gfx_vulkan_load_op(config->load),
+		.storeOp	= gfx_vulkan_store_op(config->store),
+		.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		.initialLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		.finalLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	};
+	VkAttachmentReference color = {
+		.attachment = 0,
+		.layout	    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	};
+	VkSubpassDescription subpass = {
+		.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
+		.colorAttachmentCount = 1,
+		.pColorAttachments    = &color,
+	};
+	VkRenderPassCreateInfo create = {
+		.sType		 = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		.attachmentCount = 1,
+		.pAttachments	 = &attachment,
+		.subpassCount	 = 1,
+		.pSubpasses	 = &subpass,
+	};
+
+	if (!vk_ok(vulkan->CreateRenderPass(vulkan->device, &create, NULL, &vk_render_pass->render_pass))) {
+		gfx_vulkan_render_pass_free(render_pass);
+		return 1;
+	}
+
 	return 0;
 }
-
-static u32 gfx_vulkan_format(gfx_format_t format);
 
 static int target_valid(const gfx_target_t *target)
 {
@@ -1424,22 +1513,6 @@ static VkFlags composite_alpha_choose(VkFlags supported)
 		}
 	}
 	return 0;
-}
-
-static u32 gfx_vulkan_format(gfx_format_t format)
-{
-	switch (format) {
-	case GFX_FORMAT_RGBA8_UNORM:
-		return VK_FORMAT_R8G8B8A8_UNORM;
-	case GFX_FORMAT_BGRA8_UNORM:
-		return VK_FORMAT_B8G8R8A8_UNORM;
-	case GFX_FORMAT_RGBA8_SRGB:
-		return VK_FORMAT_R8G8B8A8_SRGB;
-	case GFX_FORMAT_BGRA8_SRGB:
-		return VK_FORMAT_B8G8R8A8_SRGB;
-	default:
-		return 0;
-	}
 }
 
 static int gfx_vulkan_surface_format_supported(const VkSurfaceFormatKHR *formats, u32 count, u32 vk_format, gfx_format_t gfx_format,
@@ -1515,11 +1588,39 @@ static int gfx_vulkan_surface_format(gfx_vulkan_t *vulkan, VkSurfaceKHR surface,
 	return 0;
 }
 
-static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_t *target)
+static void gfx_vulkan_target_free(gfx_target_t *target)
 {
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
+		return;
+	}
+
+	gfx_vulkan_t *vulkan = target->gfx->data;
+	if (target->driver_data != NULL) {
+		gfx_vulkan_target_t *vk_target = target->driver_data;
+		gfx_vulkan_target_data_free(vulkan, vk_target);
+		alloc_free(&target->gfx->alloc, vk_target, sizeof(gfx_vulkan_target_t));
+		target->driver_data = NULL;
+	}
+	if (vulkan->target == target) {
+		vulkan->target = NULL;
+	}
+}
+
+static int gfx_vulkan_surface_target_init(gfx_target_t *target)
+{
+	gfx_vulkan_t *vulkan = target->gfx->data;
 	if (!vulkan->surface_enabled || !vulkan->swapchain_enabled) {
 		log_error("cgfx", "gfx_vulkan", NULL, "Vulkan surface target requires WSI and swapchain support");
 		return 1;
+	}
+	gfx_vulkan_target_t *vk_target = target->driver_data;
+	if (vk_target == NULL) {
+		vk_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_vulkan_target_t));
+		if (vk_target == NULL) {
+			return 1;
+		}
+		*vk_target	    = (gfx_vulkan_target_t){0};
+		target->driver_data = vk_target;
 	}
 
 	VkSurfaceKHR surface = (VkSurfaceKHR)target->surface->handle;
@@ -1577,7 +1678,7 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		.compositeAlpha	  = composite_alpha_choose(caps.supportedCompositeAlpha),
 		.presentMode	  = VK_PRESENT_MODE_FIFO_KHR,
 		.clipped	  = 1,
-		.oldSwapchain	  = vulkan->swapchain,
+		.oldSwapchain	  = vk_target->swapchain,
 	};
 	if (create.compositeAlpha == 0) {
 		log_error("cgfx", "gfx_vulkan", NULL, "Vulkan surface has no supported composite alpha mode");
@@ -1595,8 +1696,8 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		vulkan->DestroySwapchainKHR(vulkan->device, swapchain, NULL);
 		return 1;
 	}
-	if (swapchain_image_count > sizeof(vulkan->swapchain_images) / sizeof(vulkan->swapchain_images[0])) {
-		swapchain_image_count = sizeof(vulkan->swapchain_images) / sizeof(vulkan->swapchain_images[0]);
+	if (swapchain_image_count > sizeof(vk_target->swapchain_images) / sizeof(vk_target->swapchain_images[0])) {
+		swapchain_image_count = sizeof(vk_target->swapchain_images) / sizeof(vk_target->swapchain_images[0]);
 	}
 	VkImage swapchain_images[GFX_VULKAN_MAX_SWAPCHAIN_IMAGES] = {0};
 	if (!vk_ok(vulkan->GetSwapchainImagesKHR(vulkan->device, swapchain, &swapchain_image_count, swapchain_images))) {
@@ -1605,32 +1706,39 @@ static int gfx_vulkan_set_surface_target(gfx_vulkan_t *vulkan, const gfx_target_
 		return 1;
 	}
 
-	VkSwapchainKHR old_swapchain = vulkan->swapchain;
+	VkSwapchainKHR old_swapchain = vk_target->swapchain;
 	if (old_swapchain != 0) {
 		if (vulkan->DeviceWaitIdle != NULL) {
 			vulkan->DeviceWaitIdle(vulkan->device);
 		}
-		gfx_vulkan_swapchain_draw_targets_free(vulkan);
+		gfx_vulkan_swapchain_draw_targets_free(vulkan, vk_target);
 		vulkan->DestroySwapchainKHR(vulkan->device, old_swapchain, NULL);
 	}
-	vulkan->swapchain = swapchain;
-	mem_set(vulkan->swapchain_images, 0, sizeof(vulkan->swapchain_images));
-	mem_set(vulkan->swapchain_image_layouts, 0, sizeof(vulkan->swapchain_image_layouts));
+	vk_target->swapchain = swapchain;
+	mem_set(vk_target->swapchain_images, 0, sizeof(vk_target->swapchain_images));
+	mem_set(vk_target->swapchain_image_layouts, 0, sizeof(vk_target->swapchain_image_layouts));
 	for (u32 i = 0; i < swapchain_image_count; i++) {
-		vulkan->swapchain_images[i] = swapchain_images[i];
+		vk_target->swapchain_images[i] = swapchain_images[i];
 	}
-	vulkan->swapchain_image_count = swapchain_image_count;
-	vulkan->swapchain_image_index = 0;
-	vulkan->swapchain_acquired    = 0;
-	vulkan->target		      = *target;
-	vulkan->target.format	      = target_format;
-	vulkan->target.width	      = (u16)extent.width;
-	vulkan->target.height	      = (u16)extent.height;
+	vk_target->swapchain_image_count = swapchain_image_count;
+	vk_target->swapchain_image_index = 0;
+	vk_target->swapchain_acquired	 = 0;
+	target->format			 = target_format;
+	target->width			 = (u16)extent.width;
+	target->height			 = (u16)extent.height;
 	return 0;
 }
 
-static int gfx_vulkan_set_memory_target(gfx_vulkan_t *vulkan, const gfx_target_t *target)
+static int gfx_vulkan_memory_target_init(gfx_target_t *target)
 {
+	gfx_vulkan_t *vulkan	       = target->gfx->data;
+	gfx_vulkan_target_t *vk_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_vulkan_target_t));
+	if (vk_target == NULL) {
+		return 1;
+	}
+	*vk_target	    = (gfx_vulkan_target_t){0};
+	target->driver_data = vk_target;
+
 	VkImageCreateInfo image = {
 		.sType	       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
 		.imageType     = VK_IMAGE_TYPE_2D,
@@ -1644,18 +1752,18 @@ static int gfx_vulkan_set_memory_target(gfx_vulkan_t *vulkan, const gfx_target_t
 		.sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 	};
-	if (!vk_ok(vulkan->CreateImage(vulkan->device, &image, NULL, &vulkan->image))) {
+	if (!vk_ok(vulkan->CreateImage(vulkan->device, &image, NULL, &vk_target->image))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to create Vulkan image");
 		return 1;
 	}
 
 	VkMemoryRequirements req = {0};
-	vulkan->GetImageMemoryRequirements(vulkan->device, vulkan->image, &req);
+	vulkan->GetImageMemoryRequirements(vulkan->device, vk_target->image, &req);
 
 	u32 memory_type = 0;
-	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vulkan->memory_coherent)) {
+	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vk_target->memory_coherent)) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to find host visible Vulkan memory");
-		gfx_vulkan_target_free(vulkan);
+		gfx_vulkan_target_free(target);
 		return 1;
 	}
 
@@ -1664,66 +1772,62 @@ static int gfx_vulkan_set_memory_target(gfx_vulkan_t *vulkan, const gfx_target_t
 		.allocationSize	 = req.size,
 		.memoryTypeIndex = memory_type,
 	};
-	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vulkan->memory))) {
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_target->memory))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to allocate Vulkan memory");
-		gfx_vulkan_target_free(vulkan);
+		gfx_vulkan_target_free(target);
 		return 1;
 	}
-	vulkan->memory_size = req.size;
+	vk_target->memory_size = req.size;
 
-	if (!vk_ok(vulkan->BindImageMemory(vulkan->device, vulkan->image, vulkan->memory, 0))) {
+	if (!vk_ok(vulkan->BindImageMemory(vulkan->device, vk_target->image, vk_target->memory, 0))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to bind Vulkan image memory");
-		gfx_vulkan_target_free(vulkan);
+		gfx_vulkan_target_free(target);
 		return 1;
 	}
 
 	VkImageSubresource subresource = {
 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 	};
-	vulkan->GetImageSubresourceLayout(vulkan->device, vulkan->image, &subresource, &vulkan->layout);
-	if (vulkan->layout.rowPitch < (VkDeviceSize)target->width * 4) {
+	vulkan->GetImageSubresourceLayout(vulkan->device, vk_target->image, &subresource, &vk_target->layout);
+	if (vk_target->layout.rowPitch < (VkDeviceSize)target->width * 4) {
 		log_error("cgfx", "gfx_vulkan", NULL, "invalid Vulkan image row pitch");
-		gfx_vulkan_target_free(vulkan);
+		gfx_vulkan_target_free(target);
 		return 1;
 	}
 
-	vulkan->target = *target;
 	return 0;
 }
 
-static int gfx_vulkan_set_target(gfx_t *gfx, const gfx_target_t *target)
+static int gfx_vulkan_target_init(gfx_target_t *target)
 {
-	if (gfx == NULL || gfx->data == NULL || target == NULL) {
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || !target_valid(target)) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan = gfx->data;
-	if (target->type == GFX_TARGET_NONE) {
-		gfx_vulkan_draw_resources_free(vulkan);
-		gfx_vulkan_target_free(vulkan);
-		return 0;
-	}
-	if (!target_valid(target)) {
-		return 1;
-	}
-	gfx_vulkan_draw_resources_free(vulkan);
 	if (target->type == GFX_TARGET_MEMORY) {
-		gfx_vulkan_target_free(vulkan);
-		return gfx_vulkan_set_memory_target(vulkan, target);
+		return gfx_vulkan_memory_target_init(target);
 	}
-	if (vulkan->target.type != GFX_TARGET_SURFACE) {
-		gfx_vulkan_target_free(vulkan);
-	}
-	return gfx_vulkan_set_surface_target(vulkan, target);
+	return gfx_vulkan_surface_target_init(target);
 }
 
-static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view)
+static int gfx_vulkan_target_resize(gfx_target_t *target, u16 width, u16 height)
+{
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || target->type != GFX_TARGET_SURFACE) {
+		return 1;
+	}
+
+	target->width  = width;
+	target->height = height;
+	return gfx_vulkan_surface_target_init(target);
+}
+
+static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, const gfx_target_t *target, VkImage image, VkImageView *view)
 {
 	VkImageViewCreateInfo create = {
 		.sType	  = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		.image	  = image,
 		.viewType = VK_IMAGE_VIEW_TYPE_2D,
-		.format	  = gfx_vulkan_format(vulkan->target.format),
+		.format	  = gfx_vulkan_format(target->format),
 		.subresourceRange =
 			{
 				.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -1734,31 +1838,70 @@ static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, VkImage image, VkI
 	return !vk_ok(vulkan->CreateImageView(vulkan->device, &create, NULL, view));
 }
 
-static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, VkImageView view, VkFramebuffer *framebuffer)
+static int gfx_vulkan_copy_memory(gfx_vulkan_t *vulkan, const gfx_memory_readback_config_t *config)
 {
-	VkFramebufferCreateInfo create = {
-		.sType		 = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-		.renderPass	 = vulkan->render_pass,
-		.attachmentCount = 1,
-		.pAttachments	 = &view,
-		.width		 = vulkan->target.width,
-		.height		 = vulkan->target.height,
-		.layers		 = 1,
-	};
-	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, framebuffer));
+	gfx_vulkan_target_t *target = vulkan->target != NULL ? vulkan->target->driver_data : NULL;
+	if (target == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (!target->memory_coherent) {
+		VkMappedMemoryRange range = {
+			.sType	= VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
+			.memory = target->memory,
+			.offset = 0,
+			.size	= target->memory_size,
+		};
+		if (!vk_ok(vulkan->InvalidateMappedMemoryRanges(vulkan->device, 1, &range))) {
+			return 1;
+		}
+	}
+
+	void *mapped = NULL;
+	if (!vk_ok(vulkan->MapMemory(vulkan->device, target->memory, 0, target->memory_size, 0, &mapped))) {
+		return 1;
+	}
+
+	u8 *src = (u8 *)mapped + target->layout.offset;
+	for (u16 y = 0; y < vulkan->target->height; y++) {
+		u8 *dst = (u8 *)config->data + (size_t)y * config->stride;
+		mem_copy(dst, config->stride, src + (VkDeviceSize)y * target->layout.rowPitch, (size_t)vulkan->target->width * 4);
+	}
+
+	vulkan->UnmapMemory(vulkan->device, target->memory);
+	return 0;
 }
 
-static int gfx_vulkan_surface_target_refresh(gfx_vulkan_t *vulkan)
+static int gfx_vulkan_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
 {
-	VkSurfaceKHR surface	      = (VkSurfaceKHR)vulkan->target.surface->handle;
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan	       = target->gfx->data;
+	gfx_vulkan_target_t *vk_target = target->driver_data;
+	if (vulkan->target != target || target->type != GFX_TARGET_MEMORY || vk_target == NULL || vk_target->image == 0 ||
+	    vk_target->memory == 0 || vulkan->frame.active) {
+		return 1;
+	}
+
+	return gfx_vulkan_copy_memory(vulkan, config);
+}
+
+static int gfx_vulkan_surface_target_refresh(gfx_target_t *target)
+{
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || target->driver_data == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	gfx_vulkan_t *vulkan	      = target->gfx->data;
+	VkSurfaceKHR surface	      = (VkSurfaceKHR)target->surface->handle;
 	VkSurfaceCapabilitiesKHR caps = {0};
 	if (!vk_ok(vulkan->GetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, surface, &caps))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to query Vulkan surface capabilities");
 		return 1;
 	}
 
-	if (caps.currentExtent.width == ~0u ||
-	    (caps.currentExtent.width == vulkan->target.width && caps.currentExtent.height == vulkan->target.height)) {
+	if (caps.currentExtent.width == ~0u || (caps.currentExtent.width == target->width && caps.currentExtent.height == target->height)) {
 		return 0;
 	}
 	if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0 || caps.currentExtent.width > 0xffffu ||
@@ -1766,15 +1909,16 @@ static int gfx_vulkan_surface_target_refresh(gfx_vulkan_t *vulkan)
 		return 1;
 	}
 
-	gfx_target_t target = vulkan->target;
-	target.width	    = (u16)caps.currentExtent.width;
-	target.height	    = (u16)caps.currentExtent.height;
-	return gfx_vulkan_set_surface_target(vulkan, &target);
+	return 1;
 }
 
 static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 {
-	if (vulkan->swapchain_acquired) {
+	gfx_vulkan_target_t *target = vulkan->target != NULL ? vulkan->target->driver_data : NULL;
+	if (target == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (target->swapchain_acquired) {
 		return 0;
 	}
 
@@ -1784,9 +1928,9 @@ static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 			return 1;
 		}
 		VkResult result = vulkan->AcquireNextImageKHR(
-			vulkan->device, vulkan->swapchain, ~0ull, 0, vulkan->fence, &vulkan->swapchain_image_index);
+			vulkan->device, target->swapchain, ~0ull, 0, vulkan->fence, &target->swapchain_image_index);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-			if (gfx_vulkan_surface_target_refresh(vulkan)) {
+			if (gfx_vulkan_surface_target_refresh(vulkan->target)) {
 				return 1;
 			}
 			continue;
@@ -1800,61 +1944,195 @@ static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 	if (!acquired) {
 		return 1;
 	}
-	if (vulkan->swapchain_image_index >= vulkan->swapchain_image_count) {
+	if (target->swapchain_image_index >= target->swapchain_image_count) {
 		return 1;
 	}
 
-	vulkan->swapchain_acquired = 1;
+	target->swapchain_acquired = 1;
 	return 0;
 }
 
-static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan)
+static int gfx_vulkan_target_present(gfx_target_t *target)
 {
-	if (vulkan->frame.active) {
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || target->type != GFX_TARGET_SURFACE) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan	       = target->gfx->data;
+	gfx_vulkan_target_t *vk_target = target->driver_data;
+	if (vk_target == NULL || vk_target->swapchain == 0 || !vk_target->swapchain_acquired) {
+		return 1;
+	}
+
+	VkPresentInfoKHR present = {
+		.sType		= VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+		.swapchainCount = 1,
+		.pSwapchains	= &vk_target->swapchain,
+		.pImageIndices	= &vk_target->swapchain_image_index,
+	};
+	VkResult result		      = vulkan->QueuePresentKHR(vulkan->queue, &present);
+	vk_target->swapchain_acquired = 0;
+	if (vk_swapchain_needs_recreate(result)) {
+		return gfx_vulkan_surface_target_refresh(target);
+	}
+	if (!vk_ok(result)) {
+		return 1;
+	}
+	return 0;
+}
+
+static void gfx_vulkan_framebuffer_free(gfx_framebuffer_t *framebuffer)
+{
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->data == NULL) {
+		return;
+	}
+
+	gfx_vulkan_t *vulkan			 = framebuffer->gfx->data;
+	gfx_vulkan_framebuffer_t *vk_framebuffer = framebuffer->data;
+	if (vk_framebuffer->framebuffer != 0) {
+		vulkan->DestroyFramebuffer(vulkan->device, vk_framebuffer->framebuffer, NULL);
+		vk_framebuffer->framebuffer = 0;
+	}
+	for (u32 i = 0; i < sizeof(vk_framebuffer->swapchain_framebuffers) / sizeof(vk_framebuffer->swapchain_framebuffers[0]); i++) {
+		if (vk_framebuffer->swapchain_framebuffers[i] != 0) {
+			vulkan->DestroyFramebuffer(vulkan->device, vk_framebuffer->swapchain_framebuffers[i], NULL);
+			vk_framebuffer->swapchain_framebuffers[i] = 0;
+		}
+	}
+	alloc_free(&framebuffer->gfx->alloc, vk_framebuffer, sizeof(gfx_vulkan_framebuffer_t));
+	framebuffer->data = NULL;
+}
+
+static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, const gfx_framebuffer_t *framebuffer, VkImageView view,
+					 VkFramebuffer *vk_framebuffer)
+{
+	if (framebuffer == NULL || framebuffer->target == NULL || framebuffer->render_pass == NULL ||
+	    framebuffer->render_pass->data == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	gfx_vulkan_render_pass_t *vk_render_pass = framebuffer->render_pass->data;
+	VkFramebufferCreateInfo create		 = {
+			  .sType	   = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+			  .renderPass	   = vk_render_pass->render_pass,
+			  .attachmentCount = 1,
+			  .pAttachments	   = &view,
+			  .width	   = framebuffer->target->width,
+			  .height	   = framebuffer->target->height,
+			  .layers	   = 1,
+	  };
+	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, vk_framebuffer));
+}
+
+static int gfx_vulkan_framebuffer_init(gfx_framebuffer_t *framebuffer)
+{
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->target == NULL ||
+	    framebuffer->target->driver_data == NULL || framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan			 = framebuffer->gfx->data;
+	gfx_vulkan_target_t *target		 = framebuffer->target->driver_data;
+	gfx_vulkan_framebuffer_t *vk_framebuffer = alloc_alloc(&framebuffer->gfx->alloc, sizeof(gfx_vulkan_framebuffer_t));
+	if (vk_framebuffer == NULL) {
+		return 1;
+	}
+	*vk_framebuffer	  = (gfx_vulkan_framebuffer_t){0};
+	framebuffer->data = vk_framebuffer;
+
+	switch (framebuffer->target->type) {
+	case GFX_TARGET_MEMORY:
+		if (target->image == 0) {
+			gfx_vulkan_framebuffer_free(framebuffer);
+			return 1;
+		}
+		if (target->image_view == 0 &&
+		    gfx_vulkan_create_image_view(vulkan, framebuffer->target, target->image, &target->image_view)) {
+			gfx_vulkan_framebuffer_free(framebuffer);
+			return 1;
+		}
+		if (gfx_vulkan_create_framebuffer(vulkan, framebuffer, target->image_view, &vk_framebuffer->framebuffer)) {
+			gfx_vulkan_framebuffer_free(framebuffer);
+			return 1;
+		}
+		break;
+	case GFX_TARGET_SURFACE:
+		if (target->swapchain_image_count == 0 ||
+		    target->swapchain_image_count >
+			    sizeof(vk_framebuffer->swapchain_framebuffers) / sizeof(vk_framebuffer->swapchain_framebuffers[0])) {
+			gfx_vulkan_framebuffer_free(framebuffer);
+			return 1;
+		}
+		for (u32 i = 0; i < target->swapchain_image_count; i++) {
+			if (target->swapchain_images[i] == 0) {
+				gfx_vulkan_framebuffer_free(framebuffer);
+				return 1;
+			}
+			if (target->swapchain_image_views[i] == 0 &&
+			    gfx_vulkan_create_image_view(
+				    vulkan, framebuffer->target, target->swapchain_images[i], &target->swapchain_image_views[i])) {
+				gfx_vulkan_framebuffer_free(framebuffer);
+				return 1;
+			}
+			if (gfx_vulkan_create_framebuffer(
+				    vulkan, framebuffer, target->swapchain_image_views[i], &vk_framebuffer->swapchain_framebuffers[i])) {
+				gfx_vulkan_framebuffer_free(framebuffer);
+				return 1;
+			}
+		}
+		break;
+	default:
+		gfx_vulkan_framebuffer_free(framebuffer);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *framebuffer)
+{
+	if (vulkan->frame.active || framebuffer == NULL || framebuffer->data == NULL) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
 	vulkan->frame = (gfx_vulkan_frame_t){0};
-	switch (vulkan->target.type) {
+	if (vulkan->target == NULL || vulkan->target->driver_data == NULL) {
+		return 1;
+	}
+	gfx_vulkan_target_t *target		 = vulkan->target->driver_data;
+	gfx_vulkan_framebuffer_t *vk_framebuffer = framebuffer->data;
+	switch (vulkan->target->type) {
 	case GFX_TARGET_MEMORY: {
-		if (vulkan->image == 0 || vulkan->render_pass == 0) {
+		if (target->image == 0 || target->image_view == 0 || vk_framebuffer->framebuffer == 0) {
 			return 1; // LCOV_EXCL_LINE
 		}
-		vulkan->frame.image	   = vulkan->image;
-		vulkan->frame.view	   = &vulkan->image_view;
-		vulkan->frame.framebuffer  = &vulkan->framebuffer;
+		vulkan->frame.image	   = target->image;
+		vulkan->frame.view	   = &target->image_view;
+		vulkan->frame.framebuffer  = &vk_framebuffer->framebuffer;
 		vulkan->frame.old_layout   = VK_IMAGE_LAYOUT_UNDEFINED;
 		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_GENERAL;
 		break;
 	}
 	case GFX_TARGET_SURFACE: {
-		if (gfx_vulkan_surface_target_refresh(vulkan) || gfx_vulkan_acquire_swapchain(vulkan)) {
+		if (gfx_vulkan_surface_target_refresh(vulkan->target) || gfx_vulkan_acquire_swapchain(vulkan)) {
 			return 1;
 		}
-		if (vulkan->render_pass == 0) {
+		u32 i = target->swapchain_image_index;
+		if (target->swapchain_images[i] == 0 || target->swapchain_image_views[i] == 0 ||
+		    vk_framebuffer->swapchain_framebuffers[i] == 0) {
 			return 1; // LCOV_EXCL_LINE
 		}
-		u32 i			  = vulkan->swapchain_image_index;
-		vulkan->frame.image	  = vulkan->swapchain_images[i];
-		vulkan->frame.view	  = &vulkan->swapchain_image_views[i];
-		vulkan->frame.framebuffer = &vulkan->swapchain_framebuffers[i];
+		vulkan->frame.image	  = target->swapchain_images[i];
+		vulkan->frame.view	  = &target->swapchain_image_views[i];
+		vulkan->frame.framebuffer = &vk_framebuffer->swapchain_framebuffers[i];
 		vulkan->frame.image_index = i;
 		vulkan->frame.old_layout =
-			vulkan->swapchain_image_layouts[i] != 0 ? vulkan->swapchain_image_layouts[i] : VK_IMAGE_LAYOUT_UNDEFINED;
+			target->swapchain_image_layouts[i] != 0 ? target->swapchain_image_layouts[i] : VK_IMAGE_LAYOUT_UNDEFINED;
 		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		vulkan->frame.surface	   = 1;
 		break;
 	}
 	default:
-		return 1;
-	}
-
-	if (*vulkan->frame.view == 0 && gfx_vulkan_create_image_view(vulkan, vulkan->frame.image, vulkan->frame.view)) {
-		vulkan->frame = (gfx_vulkan_frame_t){0};
-		return 1;
-	}
-	if (*vulkan->frame.framebuffer == 0 && gfx_vulkan_create_framebuffer(vulkan, *vulkan->frame.view, vulkan->frame.framebuffer)) {
-		vulkan->frame = (gfx_vulkan_frame_t){0};
 		return 1;
 	}
 
@@ -1876,17 +2154,19 @@ static int gfx_vulkan_frame_begin_commands(gfx_vulkan_t *vulkan)
 	return 0;
 }
 
-static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan)
+static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan, const gfx_render_pass_t *render_pass)
 {
-	if (vulkan->frame.image == 0 || vulkan->frame.framebuffer == NULL || *vulkan->frame.framebuffer == 0) {
+	if (vulkan->frame.image == 0 || vulkan->frame.framebuffer == NULL || *vulkan->frame.framebuffer == 0 || render_pass == NULL ||
+	    render_pass->data == NULL) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
-	VkImageSubresourceRange range = {
-		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-		.levelCount = 1,
-		.layerCount = 1,
-	};
+	gfx_vulkan_render_pass_t *vk_render_pass = render_pass->data;
+	VkImageSubresourceRange range		 = {
+			   .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+			   .levelCount = 1,
+			   .layerCount = 1,
+	   };
 	VkImageMemoryBarrier to_color = {
 		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.dstAccessMask	     = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -1909,12 +2189,14 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan)
 				   &to_color);
 	VkRenderPassBeginInfo render = {
 		.sType	     = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-		.renderPass  = vulkan->render_pass,
+		.renderPass  = vk_render_pass->render_pass,
 		.framebuffer = *vulkan->frame.framebuffer,
 		.renderArea =
 			{
-				.extent = {.width = vulkan->target.width, .height = vulkan->target.height},
+				.extent = {.width = vulkan->target->width, .height = vulkan->target->height},
 			},
+		.clearValueCount = render_pass->load == GFX_LOAD_CLEAR ? 1 : 0,
+		.pClearValues	 = render_pass->load == GFX_LOAD_CLEAR ? &vulkan->clear_color : NULL,
 	};
 
 	vulkan->CmdBeginRenderPass(vulkan->command_buffer, &render, VK_SUBPASS_CONTENTS_INLINE);
@@ -1922,248 +2204,27 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan)
 	return 0;
 }
 
-static int gfx_vulkan_begin(gfx_frame_t *frame)
+static int gfx_vulkan_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
 {
-	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->target == NULL ||
+	    framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan = frame->gfx->data;
-	if (gfx_vulkan_frame_prepare(vulkan) || gfx_vulkan_frame_begin_commands(vulkan) || gfx_vulkan_frame_begin_render_pass(vulkan)) {
+	gfx_vulkan_t *vulkan	       = frame->gfx->data;
+	vulkan->clear_color.float32[0] = frame->pass.clear.r;
+	vulkan->clear_color.float32[1] = frame->pass.clear.g;
+	vulkan->clear_color.float32[2] = frame->pass.clear.b;
+	vulkan->clear_color.float32[3] = frame->pass.clear.a;
+	vulkan->target		       = framebuffer->target;
+	if (gfx_vulkan_frame_prepare(vulkan, framebuffer) || gfx_vulkan_frame_begin_commands(vulkan) ||
+	    gfx_vulkan_frame_begin_render_pass(vulkan, framebuffer->render_pass)) {
 		vulkan->frame = (gfx_vulkan_frame_t){0};
 		return 1;
 	}
 
 	vulkan->frame.active = 1;
 	return 0;
-}
-
-static int gfx_vulkan_clear_color(gfx_t *gfx, float r, float g, float b, float a)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-
-	gfx_vulkan_t *vulkan	       = gfx->data;
-	vulkan->clear_color.float32[0] = r;
-	vulkan->clear_color.float32[1] = g;
-	vulkan->clear_color.float32[2] = b;
-	vulkan->clear_color.float32[3] = a;
-	return 0;
-}
-
-static int gfx_vulkan_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-
-	gfx_vulkan_t *vulkan	= gfx->data;
-	vulkan->viewport_x	= x;
-	vulkan->viewport_y	= y;
-	vulkan->viewport_width	= width;
-	vulkan->viewport_height = height;
-	return 0;
-}
-
-static int gfx_vulkan_copy_memory(gfx_vulkan_t *vulkan)
-{
-	if (!vulkan->memory_coherent) {
-		VkMappedMemoryRange range = {
-			.sType	= VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-			.memory = vulkan->memory,
-			.offset = 0,
-			.size	= vulkan->memory_size,
-		};
-		if (!vk_ok(vulkan->InvalidateMappedMemoryRanges(vulkan->device, 1, &range))) {
-			return 1;
-		}
-	}
-
-	void *mapped = NULL;
-	if (!vk_ok(vulkan->MapMemory(vulkan->device, vulkan->memory, 0, vulkan->memory_size, 0, &mapped))) {
-		return 1;
-	}
-
-	u8 *src = (u8 *)mapped + vulkan->layout.offset;
-	for (u16 y = 0; y < vulkan->target.height; y++) {
-		u8 *dst = (u8 *)vulkan->target.data + (size_t)y * vulkan->target.stride;
-		mem_copy(dst, vulkan->target.stride, src + (VkDeviceSize)y * vulkan->layout.rowPitch, (size_t)vulkan->target.width * 4);
-	}
-
-	vulkan->UnmapMemory(vulkan->device, vulkan->memory);
-	return 0;
-}
-
-static int gfx_vulkan_clear_memory(gfx_vulkan_t *vulkan)
-{
-	VkImageSubresourceRange range = {
-		.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
-		.baseMipLevel	= 0,
-		.levelCount	= 1,
-		.baseArrayLayer = 0,
-		.layerCount	= 1,
-	};
-	VkImageMemoryBarrier to_general = {
-		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.oldLayout	     = VK_IMAGE_LAYOUT_UNDEFINED,
-		.newLayout	     = VK_IMAGE_LAYOUT_GENERAL,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image		     = vulkan->image,
-		.subresourceRange    = range,
-	};
-	VkImageMemoryBarrier to_host = {
-		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.srcAccessMask	     = VK_ACCESS_TRANSFER_WRITE_BIT,
-		.dstAccessMask	     = VK_ACCESS_HOST_READ_BIT,
-		.oldLayout	     = VK_IMAGE_LAYOUT_GENERAL,
-		.newLayout	     = VK_IMAGE_LAYOUT_GENERAL,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image		     = vulkan->image,
-		.subresourceRange    = range,
-	};
-	VkCommandBufferBeginInfo begin = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	};
-	if (!vk_ok(vulkan->ResetFences(vulkan->device, 1, &vulkan->fence)) ||
-	    !vk_ok(vulkan->ResetCommandBuffer(vulkan->command_buffer, 0)) ||
-	    !vk_ok(vulkan->BeginCommandBuffer(vulkan->command_buffer, &begin))) {
-		return 1;
-	}
-
-	vulkan->CmdPipelineBarrier(
-		vulkan->command_buffer, VK_PIPELINE_STAGE_HOST_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &to_general);
-	vulkan->CmdClearColorImage(vulkan->command_buffer, vulkan->image, VK_IMAGE_LAYOUT_GENERAL, &vulkan->clear_color, 1, &range);
-	vulkan->CmdPipelineBarrier(
-		vulkan->command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0, 0, NULL, 0, NULL, 1, &to_host);
-
-	if (!vk_ok(vulkan->EndCommandBuffer(vulkan->command_buffer))) {
-		return 1;
-	}
-
-	VkSubmitInfo submit = {
-		.sType		    = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers    = &vulkan->command_buffer,
-	};
-	if (!vk_ok(vulkan->QueueSubmit(vulkan->queue, 1, &submit, vulkan->fence)) ||
-	    !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull))) {
-		return 1;
-	}
-
-	return gfx_vulkan_copy_memory(vulkan);
-}
-
-static int gfx_vulkan_clear_surface(gfx_vulkan_t *vulkan)
-{
-	if (gfx_vulkan_surface_target_refresh(vulkan)) {
-		return 1;
-	}
-	if (gfx_vulkan_acquire_swapchain(vulkan)) {
-		return 1;
-	}
-
-	VkImageSubresourceRange range = {
-		.aspectMask	= VK_IMAGE_ASPECT_COLOR_BIT,
-		.baseMipLevel	= 0,
-		.levelCount	= 1,
-		.baseArrayLayer = 0,
-		.layerCount	= 1,
-	};
-	VkImage image			= vulkan->swapchain_images[vulkan->swapchain_image_index];
-	u32 old_layout			= vulkan->swapchain_image_layouts[vulkan->swapchain_image_index] != 0
-						  ? vulkan->swapchain_image_layouts[vulkan->swapchain_image_index]
-						  : VK_IMAGE_LAYOUT_UNDEFINED;
-	VkImageMemoryBarrier to_general = {
-		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.dstAccessMask	     = VK_ACCESS_TRANSFER_WRITE_BIT,
-		.oldLayout	     = old_layout,
-		.newLayout	     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image		     = image,
-		.subresourceRange    = range,
-	};
-	VkImageMemoryBarrier to_present = {
-		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-		.srcAccessMask	     = VK_ACCESS_TRANSFER_WRITE_BIT,
-		.oldLayout	     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-		.newLayout	     = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-		.image		     = image,
-		.subresourceRange    = range,
-	};
-	VkCommandBufferBeginInfo begin = {
-		.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-		.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-	};
-	if (!vk_ok(vulkan->ResetFences(vulkan->device, 1, &vulkan->fence)) ||
-	    !vk_ok(vulkan->ResetCommandBuffer(vulkan->command_buffer, 0)) ||
-	    !vk_ok(vulkan->BeginCommandBuffer(vulkan->command_buffer, &begin))) {
-		return 1;
-	}
-
-	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
-				   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-				   VK_PIPELINE_STAGE_TRANSFER_BIT,
-				   0,
-				   0,
-				   NULL,
-				   0,
-				   NULL,
-				   1,
-				   &to_general);
-	vulkan->CmdClearColorImage(vulkan->command_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &vulkan->clear_color, 1, &range);
-	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
-				   VK_PIPELINE_STAGE_TRANSFER_BIT,
-				   VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-				   0,
-				   0,
-				   NULL,
-				   0,
-				   NULL,
-				   1,
-				   &to_present);
-	if (!vk_ok(vulkan->EndCommandBuffer(vulkan->command_buffer))) {
-		return 1;
-	}
-
-	VkSubmitInfo submit = {
-		.sType		    = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-		.commandBufferCount = 1,
-		.pCommandBuffers    = &vulkan->command_buffer,
-	};
-	if (!vk_ok(vulkan->QueueSubmit(vulkan->queue, 1, &submit, vulkan->fence)) ||
-	    !vk_ok(vulkan->WaitForFences(vulkan->device, 1, &vulkan->fence, 1, ~0ull))) {
-		return 1;
-	}
-
-	vulkan->swapchain_image_layouts[vulkan->swapchain_image_index] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	return 0;
-}
-
-static int gfx_vulkan_clear(gfx_t *gfx, u32 buffers)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-	if ((buffers & GFX_CLEAR_COLOR_BUFFER) == 0) {
-		return 0;
-	}
-
-	gfx_vulkan_t *vulkan = gfx->data;
-	if (vulkan->target.type == GFX_TARGET_MEMORY) {
-		return gfx_vulkan_clear_memory(vulkan);
-	}
-	if (vulkan->target.type == GFX_TARGET_SURFACE) {
-		return gfx_vulkan_clear_surface(vulkan);
-	}
-
-	return 1;
 }
 
 typedef struct gfx_vulkan_vertex_2d_s {
@@ -2174,41 +2235,6 @@ typedef struct gfx_vulkan_vertex_2d_s {
 	float b;
 	float a;
 } gfx_vulkan_vertex_2d_t;
-
-static int gfx_vulkan_create_render_pass(gfx_vulkan_t *vulkan)
-{
-	if (vulkan->render_pass != 0) {
-		return 0;
-	}
-
-	VkAttachmentDescription attachment = {
-		.format		= gfx_vulkan_format(vulkan->target.format),
-		.samples	= VK_SAMPLE_COUNT_1_BIT,
-		.loadOp		= VK_ATTACHMENT_LOAD_OP_LOAD,
-		.storeOp	= VK_ATTACHMENT_STORE_OP_STORE,
-		.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.initialLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.finalLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-	};
-	VkAttachmentReference color = {
-		.attachment = 0,
-		.layout	    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-	};
-	VkSubpassDescription subpass = {
-		.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments    = &color,
-	};
-	VkRenderPassCreateInfo create = {
-		.sType		 = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = 1,
-		.pAttachments	 = &attachment,
-		.subpassCount	 = 1,
-		.pSubpasses	 = &subpass,
-	};
-	return !vk_ok(vulkan->CreateRenderPass(vulkan->device, &create, NULL, &vulkan->render_pass));
-}
 
 static void gfx_vulkan_buffer_free(gfx_buffer_t *buffer)
 {
@@ -2419,7 +2445,7 @@ static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 		vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
 		vk_pipeline->pipeline_layout = 0;
 	}
-	alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(*vk_pipeline));
+	alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 	pipeline->data = NULL;
 }
 
@@ -2427,15 +2453,13 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 {
 	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->gfx->data == NULL || config == NULL || config->vs.data == NULL ||
 	    config->fs.data == NULL || config->input_layout == NULL || config->input_layout_size == 0 ||
-	    config->input_layout_size % sizeof(gfx_layout_t) != 0) {
+	    config->input_layout_size % sizeof(gfx_layout_t) != 0 || config->render_pass == NULL ||
+	    config->render_pass->gfx != pipeline->gfx || config->render_pass->data == NULL) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan = pipeline->gfx->data;
-
-	if (gfx_vulkan_create_render_pass(vulkan)) {
-		return 1;
-	}
+	gfx_vulkan_t *vulkan			 = pipeline->gfx->data;
+	gfx_vulkan_render_pass_t *vk_render_pass = config->render_pass->data;
 
 	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_vulkan_pipeline_t));
 	if (vk_pipeline == NULL) {
@@ -2570,7 +2594,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.pColorBlendState    = &blend,
 		.pDynamicState	     = &dynamic,
 		.layout		     = vk_pipeline->pipeline_layout,
-		.renderPass	     = vulkan->render_pass,
+		.renderPass	     = vk_render_pass->render_pass,
 	};
 	if (!vk_ok(vulkan->CreateGraphicsPipelines(vulkan->device, 0, 1, &create, NULL, &vk_pipeline->pipeline))) {
 		alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));
@@ -2611,19 +2635,19 @@ static int gfx_vulkan_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_verte
 	}
 
 	VkViewport viewport = {
-		.x	  = vulkan->viewport_x,
-		.y	  = vulkan->viewport_y,
-		.width	  = vulkan->viewport_width ? vulkan->viewport_width : vulkan->target.width,
-		.height	  = vulkan->viewport_height ? vulkan->viewport_height : vulkan->target.height,
+		.x	  = frame->pass.viewport.x,
+		.y	  = frame->pass.viewport.y,
+		.width	  = frame->pass.viewport.width,
+		.height	  = frame->pass.viewport.height,
 		.minDepth = 0.0f,
 		.maxDepth = 1.0f,
 	};
 	VkRect2D scissor = {
-		.offset = {.x = vulkan->viewport_x, .y = vulkan->viewport_y},
+		.offset = {.x = frame->pass.viewport.x, .y = frame->pass.viewport.y},
 		.extent =
 			{
-				.width	= vulkan->viewport_width ? vulkan->viewport_width : vulkan->target.width,
-				.height = vulkan->viewport_height ? vulkan->viewport_height : vulkan->target.height,
+				.width	= frame->pass.viewport.width,
+				.height = frame->pass.viewport.height,
 			},
 	};
 
@@ -2695,12 +2719,12 @@ static int gfx_vulkan_frame_finish(gfx_vulkan_t *vulkan)
 	if (!vulkan->frame.active) {
 		return 1; // LCOV_EXCL_LINE
 	}
-
-	if (!vulkan->frame.surface) {
-		return gfx_vulkan_copy_memory(vulkan);
+	gfx_vulkan_target_t *target = vulkan->target != NULL ? vulkan->target->driver_data : NULL;
+	if (target == NULL) {
+		return 1;
 	}
 
-	vulkan->swapchain_image_layouts[vulkan->frame.image_index] = vulkan->frame.final_layout;
+	target->swapchain_image_layouts[vulkan->frame.image_index] = vulkan->frame.final_layout;
 	return 0;
 }
 
@@ -2724,58 +2748,34 @@ static int gfx_vulkan_end(gfx_frame_t *frame)
 	return 0;
 }
 
-static int gfx_vulkan_present(gfx_t *gfx)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-
-	gfx_vulkan_t *vulkan = gfx->data;
-	if (vulkan->target.type != GFX_TARGET_SURFACE || vulkan->swapchain == 0 || !vulkan->swapchain_acquired) {
-		return 1;
-	}
-
-	VkPresentInfoKHR present = {
-		.sType		= VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-		.swapchainCount = 1,
-		.pSwapchains	= &vulkan->swapchain,
-		.pImageIndices	= &vulkan->swapchain_image_index,
-	};
-	VkResult result		   = vulkan->QueuePresentKHR(vulkan->queue, &present);
-	vulkan->swapchain_acquired = 0;
-	if (vk_swapchain_needs_recreate(result)) {
-		return gfx_vulkan_surface_target_refresh(vulkan);
-	}
-	if (!vk_ok(result)) {
-		return 1;
-	}
-	return 0;
-}
-
 static gfx_driver_t gfx_vulkan = {
-	.name		 = "vulkan",
-	.api		 = GFX_API_VULKAN,
-	.init		 = gfx_vulkan_init,
-	.free		 = gfx_vulkan_free,
-	.native		 = gfx_vulkan_native,
-	.proc		 = gfx_vulkan_proc,
-	.set_target	 = gfx_vulkan_set_target,
-	.viewport	 = gfx_vulkan_viewport,
-	.begin		 = gfx_vulkan_begin,
-	.clear_color	 = gfx_vulkan_clear_color,
-	.clear		 = gfx_vulkan_clear,
-	.buffer_init	 = gfx_vulkan_buffer_init,
-	.buffer_free	 = gfx_vulkan_buffer_free,
-	.buffer_set_data = gfx_vulkan_buffer_set_data,
-	.buffer_bind	 = gfx_vulkan_buffer_bind,
-	.shader_init	 = gfx_vulkan_shader_init,
-	.shader_free	 = gfx_vulkan_shader_free,
-	.pipeline_init	 = gfx_vulkan_pipeline_init,
-	.pipeline_free	 = gfx_vulkan_pipeline_free,
-	.pipeline_bind	 = gfx_vulkan_pipeline_bind,
-	.draw		 = gfx_vulkan_draw,
-	.end		 = gfx_vulkan_end,
-	.present	 = gfx_vulkan_present,
+	.name			= "vulkan",
+	.api			= GFX_API_VULKAN,
+	.init			= gfx_vulkan_init,
+	.free			= gfx_vulkan_free,
+	.native			= gfx_vulkan_native,
+	.proc			= gfx_vulkan_proc,
+	.render_pass_init	= gfx_vulkan_render_pass_init,
+	.render_pass_free	= gfx_vulkan_render_pass_free,
+	.target_init		= gfx_vulkan_target_init,
+	.target_free		= gfx_vulkan_target_free,
+	.target_resize		= gfx_vulkan_target_resize,
+	.target_read		= gfx_vulkan_target_read,
+	.target_present		= gfx_vulkan_target_present,
+	.framebuffer_init	= gfx_vulkan_framebuffer_init,
+	.framebuffer_free	= gfx_vulkan_framebuffer_free,
+	.framebuffer_pass_begin = gfx_vulkan_framebuffer_pass_begin,
+	.buffer_init		= gfx_vulkan_buffer_init,
+	.buffer_free		= gfx_vulkan_buffer_free,
+	.buffer_set_data	= gfx_vulkan_buffer_set_data,
+	.buffer_bind		= gfx_vulkan_buffer_bind,
+	.shader_init		= gfx_vulkan_shader_init,
+	.shader_free		= gfx_vulkan_shader_free,
+	.pipeline_init		= gfx_vulkan_pipeline_init,
+	.pipeline_free		= gfx_vulkan_pipeline_free,
+	.pipeline_bind		= gfx_vulkan_pipeline_bind,
+	.draw			= gfx_vulkan_draw,
+	.end			= gfx_vulkan_end,
 };
 
 GFX_DRIVER(gfx_vulkan, &gfx_vulkan);

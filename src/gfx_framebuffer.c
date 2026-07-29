@@ -1,0 +1,128 @@
+#include "gfx_framebuffer.h"
+
+#include "gfx_driver.h"
+
+static int gfx_rect_valid(gfx_rect_t rect)
+{
+	return rect.width != 0 && rect.height != 0;
+}
+
+static gfx_rect_t gfx_rect_default(gfx_rect_t rect, const gfx_framebuffer_t *framebuffer)
+{
+	if (!gfx_rect_valid(rect) && framebuffer != NULL) {
+		rect.width  = framebuffer->width;
+		rect.height = framebuffer->height;
+	}
+
+	return rect;
+}
+
+static int gfx_framebuffer_valid(const gfx_framebuffer_t *framebuffer)
+{
+	return framebuffer != NULL && framebuffer->gfx != NULL && framebuffer->target != NULL &&
+	       framebuffer->target->gfx == framebuffer->gfx && framebuffer->render_pass != NULL &&
+	       framebuffer->render_pass->gfx == framebuffer->gfx && framebuffer->render_pass->color_format == framebuffer->target->format &&
+	       framebuffer->target->width == framebuffer->width && framebuffer->target->height == framebuffer->height &&
+	       framebuffer->width != 0 && framebuffer->height != 0;
+}
+
+static int gfx_pass_valid(const gfx_pass_config_t *pass, const gfx_framebuffer_t *framebuffer)
+{
+	if (pass == NULL || !gfx_framebuffer_valid(framebuffer)) {
+		return 0;
+	}
+	return 1;
+}
+
+gfx_framebuffer_t *gfx_framebuffer_init(gfx_framebuffer_t *framebuffer, gfx_target_t *target, const gfx_render_pass_t *render_pass)
+{
+	if (framebuffer == NULL || target == NULL || target->gfx == NULL || target->gfx->drv == NULL || render_pass == NULL ||
+	    render_pass->gfx != target->gfx || render_pass->color_format != target->format || target->width == 0 || target->height == 0) {
+		return NULL;
+	}
+	if (target->gfx->frame != NULL) {
+		return NULL;
+	}
+
+	*framebuffer = (gfx_framebuffer_t){
+		.gfx	     = target->gfx,
+		.target	     = target,
+		.render_pass = render_pass,
+		.width	     = target->width,
+		.height	     = target->height,
+	};
+	if (target->gfx->drv->framebuffer_init != NULL && target->gfx->drv->framebuffer_init(framebuffer)) {
+		if (target->gfx->drv->framebuffer_free != NULL) {
+			target->gfx->drv->framebuffer_free(framebuffer);
+		}
+		*framebuffer = (gfx_framebuffer_t){0};
+		return NULL;
+	}
+	return framebuffer;
+}
+
+void gfx_framebuffer_free(gfx_framebuffer_t *framebuffer)
+{
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->frame != NULL) {
+		return;
+	}
+
+	if (framebuffer->gfx->drv != NULL && framebuffer->gfx->drv->framebuffer_free != NULL) {
+		framebuffer->gfx->drv->framebuffer_free(framebuffer);
+	}
+	*framebuffer = (gfx_framebuffer_t){0};
+}
+
+int gfx_framebuffer_resize(gfx_framebuffer_t *framebuffer, u16 width, u16 height)
+{
+	if (!gfx_framebuffer_valid(framebuffer) || framebuffer->gfx->frame != NULL || framebuffer->target->type != GFX_TARGET_SURFACE ||
+	    width == 0 || height == 0) {
+		return 1;
+	}
+
+	gfx_t *gfx			     = framebuffer->gfx;
+	gfx_target_t *target		     = framebuffer->target;
+	const gfx_render_pass_t *render_pass = framebuffer->render_pass;
+	if (gfx->drv->framebuffer_free != NULL) {
+		gfx->drv->framebuffer_free(framebuffer);
+	}
+	if (gfx_target_resize(target, width, height)) {
+		*framebuffer = (gfx_framebuffer_t){0};
+		return 1;
+	}
+
+	*framebuffer = (gfx_framebuffer_t){
+		.gfx	     = gfx,
+		.target	     = target,
+		.render_pass = render_pass,
+		.width	     = target->width,
+		.height	     = target->height,
+	};
+	if (gfx->drv->framebuffer_init != NULL && gfx->drv->framebuffer_init(framebuffer)) {
+		if (gfx->drv->framebuffer_free != NULL) {
+			gfx->drv->framebuffer_free(framebuffer);
+		}
+		*framebuffer = (gfx_framebuffer_t){0};
+		return 1;
+	}
+	return 0;
+}
+
+int gfx_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame, const gfx_pass_config_t *config)
+{
+	if (!gfx_framebuffer_valid(framebuffer) || framebuffer->gfx->drv == NULL || framebuffer->gfx->drv->framebuffer_pass_begin == NULL ||
+	    frame == NULL || frame->active || framebuffer->gfx->frame != NULL || !gfx_pass_valid(config, framebuffer)) {
+		return 1;
+	}
+
+	*frame = (gfx_frame_t){.gfx = framebuffer->gfx, .render_pass = framebuffer->render_pass, .pass = *config, .active = 1};
+	frame->pass.viewport	= gfx_rect_default(frame->pass.viewport, framebuffer);
+	framebuffer->gfx->frame = frame;
+	if (framebuffer->gfx->drv->framebuffer_pass_begin(framebuffer, frame)) {
+		framebuffer->gfx->frame = NULL;
+		*frame			= (gfx_frame_t){0};
+		return 1;
+	}
+
+	return 0;
+}

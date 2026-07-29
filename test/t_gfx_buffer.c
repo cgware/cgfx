@@ -1,5 +1,6 @@
-#include "gfx_driver.h"
+#include "gfx_buffer.h"
 
+#include "gfx_driver.h"
 #include "test.h"
 
 static int t_gfx_buffer_init_calls;
@@ -294,6 +295,37 @@ TEST(gfx_buffer_bind_returns_driver_result)
 	END;
 }
 
+TEST(gfx_buffer_bind_rejects_invalid_args)
+{
+	START;
+
+	gfx_t gfx		    = {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx};
+	gfx_frame_t frame	    = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer	    = {.gfx = &gfx, .data = (void *)0x5678};
+	gfx_buffer_t foreign_buffer = {.gfx = &(gfx_t){.drv = &t_gfx_buffer_driver}, .data = (void *)0x5678};
+	gfx.frame		    = &frame;
+
+	EXPECT_EQ(gfx_buffer_bind(NULL, &buffer), 1);
+	EXPECT_EQ(gfx_buffer_bind(&(gfx_frame_t){0}, &buffer), 1);
+	EXPECT_EQ(gfx_buffer_bind(&(gfx_frame_t){.gfx = &gfx}, &buffer), 1);
+	gfx.frame = NULL;
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
+	gfx.frame    = &frame;
+	frame.active = 0;
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
+	frame.active   = 1;
+	frame.pipeline = NULL;
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
+	frame.pipeline = &pipeline;
+	EXPECT_EQ(gfx_buffer_bind(&frame, NULL), 1);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &foreign_buffer), 1);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &(gfx_buffer_t){.gfx = &(gfx_t){0}}), 1);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &(gfx_buffer_t){.gfx = &(gfx_t){.drv = &(gfx_driver_t){0}}}), 1);
+
+	END;
+}
+
 STEST(gfx_buffer)
 {
 	SSTART;
@@ -312,6 +344,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_set_data_zero_size);
 	RUN(gfx_buffer_set_data_calls_driver);
 	RUN(gfx_buffer_set_data_returns_driver_result);
+	RUN(gfx_buffer_bind_rejects_invalid_args);
 	RUN(gfx_buffer_bind_returns_driver_result);
 
 	SEND;

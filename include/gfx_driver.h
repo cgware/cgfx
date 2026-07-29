@@ -2,7 +2,9 @@
 #define GFX_DRIVER_H
 
 #include "driver.h"
+#include "gfx_framebuffer.h"
 #include "gfx_pipeline.h"
+#include "gfx_target.h"
 
 typedef struct gfx_driver_s {
 	const char *name;
@@ -11,11 +13,16 @@ typedef struct gfx_driver_s {
 	int (*free)(gfx_t *gfx);
 	int (*native)(gfx_t *gfx, gfx_native_t *native);
 	int (*proc)(gfx_t *gfx, strv_t name, void **proc);
-	int (*set_target)(gfx_t *gfx, const gfx_target_t *target);
-	int (*viewport)(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height);
-	int (*begin)(gfx_frame_t *frame);
-	int (*clear_color)(gfx_t *gfx, float r, float g, float b, float a);
-	int (*clear)(gfx_t *gfx, u32 buffers);
+	int (*render_pass_init)(gfx_render_pass_t *render_pass, const gfx_render_pass_config_t *config);
+	void (*render_pass_free)(gfx_render_pass_t *render_pass);
+	int (*framebuffer_init)(gfx_framebuffer_t *framebuffer);
+	void (*framebuffer_free)(gfx_framebuffer_t *framebuffer);
+	int (*framebuffer_pass_begin)(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame);
+	int (*target_init)(gfx_target_t *target);
+	void (*target_free)(gfx_target_t *target);
+	int (*target_resize)(gfx_target_t *target, u16 width, u16 height);
+	int (*target_read)(gfx_target_t *target, const gfx_memory_readback_config_t *config);
+	int (*target_present)(gfx_target_t *target);
 	int (*buffer_init)(gfx_buffer_t *buffer, const gfx_buffer_config_t *config);
 	void (*buffer_free)(gfx_buffer_t *buffer);
 	int (*buffer_set_data)(gfx_buffer_t *buffer, const void *data, size_t size);
@@ -27,7 +34,6 @@ typedef struct gfx_driver_s {
 	int (*pipeline_bind)(gfx_frame_t *frame, const gfx_pipeline_t *pipeline);
 	int (*draw)(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex);
 	int (*end)(gfx_frame_t *frame);
-	int (*present)(gfx_t *gfx);
 } gfx_driver_t;
 
 gfx_driver_t *gfx_driver_find(strv_t name);

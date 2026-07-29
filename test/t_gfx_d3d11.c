@@ -13,7 +13,11 @@ enum {
 	S_OK					= 0,
 	T_D3D_DRIVER_TYPE_HARDWARE		= 1,
 	T_D3D11_SDK_VERSION			= 7,
+	T_D3D11_USAGE_STAGING			= 3,
 	T_D3D11_BIND_VERTEX_BUFFER		= 0x00000001,
+	T_D3D11_BIND_RENDER_TARGET		= 0x00000020,
+	T_D3D11_CPU_ACCESS_READ			= 0x00020000,
+	T_D3D11_MAP_READ			= 1,
 	T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
 };
 
@@ -44,6 +48,30 @@ typedef struct D3D11_BUFFER_DESC_s {
 	UINT MiscFlags;
 	UINT StructureByteStride;
 } D3D11_BUFFER_DESC;
+
+typedef struct DXGI_SAMPLE_DESC_s {
+	UINT Count;
+	UINT Quality;
+} DXGI_SAMPLE_DESC;
+
+typedef struct D3D11_TEXTURE2D_DESC_s {
+	UINT Width;
+	UINT Height;
+	UINT MipLevels;
+	UINT ArraySize;
+	UINT Format;
+	DXGI_SAMPLE_DESC SampleDesc;
+	UINT Usage;
+	UINT BindFlags;
+	UINT CPUAccessFlags;
+	UINT MiscFlags;
+} D3D11_TEXTURE2D_DESC;
+
+typedef struct D3D11_MAPPED_SUBRESOURCE_s {
+	void *pData;
+	UINT RowPitch;
+	UINT DepthPitch;
+} D3D11_MAPPED_SUBRESOURCE;
 
 typedef struct D3D11_INPUT_ELEMENT_DESC_s {
 	const char *SemanticName;
@@ -98,7 +126,8 @@ typedef struct t_d3d11_device_vtbl_s {
 	ULONG (*Release)(t_d3d11_device_t *self);
 	HRESULT (*CreateBuffer)(t_d3d11_device_t *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, t_d3d11_buffer_t **buffer);
 	HRESULT (*CreateTexture1D)(void);
-	HRESULT (*CreateTexture2D)(void);
+	HRESULT(*CreateTexture2D)
+	(t_d3d11_device_t *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data, t_d3d11_texture_t **texture);
 	HRESULT (*CreateTexture3D)(void);
 	HRESULT (*CreateShaderResourceView)(void);
 	HRESULT (*CreateUnorderedAccessView)(void);
@@ -133,8 +162,9 @@ typedef struct t_d3d11_context_vtbl_s {
 			    UINT class_instance_count);
 	void (*unused_12)(void);
 	void (*Draw)(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location);
-	void (*unused_14)(void);
-	void (*unused_15)(void);
+	HRESULT(*Map)
+	(t_d3d11_context_t *self, void *resource, UINT subresource, UINT map_type, UINT map_flags, D3D11_MAPPED_SUBRESOURCE *mapped);
+	void (*Unmap)(t_d3d11_context_t *self, void *resource, UINT subresource);
 	void (*unused_16)(void);
 	void (*IASetInputLayout)(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout);
 	void (*IASetVertexBuffers)(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
@@ -167,7 +197,7 @@ typedef struct t_d3d11_context_vtbl_s {
 	void (*RSSetViewports)(t_d3d11_context_t *self, UINT num_viewports, const D3D11_VIEWPORT *viewports);
 	void (*unused_45)(void);
 	void (*unused_46)(void);
-	void (*unused_47)(void);
+	void (*CopyResource)(t_d3d11_context_t *self, void *dst, void *src);
 	void (*UpdateSubresource)(t_d3d11_context_t *self, t_d3d11_buffer_t *resource, UINT subresource, const void *box, const void *data,
 				  UINT row_pitch, UINT depth_pitch);
 	void (*unused_49)(void);
@@ -275,6 +305,7 @@ static int t_release_vertex_shader_calls;
 static int t_release_blob_calls;
 static int t_create_render_target_view_calls;
 static int t_create_buffer_calls;
+static int t_create_texture_2d_calls;
 static int t_create_input_layout_calls;
 static int t_create_vertex_shader_calls;
 static int t_create_pixel_shader_calls;
@@ -289,11 +320,23 @@ static int t_ia_set_primitive_topology_calls;
 static int t_vs_set_shader_calls;
 static int t_ps_set_shader_calls;
 static int t_update_subresource_calls;
+static int t_copy_resource_calls;
+static int t_map_calls;
+static int t_unmap_calls;
 static int t_draw_calls;
 static int t_rs_set_viewports_calls;
 static int t_surface_present_calls;
 static UINT t_create_buffer_bytes;
 static UINT t_create_buffer_bind_flags;
+static UINT t_create_texture_width;
+static UINT t_create_texture_height;
+static UINT t_create_texture_usage;
+static UINT t_create_texture_bind_flags;
+static UINT t_create_texture_cpu_access_flags;
+static UINT t_copy_resource_dst_is_texture;
+static UINT t_copy_resource_src_is_texture;
+static UINT t_map_type;
+static UINT t_map_row_pitch;
 static UINT t_create_driver_type;
 static UINT t_create_sdk_version;
 static UINT t_resize_width;
@@ -316,13 +359,16 @@ static float t_clear_color[4];
 static HRESULT t_create_device_ret;
 static HRESULT t_d3d_compile_ret;
 static HRESULT t_create_buffer_ret;
+static HRESULT t_create_texture_2d_ret;
 static HRESULT t_create_input_layout_ret;
 static HRESULT t_create_vertex_shader_ret;
 static HRESULT t_create_pixel_shader_ret;
 static HRESULT t_get_buffer_ret;
 static HRESULT t_create_render_target_view_ret;
 static HRESULT t_resize_buffers_ret;
+static HRESULT t_map_ret;
 static int t_d3d_compile_error_msgs;
+static u8 t_readback_pixels[16];
 static t_d3d_blob_t t_vertex_blob;
 static t_d3d_blob_t t_pixel_blob;
 static t_d3d11_buffer_t t_buffer;
@@ -336,15 +382,26 @@ static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
 static gfx_target_t t_gfx_d3d11_target;
+static gfx_render_pass_t *t_gfx_d3d11_active_render_pass;
 
 static const gfx_layout_t t_gfx_d3d11_input_layout[] = {
 	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
 	{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
 };
 
+typedef struct t_gfx_d3d11_shader_data_s {
+	t_d3d_blob_t *code;
+	gfx_shader_stage_t stage;
+	union {
+		t_d3d11_vertex_shader_t *vertex;
+		t_d3d11_pixel_shader_t *pixel;
+	} shader;
+} t_gfx_d3d11_shader_data_t;
+
 static gfx_pipeline_config_t t_gfx_d3d11_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
 {
 	return (gfx_pipeline_config_t){
+		.render_pass	   = t_gfx_d3d11_active_render_pass,
 		.vs		   = vs,
 		.fs		   = fs,
 		.input_layout	   = t_gfx_d3d11_input_layout,
@@ -475,6 +532,21 @@ static HRESULT t_CreateRenderTargetView(t_d3d11_device_t *self, void *resource, 
 	return t_create_render_target_view_ret;
 }
 
+static HRESULT t_CreateTexture2D(t_d3d11_device_t *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data,
+				 t_d3d11_texture_t **texture)
+{
+	(void)self;
+	(void)initial_data;
+	t_create_texture_2d_calls++;
+	t_create_texture_width		  = desc->Width;
+	t_create_texture_height		  = desc->Height;
+	t_create_texture_usage		  = desc->Usage;
+	t_create_texture_bind_flags	  = desc->BindFlags;
+	t_create_texture_cpu_access_flags = desc->CPUAccessFlags;
+	*texture			  = &t_texture;
+	return t_create_texture_2d_ret;
+}
+
 static HRESULT t_CreateInputLayout(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count,
 				   const void *shader_bytecode, size_t bytecode_length, t_d3d11_input_layout_t **input_layout)
 {
@@ -582,6 +654,36 @@ static void t_UpdateSubresource(t_d3d11_context_t *self, t_d3d11_buffer_t *resou
 	t_uploaded_vertices[0]		    = vertices[0];
 	t_uploaded_vertices[1]		    = vertices[1];
 	t_uploaded_vertices[2]		    = vertices[2];
+}
+
+static void t_CopyResource(t_d3d11_context_t *self, void *dst, void *src)
+{
+	(void)self;
+	t_copy_resource_calls++;
+	t_copy_resource_dst_is_texture = dst == &t_texture;
+	t_copy_resource_src_is_texture = src == &t_texture;
+}
+
+static HRESULT t_Map(t_d3d11_context_t *self, void *resource, UINT subresource, UINT map_type, UINT map_flags,
+		     D3D11_MAPPED_SUBRESOURCE *mapped)
+{
+	(void)self;
+	(void)resource;
+	(void)subresource;
+	(void)map_flags;
+	t_map_calls++;
+	t_map_type	 = map_type;
+	mapped->pData	 = t_readback_pixels;
+	mapped->RowPitch = t_map_row_pitch;
+	return t_map_ret;
+}
+
+static void t_Unmap(t_d3d11_context_t *self, void *resource, UINT subresource)
+{
+	(void)self;
+	(void)resource;
+	(void)subresource;
+	t_unmap_calls++;
 }
 
 static void t_Draw(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location)
@@ -693,6 +795,7 @@ static t_d3d11_buffer_vtbl_t t_buffer_vtbl = {
 static t_d3d11_device_vtbl_t t_device_vtbl = {
 	.Release		= t_device_release,
 	.CreateBuffer		= t_CreateBuffer,
+	.CreateTexture2D	= t_CreateTexture2D,
 	.CreateRenderTargetView = t_CreateRenderTargetView,
 	.CreateInputLayout	= t_CreateInputLayout,
 	.CreateVertexShader	= t_CreateVertexShader,
@@ -704,11 +807,14 @@ static t_d3d11_context_vtbl_t t_context_vtbl = {
 	.PSSetShader		= t_PSSetShader,
 	.VSSetShader		= t_VSSetShader,
 	.Draw			= t_Draw,
+	.Map			= t_Map,
+	.Unmap			= t_Unmap,
 	.IASetInputLayout	= t_IASetInputLayout,
 	.IASetVertexBuffers	= t_IASetVertexBuffers,
 	.IASetPrimitiveTopology = t_IASetPrimitiveTopology,
 	.OMSetRenderTargets	= t_OMSetRenderTargets,
 	.RSSetViewports		= t_RSSetViewports,
+	.CopyResource		= t_CopyResource,
 	.UpdateSubresource	= t_UpdateSubresource,
 	.ClearRenderTargetView	= t_ClearRenderTargetView,
 };
@@ -756,6 +862,7 @@ static void t_gfx_d3d11_reset(void)
 	t_release_blob_calls		  = 0;
 	t_create_render_target_view_calls = 0;
 	t_create_buffer_calls		  = 0;
+	t_create_texture_2d_calls	  = 0;
 	t_create_input_layout_calls	  = 0;
 	t_create_vertex_shader_calls	  = 0;
 	t_create_pixel_shader_calls	  = 0;
@@ -770,11 +877,23 @@ static void t_gfx_d3d11_reset(void)
 	t_vs_set_shader_calls		  = 0;
 	t_ps_set_shader_calls		  = 0;
 	t_update_subresource_calls	  = 0;
+	t_copy_resource_calls		  = 0;
+	t_map_calls			  = 0;
+	t_unmap_calls			  = 0;
 	t_draw_calls			  = 0;
 	t_rs_set_viewports_calls	  = 0;
 	t_surface_present_calls		  = 0;
 	t_create_buffer_bytes		  = 0;
 	t_create_buffer_bind_flags	  = 0;
+	t_create_texture_width		  = 0;
+	t_create_texture_height		  = 0;
+	t_create_texture_usage		  = 0;
+	t_create_texture_bind_flags	  = 0;
+	t_create_texture_cpu_access_flags = 0;
+	t_copy_resource_dst_is_texture	  = 0;
+	t_copy_resource_src_is_texture	  = 0;
+	t_map_type			  = 0;
+	t_map_row_pitch			  = 4;
 	t_create_driver_type		  = 0;
 	t_create_sdk_version		  = 0;
 	t_resize_width			  = 0;
@@ -804,13 +923,19 @@ static void t_gfx_d3d11_reset(void)
 	t_create_device_ret		  = S_OK;
 	t_d3d_compile_ret		  = S_OK;
 	t_create_buffer_ret		  = S_OK;
+	t_create_texture_2d_ret		  = S_OK;
 	t_create_input_layout_ret	  = S_OK;
 	t_create_vertex_shader_ret	  = S_OK;
 	t_create_pixel_shader_ret	  = S_OK;
 	t_get_buffer_ret		  = S_OK;
 	t_create_render_target_view_ret	  = S_OK;
 	t_resize_buffers_ret		  = S_OK;
+	t_map_ret			  = S_OK;
 	t_d3d_compile_error_msgs	  = 0;
+	t_readback_pixels[0]		  = 1;
+	t_readback_pixels[1]		  = 2;
+	t_readback_pixels[2]		  = 3;
+	t_readback_pixels[3]		  = 4;
 	t_vertex_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "vertex", .size = 6};
 	t_pixel_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "pixel", .size = 5};
 	t_buffer.vtbl			  = &t_buffer_vtbl;
@@ -909,6 +1034,183 @@ static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stage
 	};
 	return gfx_shader_init(shader, gfx, &config) != shader;
 }
+
+typedef struct gfx_frame_config_s {
+	const gfx_target_t *target;
+} gfx_frame_config_t;
+
+#define GFX_CLEAR_COLOR_BUFFER 1u
+
+static gfx_target_t t_gfx_d3d11_bound_target;
+static gfx_render_pass_t t_gfx_d3d11_bound_render_pass;
+static gfx_framebuffer_t t_gfx_d3d11_bound_framebuffer;
+static gfx_color_t t_gfx_d3d11_clear_color = {0.0f, 0.0f, 0.0f, 0.0f};
+static gfx_rect_t t_gfx_d3d11_viewport;
+
+static void t_gfx_d3d11_unset_target(gfx_t *gfx)
+{
+	if (t_gfx_d3d11_bound_framebuffer.gfx == gfx) {
+		gfx_framebuffer_free(&t_gfx_d3d11_bound_framebuffer);
+	}
+	if (t_gfx_d3d11_bound_render_pass.gfx == gfx) {
+		gfx_render_pass_free(&t_gfx_d3d11_bound_render_pass);
+	}
+	if (t_gfx_d3d11_bound_target.gfx == gfx) {
+		gfx_target_free(&t_gfx_d3d11_bound_target);
+	}
+	t_gfx_d3d11_active_render_pass = NULL;
+	t_gfx_d3d11_viewport	       = (gfx_rect_t){0};
+}
+
+static int t_gfx_d3d11_set_target_compat(gfx_t *gfx, const gfx_target_t *target)
+{
+	if (gfx == NULL || gfx->drv == NULL || target == NULL) {
+		return 1;
+	}
+	if (t_gfx_d3d11_bound_target.gfx == gfx && t_gfx_d3d11_bound_target.type == target->type &&
+	    t_gfx_d3d11_bound_target.format == target->format && t_gfx_d3d11_bound_target.data == target->data &&
+	    t_gfx_d3d11_bound_target.surface == target->surface && t_gfx_d3d11_bound_target.width == target->width &&
+	    t_gfx_d3d11_bound_target.height == target->height && t_gfx_d3d11_bound_target.stride == target->stride) {
+		return 0;
+	}
+	if (t_gfx_d3d11_bound_target.gfx == gfx && t_gfx_d3d11_bound_target.type == GFX_TARGET_SURFACE &&
+	    target->type == GFX_TARGET_SURFACE && t_gfx_d3d11_bound_target.surface == target->surface &&
+	    t_gfx_d3d11_bound_target.width != 0 && t_gfx_d3d11_bound_target.height != 0 &&
+	    (t_gfx_d3d11_bound_target.width != target->width || t_gfx_d3d11_bound_target.height != target->height)) {
+		if (gfx_target_resize(&t_gfx_d3d11_bound_target, target->width, target->height)) {
+			return 1;
+		}
+	}
+	t_gfx_d3d11_unset_target(gfx);
+	if (target->type == GFX_TARGET_NONE) {
+		return 0;
+	}
+
+	gfx_target_t *created = NULL;
+	if (target->type == GFX_TARGET_MEMORY) {
+		created = gfx_target_init_memory(&t_gfx_d3d11_bound_target,
+						 gfx,
+						 &(gfx_memory_target_config_t){
+							 .format = target->format,
+							 .data	 = target->data,
+							 .width	 = target->width,
+							 .height = target->height,
+							 .stride = target->stride,
+						 });
+	} else if (target->type == GFX_TARGET_SURFACE) {
+		created = gfx_target_init_surface(&t_gfx_d3d11_bound_target,
+						  gfx,
+						  &(gfx_surface_target_config_t){
+							  .format  = target->format,
+							  .surface = target->surface,
+							  .width   = target->width,
+							  .height  = target->height,
+						  });
+	}
+	if (created == NULL) {
+		return 1;
+	}
+	if (gfx_render_pass_init(&t_gfx_d3d11_bound_render_pass,
+				 gfx,
+				 &(gfx_render_pass_config_t){
+					 .color_format = t_gfx_d3d11_bound_target.format,
+					 .load	       = GFX_LOAD_CLEAR,
+					 .store	       = GFX_STORE_STORE,
+				 }) != &t_gfx_d3d11_bound_render_pass) {
+		t_gfx_d3d11_unset_target(gfx);
+		return 1;
+	}
+	t_gfx_d3d11_active_render_pass = &t_gfx_d3d11_bound_render_pass;
+	if (gfx_framebuffer_init(&t_gfx_d3d11_bound_framebuffer, &t_gfx_d3d11_bound_target, &t_gfx_d3d11_bound_render_pass) !=
+	    &t_gfx_d3d11_bound_framebuffer) {
+		t_gfx_d3d11_unset_target(gfx);
+		return 1;
+	}
+	return 0;
+}
+
+static int t_gfx_d3d11_begin_compat(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config)
+{
+	if (config != NULL && config->target != NULL && t_gfx_d3d11_set_target_compat(gfx, config->target)) {
+		return 1;
+	}
+	if (t_gfx_d3d11_bound_framebuffer.gfx != gfx) {
+		return 1;
+	}
+	return gfx_framebuffer_pass_begin(&t_gfx_d3d11_bound_framebuffer,
+					  frame,
+					  &(gfx_pass_config_t){
+						  .clear    = t_gfx_d3d11_clear_color,
+						  .viewport = t_gfx_d3d11_viewport,
+					  });
+}
+
+static int t_gfx_d3d11_clear_color_compat(gfx_t *gfx, float r, float g, float b, float a)
+{
+	if (gfx == NULL || gfx->data == NULL) {
+		return 1;
+	}
+	t_gfx_d3d11_clear_color = (gfx_color_t){r, g, b, a};
+	return 0;
+}
+
+static int t_gfx_d3d11_viewport_compat(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+{
+	if (gfx == NULL || gfx->data == NULL || width == 0 || height == 0) {
+		return 1;
+	}
+	t_gfx_d3d11_viewport = (gfx_rect_t){x, y, width, height};
+	if (t_context_vtbl.RSSetViewports == NULL) {
+		return 1;
+	}
+	D3D11_VIEWPORT viewport = {
+		.TopLeftX = (float)x,
+		.TopLeftY = (float)y,
+		.Width	  = (float)width,
+		.Height	  = (float)height,
+		.MinDepth = 0.0f,
+		.MaxDepth = 1.0f,
+	};
+	t_context_vtbl.RSSetViewports(&t_context, 1, &viewport);
+	return 0;
+}
+
+static int t_gfx_d3d11_clear_compat(gfx_t *gfx, u32 buffers)
+{
+	if (buffers == 0) {
+		return 0;
+	}
+	if (t_gfx_d3d11_bound_framebuffer.gfx != gfx) {
+		return 1;
+	}
+	gfx_frame_t frame = {0};
+	if (t_gfx_d3d11_begin_compat(gfx, &frame, NULL)) {
+		return 1;
+	}
+	return gfx_end(&frame);
+}
+
+static int t_gfx_d3d11_present_compat(gfx_t *gfx)
+{
+	if (t_gfx_d3d11_bound_target.gfx != gfx) {
+		return 1;
+	}
+	return gfx_target_present(&t_gfx_d3d11_bound_target);
+}
+
+static void t_gfx_d3d11_free_compat(gfx_t *gfx)
+{
+	t_gfx_d3d11_unset_target(gfx);
+	gfx_free(gfx);
+}
+
+#define gfx_set_target	t_gfx_d3d11_set_target_compat
+#define gfx_begin	t_gfx_d3d11_begin_compat
+#define gfx_clear_color t_gfx_d3d11_clear_color_compat
+#define gfx_viewport	t_gfx_d3d11_viewport_compat
+#define gfx_clear	t_gfx_d3d11_clear_compat
+#define gfx_present	t_gfx_d3d11_present_compat
+#define gfx_free	t_gfx_d3d11_free_compat
 
 static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_target_t *target, const gfx_vertex_2d_t vertices[3])
 {
@@ -1313,7 +1615,7 @@ TEST(gfx_d3d11_set_target_null_data)
 	};
 	gfx_target_t target = {0};
 
-	EXPECT_EQ(gfx.drv->set_target(&gfx, &target), 1);
+	EXPECT_EQ(gfx.drv->target_init(&target), 1);
 
 	END;
 }
@@ -1450,6 +1752,789 @@ TEST(gfx_d3d11_set_surface_target_resize_failure)
 	END;
 }
 
+TEST(gfx_d3d11_render_pass_free_null_data)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	drv->render_pass_free(NULL);
+
+	END;
+}
+
+TEST(gfx_d3d11_render_pass_init_invalid_config)
+{
+	START;
+
+	gfx_t gfx		      = {0};
+	gfx_render_pass_t render_pass = {
+		.gfx = &gfx,
+	};
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->render_pass_init(&render_pass, &(gfx_render_pass_config_t){.color_format = GFX_FORMAT_NONE}), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_render_pass_init_alloc_failure)
+{
+	START;
+
+	gfx_t gfx = {
+		.alloc = {.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std},
+	};
+	gfx_render_pass_t render_pass = {
+		.gfx = &gfx,
+	};
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->render_pass_init(&render_pass, &(gfx_render_pass_config_t){.color_format = GFX_FORMAT_RGBA8}), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_creates_texture)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(t_create_texture_2d_calls, 1);
+	EXPECT_EQ(t_create_texture_bind_flags, T_D3D11_BIND_RENDER_TARGET);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_create_texture_missing_callback)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_device_vtbl.CreateTexture2D = NULL;
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {
+			  .type	  = GFX_TARGET_MEMORY,
+			  .format = GFX_FORMAT_RGBA8,
+			  .data	  = pixels,
+			  .width  = 1,
+			  .height = 1,
+			  .stride = 4,
+	  };
+
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+
+	t_device_vtbl.CreateTexture2D = t_CreateTexture2D;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_create_texture_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_create_texture_2d_ret = -1;
+	u8 pixels[4]		= {0};
+	gfx_target_t target	= {
+		    .type   = GFX_TARGET_MEMORY,
+		    .format = GFX_FORMAT_RGBA8,
+		    .data   = pixels,
+		    .width  = 1,
+		    .height = 1,
+		    .stride = 4,
+	    };
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	u8 readback[4] = {0};
+
+	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = readback, .stride = 4}), 0);
+	EXPECT_EQ(t_copy_resource_calls, 1);
+	EXPECT_EQ(t_map_calls, 1);
+	EXPECT_EQ(t_unmap_calls, 1);
+	EXPECT_EQ(readback[0], 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_invalid_config)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx.drv->target_read(&(gfx_target_t){.gfx = &gfx}, NULL), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_without_bound_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.gfx	= &gfx,
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx.drv->target_init(&target), 0);
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	gfx.drv->target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_missing_context_callback)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	t_context_vtbl.Map = NULL;
+
+	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	t_context_vtbl.Map = t_Map;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_create_texture_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	t_create_texture_2d_ret = -1;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_map_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	t_map_ret = -1;
+
+	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_memory_target_read_short_row_pitch)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
+	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
+	t_map_row_pitch = 3;
+
+	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(t_unmap_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_free_null_data_direct)
+{
+	START;
+
+	t_gfx_d3d11_driver()->target_free(NULL);
+
+	END;
+}
+
+TEST(gfx_d3d11_target_init_alloc_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx.alloc	    = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.gfx	= &gfx,
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+
+	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_resize_invalid_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+
+	EXPECT_EQ(gfx.drv->target_resize(NULL, 1, 1), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_free_null_data_direct)
+{
+	START;
+
+	t_gfx_d3d11_driver()->framebuffer_free(NULL);
+
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_invalid_config_direct)
+{
+	START;
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->framebuffer_init(NULL), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_alloc_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx.alloc		      = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	struct {
+		t_dxgi_swapchain_t *swapchain;
+		t_d3d11_texture_t *texture;
+	} driver_target = {
+		.texture = &t_texture,
+	};
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_MEMORY,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &driver_target,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+	};
+
+	EXPECT_EQ(gfx.drv->framebuffer_init(&framebuffer), 1);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_missing_render_target_callback_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_device_vtbl.CreateRenderTargetView = NULL;
+	gfx_render_pass_t render_pass	     = {
+		       .gfx  = &gfx,
+		       .data = &render_pass,
+	       };
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_MEMORY,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &target,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+	};
+	EXPECT_EQ(gfx.drv->framebuffer_init(&framebuffer), 1);
+
+	t_device_vtbl.CreateRenderTargetView = t_CreateRenderTargetView;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_memory_without_texture_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	struct {
+		t_dxgi_swapchain_t *swapchain;
+		t_d3d11_texture_t *texture;
+	} driver_target	    = {0};
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_MEMORY,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &driver_target,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+	};
+
+	EXPECT_EQ(gfx.drv->framebuffer_init(&framebuffer), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_surface_without_swapchain_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	struct {
+		t_dxgi_swapchain_t *swapchain;
+		t_d3d11_texture_t *texture;
+	} driver_target	    = {0};
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_SURFACE,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &driver_target,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+	};
+
+	EXPECT_EQ(gfx.drv->framebuffer_init(&framebuffer), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_unknown_target_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	struct {
+		t_dxgi_swapchain_t *swapchain;
+		t_d3d11_texture_t *texture;
+	} driver_target	    = {0};
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = (gfx_target_type_t)99,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &driver_target,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+	};
+
+	EXPECT_EQ(gfx.drv->framebuffer_init(&framebuffer), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	struct {
+		t_dxgi_swapchain_t *swapchain;
+		t_d3d11_texture_t *texture;
+	} driver_target = {
+		.texture = &t_texture,
+	};
+	struct {
+		t_d3d11_view_t *render_target;
+	} driver_framebuffer = {
+		.render_target = &t_view,
+	};
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = (gfx_target_type_t)99,
+		.format	     = GFX_FORMAT_RGBA8,
+		.driver_data = &driver_target,
+		.width	     = 1,
+		.height	     = 1,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+		.data	     = &driver_framebuffer,
+	};
+	gfx_frame_t frame = {
+		.gfx = &gfx,
+	};
+
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+static gfx_pipeline_config_t t_gfx_d3d11_direct_pipeline_config(gfx_shader_t *vs, gfx_shader_t *fs)
+{
+	t_gfx_d3d11_shader_data_t *vs_data = vs->data;
+	t_gfx_d3d11_shader_data_t *fs_data = fs->data;
+	*vs_data			   = (t_gfx_d3d11_shader_data_t){
+					  .code		 = &t_vertex_blob,
+					  .stage	 = GFX_SHADER_STAGE_VERTEX,
+					  .shader.vertex = &t_vertex_shader,
+	  };
+	*fs_data = (t_gfx_d3d11_shader_data_t){
+		.code	      = &t_pixel_blob,
+		.stage	      = GFX_SHADER_STAGE_FRAGMENT,
+		.shader.pixel = &t_pixel_shader,
+	};
+	return t_gfx_d3d11_pipeline_config(*vs, *fs);
+}
+
+TEST(gfx_d3d11_pipeline_init_invalid_config_direct)
+{
+	START;
+
+	gfx_t gfx		= {0};
+	gfx_pipeline_t pipeline = {
+		.gfx = &gfx,
+	};
+
+	EXPECT_EQ(t_gfx_d3d11_driver()->pipeline_init(&pipeline, &(gfx_pipeline_config_t){0}), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_missing_shader_callback_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_device_vtbl.CreateVertexShader  = NULL;
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	gfx_pipeline_t pipeline		  = {
+			  .gfx = &gfx,
+	  };
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	t_device_vtbl.CreateVertexShader = t_CreateVertexShader;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_alloc_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	gfx_pipeline_t pipeline		  = {
+			  .gfx = &gfx,
+	  };
+	gfx.alloc = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_element_alloc_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	gfx_pipeline_t pipeline		  = {
+			  .gfx = &gfx,
+	  };
+	t_gfx_d3d11_alloc_count	  = 0;
+	t_gfx_d3d11_alloc_fail_at = 2;
+	gfx.alloc		  = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std};
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_missing_layout_semantic_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	const gfx_layout_t layout[]	  = {
+		      {.index = 0, .semantic = NULL, .count = 2, .type = GFX_VALUE_FLOAT32},
+	      };
+	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = sizeof(layout);
+	gfx_pipeline_t pipeline	     = {
+		     .gfx = &gfx,
+	     };
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_unsupported_input_layout_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	const gfx_layout_t layout[]	  = {
+		      {.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
+	      };
+	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = sizeof(layout);
+	gfx_pipeline_t pipeline	     = {
+		     .gfx = &gfx,
+	     };
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_create_input_layout_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_create_input_layout_ret	  = -1;
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	gfx_pipeline_t pipeline		  = {
+			  .gfx = &gfx,
+	  };
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_clear_calls_context)
 {
 	START;
@@ -1493,7 +2578,7 @@ TEST(gfx_d3d11_clear_color_null_data)
 		.drv = t_gfx_d3d11_driver(),
 	};
 
-	EXPECT_EQ(gfx.drv->clear_color(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
+	EXPECT_EQ(t_gfx_d3d11_clear_color_compat(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
 
 	END;
 }
@@ -1507,7 +2592,7 @@ TEST(gfx_d3d11_viewport_null_data)
 	};
 	EXPECT_NOT_NULL(gfx.drv);
 
-	EXPECT_EQ(gfx.drv->viewport(&gfx, 1, 2, 3, 4), 1);
+	EXPECT_EQ(t_gfx_d3d11_viewport_compat(&gfx, 1, 2, 3, 4), 1);
 
 	END;
 }
@@ -1672,7 +2757,7 @@ TEST(gfx_d3d11_clear_null_data)
 		.drv = t_gfx_d3d11_driver(),
 	};
 
-	EXPECT_EQ(gfx.drv->clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(NULL, NULL), 1);
 
 	END;
 }
@@ -1788,7 +2873,7 @@ TEST(gfx_d3d11_begin_null_frame)
 	gfx_driver_t *drv = t_gfx_d3d11_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(drv->begin(NULL), 1);
+	EXPECT_EQ(drv->framebuffer_pass_begin(NULL, NULL), 1);
 
 	END;
 }
@@ -1805,7 +2890,7 @@ TEST(gfx_d3d11_begin_missing_render_target_callback)
 	t_context_vtbl.OMSetRenderTargets					  = NULL;
 	gfx_frame_t frame							  = {.gfx = &gfx, .active = 1};
 
-	EXPECT_EQ(gfx.drv->begin(&frame), 1);
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&t_gfx_d3d11_bound_framebuffer, &frame), 1);
 
 	t_context_vtbl.OMSetRenderTargets = saved;
 	gfx_free(&gfx);
@@ -2758,7 +3843,7 @@ TEST(gfx_d3d11_present_null_data)
 		.drv = t_gfx_d3d11_driver(),
 	};
 
-	EXPECT_EQ(gfx.drv->present(&gfx), 1);
+	EXPECT_EQ(gfx.drv->target_present(&(gfx_target_t){0}), 1);
 
 	END;
 }
@@ -2859,6 +3944,37 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_set_surface_target_resizes_swapchain);
 	RUN(gfx_d3d11_set_surface_target_passes_resize_width);
 	RUN(gfx_d3d11_set_surface_target_resize_failure);
+	RUN(gfx_d3d11_render_pass_free_null_data);
+	RUN(gfx_d3d11_render_pass_init_invalid_config);
+	RUN(gfx_d3d11_render_pass_init_alloc_failure);
+	RUN(gfx_d3d11_memory_target_creates_texture);
+	RUN(gfx_d3d11_memory_target_create_texture_missing_callback);
+	RUN(gfx_d3d11_memory_target_create_texture_failure);
+	RUN(gfx_d3d11_memory_target_read_success);
+	RUN(gfx_d3d11_memory_target_read_invalid_config);
+	RUN(gfx_d3d11_memory_target_read_without_bound_target);
+	RUN(gfx_d3d11_memory_target_read_missing_context_callback);
+	RUN(gfx_d3d11_memory_target_read_create_texture_failure);
+	RUN(gfx_d3d11_memory_target_read_map_failure);
+	RUN(gfx_d3d11_memory_target_read_short_row_pitch);
+	RUN(gfx_d3d11_target_free_null_data_direct);
+	RUN(gfx_d3d11_target_init_alloc_failure_direct);
+	RUN(gfx_d3d11_target_resize_invalid_direct);
+	RUN(gfx_d3d11_framebuffer_free_null_data_direct);
+	RUN(gfx_d3d11_framebuffer_init_invalid_config_direct);
+	RUN(gfx_d3d11_framebuffer_init_alloc_failure_direct);
+	RUN(gfx_d3d11_framebuffer_init_missing_render_target_callback_direct);
+	RUN(gfx_d3d11_framebuffer_init_memory_without_texture_direct);
+	RUN(gfx_d3d11_framebuffer_init_surface_without_swapchain_direct);
+	RUN(gfx_d3d11_framebuffer_init_unknown_target_direct);
+	RUN(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct);
+	RUN(gfx_d3d11_pipeline_init_invalid_config_direct);
+	RUN(gfx_d3d11_pipeline_init_missing_shader_callback_direct);
+	RUN(gfx_d3d11_pipeline_init_alloc_failure_direct);
+	RUN(gfx_d3d11_pipeline_init_element_alloc_failure_direct);
+	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic_direct);
+	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout_direct);
+	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure_direct);
 	RUN(gfx_d3d11_clear_color_null_data);
 	RUN(gfx_d3d11_viewport_null_data);
 	RUN(gfx_d3d11_viewport_missing_context_callback);

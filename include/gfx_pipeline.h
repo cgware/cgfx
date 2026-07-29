@@ -3,6 +3,7 @@
 
 #include "gfx.h"
 #include "gfx_buffer.h"
+#include "gfx_render_pass.h"
 #include "gfx_shader.h"
 
 typedef enum gfx_value_type_s {
@@ -19,6 +20,7 @@ typedef struct gfx_layout_s {
 } gfx_layout_t;
 
 typedef struct gfx_pipeline_config_s {
+	const gfx_render_pass_t *render_pass;
 	gfx_shader_t vs;
 	gfx_shader_t fs;
 	const gfx_layout_t *input_layout;
@@ -27,6 +29,7 @@ typedef struct gfx_pipeline_config_s {
 
 typedef struct gfx_pipeline_s {
 	gfx_t *gfx;
+	const gfx_render_pass_t *render_pass;
 	void *data;
 } gfx_pipeline_t;
 

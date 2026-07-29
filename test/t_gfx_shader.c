@@ -1,5 +1,6 @@
-#include "gfx_driver.h"
+#include "gfx_shader.h"
 
+#include "gfx_driver.h"
 #include "log.h"
 #include "test.h"
 

@@ -1,5 +1,6 @@
-#include "gfx_driver.h"
+#include "gfx_pipeline.h"
 
+#include "gfx_driver.h"
 #include "test.h"
 
 static int t_gfx_pipeline_init_calls;
@@ -108,9 +109,10 @@ TEST(gfx_pipeline_init_success)
 	START;
 
 	t_gfx_pipeline_reset();
-	gfx_t gfx		     = {.drv = &t_gfx_pipeline_driver};
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = {0};
+	gfx_t gfx		      = {.drv = &t_gfx_pipeline_driver};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_render_pass_t render_pass = {.gfx = &gfx, .color_format = GFX_FORMAT_RGBA8};
+	gfx_pipeline_config_t config  = {.render_pass = &render_pass};
 
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
 	EXPECT_EQ(t_gfx_pipeline_init_calls, 1);
@@ -126,10 +128,11 @@ TEST(gfx_pipeline_init_returns_null_on_driver_failure)
 	START;
 
 	t_gfx_pipeline_reset();
-	t_gfx_pipeline_init_ret	     = 1;
-	gfx_t gfx		     = {.drv = &t_gfx_pipeline_driver};
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = {0};
+	t_gfx_pipeline_init_ret	      = 1;
+	gfx_t gfx		      = {.drv = &t_gfx_pipeline_driver};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_render_pass_t render_pass = {.gfx = &gfx, .color_format = GFX_FORMAT_RGBA8};
+	gfx_pipeline_config_t config  = {.render_pass = &render_pass};
 
 	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
 
@@ -171,8 +174,9 @@ TEST(gfx_pipeline_bind_null_driver_callback)
 	gfx_driver_t drv	= t_gfx_pipeline_driver;
 	drv.pipeline_bind	= NULL;
 	gfx_t gfx		= {.drv = &drv};
-	gfx_frame_t frame	= {.gfx = &gfx, .active = 1};
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)0x9ABC};
+	gfx_render_pass_t pass	= {.gfx = &gfx, .color_format = GFX_FORMAT_RGBA8};
+	gfx_frame_t frame	= {.gfx = &gfx, .render_pass = &pass, .active = 1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .render_pass = &pass, .data = (void *)0x9ABC};
 	gfx.frame		= &frame;
 
 	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 1);
@@ -187,8 +191,9 @@ TEST(gfx_pipeline_bind_returns_driver_result)
 	t_gfx_pipeline_reset();
 	t_gfx_pipeline_bind_ret = 1;
 	gfx_t gfx		= {.drv = &t_gfx_pipeline_driver};
-	gfx_frame_t frame	= {.gfx = &gfx, .active = 1};
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = (void *)0x9ABC};
+	gfx_render_pass_t pass	= {.gfx = &gfx, .color_format = GFX_FORMAT_RGBA8};
+	gfx_frame_t frame	= {.gfx = &gfx, .render_pass = &pass, .active = 1};
+	gfx_pipeline_t pipeline = {.gfx = &gfx, .render_pass = &pass, .data = (void *)0x9ABC};
 	gfx.frame		= &frame;
 
 	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 1);

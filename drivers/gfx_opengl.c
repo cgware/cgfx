@@ -46,9 +46,8 @@ typedef struct gfx_opengl_vertex_2d_s {
 
 typedef struct gfx_opengl_s {
 	void *gl_lib;
-	gfx_target_t target;
-	unsigned int framebuffer;
-	unsigned int texture;
+	const gfx_target_t *target;
+	const gfx_framebuffer_t *framebuffer;
 	gfx_surface_t *surface;
 	void (*ClearColor)(float, float, float, float);
 	void (*Clear)(unsigned int);
@@ -89,6 +88,20 @@ typedef struct gfx_opengl_s {
 	void (*DrawArrays)(unsigned int, int, int);
 } gfx_opengl_t;
 
+typedef struct gfx_opengl_render_pass_s {
+	gfx_format_t color_format;
+	gfx_load_op_t load;
+	gfx_store_op_t store;
+} gfx_opengl_render_pass_t;
+
+typedef struct gfx_opengl_target_s {
+	unsigned int texture;
+} gfx_opengl_target_t;
+
+typedef struct gfx_opengl_framebuffer_s {
+	unsigned int framebuffer;
+} gfx_opengl_framebuffer_t;
+
 typedef struct gfx_opengl_buffer_s {
 	unsigned int buffer;
 } gfx_opengl_buffer_t;
@@ -106,7 +119,7 @@ typedef struct gfx_opengl_pipeline_s {
 
 static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation);
 static int _gfx_opengl_begin(gfx_t *gfx, const char *operation, gfx_opengl_t **out);
-static int gfx_opengl_bind_target(gfx_opengl_t *opengl);
+static int gfx_opengl_bind_framebuffer(gfx_opengl_t *opengl);
 
 static int find_gl_symbol(gfx_t *gfx, gfx_surface_t *surface, void **sym, strv_t name)
 {
@@ -152,7 +165,7 @@ static int gfx_opengl_init_free(gfx_t *gfx, gfx_opengl_t *opengl, gfx_surface_t 
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(gfx->proc, opengl->gl_lib);
 	}
-	alloc_free(&gfx->alloc, opengl, sizeof(*opengl));
+	alloc_free(&gfx->alloc, opengl, sizeof(gfx_opengl_t));
 	gfx->data = NULL;
 	return 1;
 }
@@ -238,6 +251,7 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 		if (!gfx_opengl_surface_valid(config->surface)) {
 			return gfx_opengl_init_free(gfx, opengl, NULL);
 		}
+		opengl->surface = config->surface;
 		if (config->surface->ops->make_current(config->surface)) {
 			log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
 			return gfx_opengl_init_free(gfx, opengl, NULL);
@@ -254,23 +268,6 @@ static int gfx_opengl_init(gfx_t *gfx, const gfx_config_t *config)
 	return 0;
 }
 
-static void gfx_opengl_target_free(gfx_opengl_t *opengl)
-{
-	if (opengl->surface != NULL && opengl->surface->ops != NULL && opengl->surface->ops->clear_current != NULL) {
-		opengl->surface->ops->clear_current(opengl->surface);
-	}
-	if (opengl->framebuffer != 0 && opengl->DeleteFramebuffers != NULL) {
-		opengl->DeleteFramebuffers(1, &opengl->framebuffer);
-		opengl->framebuffer = 0;
-	}
-	if (opengl->texture != 0 && opengl->DeleteTextures != NULL) {
-		opengl->DeleteTextures(1, &opengl->texture);
-		opengl->texture = 0;
-	}
-	opengl->surface = NULL;
-	opengl->target	= (gfx_target_t){0};
-}
-
 static int gfx_opengl_free(gfx_t *gfx)
 {
 	if (gfx == NULL || gfx->data == NULL) {
@@ -278,11 +275,11 @@ static int gfx_opengl_free(gfx_t *gfx)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	gfx_opengl_target_free(opengl);
+	opengl->target	     = NULL;
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(gfx->proc, opengl->gl_lib);
 	}
-	alloc_free(&gfx->alloc, opengl, sizeof(*opengl));
+	alloc_free(&gfx->alloc, opengl, sizeof(gfx_opengl_t));
 	gfx->data = NULL;
 	return 0;
 }
@@ -301,6 +298,35 @@ static int gfx_opengl_proc(gfx_t *gfx, strv_t name, void **proc)
 	return 1;
 }
 
+static void gfx_opengl_render_pass_free(gfx_render_pass_t *render_pass)
+{
+	if (render_pass == NULL || render_pass->gfx == NULL || render_pass->data == NULL) {
+		return;
+	}
+
+	alloc_free(&render_pass->gfx->alloc, render_pass->data, sizeof(gfx_opengl_render_pass_t));
+	render_pass->data = NULL;
+}
+
+static int gfx_opengl_render_pass_init(gfx_render_pass_t *render_pass, const gfx_render_pass_config_t *config)
+{
+	if (render_pass == NULL || render_pass->gfx == NULL || config == NULL || config->color_format != GFX_FORMAT_RGBA8) {
+		return 1;
+	}
+
+	gfx_opengl_render_pass_t *gl_render_pass = alloc_alloc(&render_pass->gfx->alloc, sizeof(gfx_opengl_render_pass_t));
+	if (gl_render_pass == NULL) {
+		return 1;
+	}
+	*gl_render_pass = (gfx_opengl_render_pass_t){
+		.color_format = config->color_format,
+		.load	      = config->load,
+		.store	      = config->store,
+	};
+	render_pass->data = gl_render_pass;
+	return 0;
+}
+
 static int memory_target_valid(const gfx_target_t *target)
 {
 	return target != NULL && target->type == GFX_TARGET_MEMORY && target->format == GFX_FORMAT_RGBA8 && target->data != NULL &&
@@ -314,140 +340,221 @@ static int surface_target_valid(const gfx_target_t *target)
 	       target->surface->ops->present != NULL && target->width != 0 && target->height != 0;
 }
 
-static int surface_target_same(const gfx_opengl_t *opengl, const gfx_target_t *target)
+static void gfx_opengl_target_free(gfx_target_t *target)
 {
-	return opengl->target.type == GFX_TARGET_SURFACE && opengl->surface != NULL && opengl->target.format == target->format &&
-	       opengl->target.surface == target->surface;
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
+		return;
+	}
+
+	gfx_opengl_t *opengl = target->gfx->data;
+	if (target->driver_data != NULL) {
+		gfx_opengl_target_t *gl_target = target->driver_data;
+		if (gfx_opengl_make_current(opengl, "target destruction")) {
+			return;
+		}
+		if (gl_target->texture != 0 && opengl->DeleteTextures != NULL) {
+			opengl->DeleteTextures(1, &gl_target->texture);
+		}
+		alloc_free(&target->gfx->alloc, gl_target, sizeof(gfx_opengl_target_t));
+		target->driver_data = NULL;
+	}
+	if (opengl->target == target) {
+		opengl->target = NULL;
+	}
 }
 
-static int gfx_opengl_set_memory_target(gfx_opengl_t *opengl, const gfx_target_t *target)
+static int gfx_opengl_memory_target_init(gfx_target_t *target)
 {
 	if (!memory_target_valid(target)) {
 		return 1;
 	}
 
-	gfx_opengl_target_free(opengl);
-	opengl->target = *target;
+	gfx_opengl_t *opengl	       = target->gfx->data;
+	gfx_opengl_target_t *gl_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_opengl_target_t));
+	if (gl_target == NULL) {
+		return 1;
+	}
+	*gl_target	    = (gfx_opengl_target_t){0};
+	target->driver_data = gl_target;
 
-	opengl->GenTextures(1, &opengl->texture);
-	opengl->BindTexture(GL_TEXTURE_2D, opengl->texture);
+	if (gfx_opengl_make_current(opengl, "memory target initialization")) {
+		return 1;
+	}
+	opengl->GenTextures(1, &gl_target->texture);
+	opengl->BindTexture(GL_TEXTURE_2D, gl_target->texture);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	opengl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, target->width, target->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
-	opengl->GenFramebuffers(1, &opengl->framebuffer);
-	opengl->BindFramebuffer(GL_FRAMEBUFFER, opengl->framebuffer);
-	opengl->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, opengl->texture, 0);
-	if (opengl->CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		log_error("cgfx", "gfx_opengl", NULL, "failed to create complete framebuffer");
-		gfx_opengl_target_free(opengl);
-		return 1;
-	}
-
 	return 0;
 }
 
-static int gfx_opengl_set_surface_target(gfx_opengl_t *opengl, const gfx_target_t *target)
+static int gfx_opengl_surface_target_init(gfx_target_t *target)
 {
 	if (!surface_target_valid(target)) {
 		return 1;
 	}
 
-	if (surface_target_same(opengl, target)) {
-		opengl->target = *target;
-		return 0;
-	}
-
-	gfx_opengl_target_free(opengl);
-	opengl->surface = target->surface;
-	if (opengl->surface->ops->make_current(opengl->surface)) {
-		gfx_opengl_target_free(opengl);
+	gfx_opengl_t *opengl = target->gfx->data;
+	opengl->surface	     = target->surface;
+	if (target->surface->ops->make_current(target->surface)) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
 		return 1;
 	}
 
-	opengl->target = *target;
 	return 0;
 }
 
-static int gfx_opengl_set_target(gfx_t *gfx, const gfx_target_t *target)
+static int gfx_opengl_target_init(gfx_target_t *target)
 {
-	if (gfx == NULL || gfx->data == NULL || target == NULL) {
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl = gfx->data;
 	switch (target->type) {
 	case GFX_TARGET_NONE:
-		gfx_opengl_target_free(opengl);
 		return 0;
 	case GFX_TARGET_MEMORY:
-		return gfx_opengl_set_memory_target(opengl, target);
+		return gfx_opengl_memory_target_init(target);
 	case GFX_TARGET_SURFACE:
-		return gfx_opengl_set_surface_target(opengl, target);
+		return gfx_opengl_surface_target_init(target);
 	default:
 		return 1;
 	}
 }
 
-static int gfx_opengl_begin(gfx_frame_t *frame)
+static int gfx_opengl_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
 {
-	if (frame == NULL || frame->gfx == NULL) {
+	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || config == NULL) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl = NULL;
-	if (_gfx_opengl_begin(frame->gfx, "begin", &opengl)) {
+	gfx_opengl_t *opengl = target->gfx->data;
+	if (opengl->target != target || target->type != GFX_TARGET_MEMORY || target->driver_data == NULL ||
+	    gfx_opengl_make_current(opengl, "memory readback") || gfx_opengl_bind_framebuffer(opengl)) {
 		return 1;
 	}
-	if (gfx_opengl_bind_target(opengl)) {
-		return 1;
+
+	const gfx_target_t *gl_target = opengl->target;
+	for (u16 y = 0; y < gl_target->height; y++) {
+		u8 *row = (u8 *)config->data + (size_t)y * config->stride;
+		opengl->ReadPixels(0, gl_target->height - 1 - y, gl_target->width, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
 	}
 
 	return 0;
 }
 
-static int gfx_opengl_clear_color(gfx_t *gfx, float r, float g, float b, float a)
+static int gfx_opengl_target_present(gfx_target_t *target)
 {
-	gfx_opengl_t *opengl = NULL;
-	if (_gfx_opengl_begin(gfx, "clear color", &opengl)) {
+	if (!surface_target_valid(target)) {
 		return 1;
 	}
 
-	opengl->ClearColor(r, g, b, a);
-	return 0;
+	return target->surface->ops->present(target->surface);
 }
 
-static int gfx_opengl_viewport(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
+static void gfx_opengl_framebuffer_free(gfx_framebuffer_t *framebuffer)
 {
-	gfx_opengl_t *opengl = NULL;
-	if (_gfx_opengl_begin(gfx, "viewport", &opengl)) {
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->data == NULL) {
+		return;
+	}
+
+	gfx_opengl_t *opengl			 = framebuffer->gfx->data;
+	gfx_opengl_framebuffer_t *gl_framebuffer = framebuffer->data;
+	if (gfx_opengl_make_current(opengl, "framebuffer destruction")) {
+		return;
+	}
+	if (gl_framebuffer->framebuffer != 0 && opengl->DeleteFramebuffers != NULL) {
+		opengl->DeleteFramebuffers(1, &gl_framebuffer->framebuffer);
+		gl_framebuffer->framebuffer = 0;
+	}
+	if (opengl->framebuffer == framebuffer) {
+		opengl->framebuffer = NULL;
+	}
+	alloc_free(&framebuffer->gfx->alloc, gl_framebuffer, sizeof(gfx_opengl_framebuffer_t));
+	framebuffer->data = NULL;
+}
+
+static int gfx_opengl_framebuffer_init(gfx_framebuffer_t *framebuffer)
+{
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->target == NULL ||
+	    framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
 		return 1;
 	}
 
-	opengl->Viewport(x, y, width, height);
-	return 0;
-}
-
-static int gfx_opengl_read_memory(gfx_opengl_t *opengl)
-{
-	for (u16 y = 0; y < opengl->target.height; y++) {
-		u8 *row = (u8 *)opengl->target.data + (size_t)y * opengl->target.stride;
-		opengl->ReadPixels(0, opengl->target.height - 1 - y, opengl->target.width, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
+	gfx_opengl_framebuffer_t *gl_framebuffer = alloc_alloc(&framebuffer->gfx->alloc, sizeof(gfx_opengl_framebuffer_t));
+	if (gl_framebuffer == NULL) {
+		return 1;
 	}
+	*gl_framebuffer	  = (gfx_opengl_framebuffer_t){0};
+	framebuffer->data = gl_framebuffer;
 
-	return 0;
-}
-
-static int gfx_opengl_bind_target(gfx_opengl_t *opengl)
-{
-	if (opengl->target.type == GFX_TARGET_MEMORY) {
-		opengl->BindFramebuffer(GL_FRAMEBUFFER, opengl->framebuffer);
+	if (framebuffer->target->type == GFX_TARGET_SURFACE) {
 		return 0;
 	}
-	if (opengl->target.type == GFX_TARGET_SURFACE) {
+	if (framebuffer->target->type != GFX_TARGET_MEMORY || framebuffer->target->driver_data == NULL) {
+		gfx_opengl_framebuffer_free(framebuffer);
+		return 1;
+	}
+
+	gfx_opengl_t *opengl	       = framebuffer->gfx->data;
+	gfx_opengl_target_t *gl_target = framebuffer->target->driver_data;
+	if (gfx_opengl_make_current(opengl, "framebuffer initialization")) {
+		gfx_opengl_framebuffer_free(framebuffer);
+		return 1;
+	}
+	opengl->GenFramebuffers(1, &gl_framebuffer->framebuffer);
+	opengl->BindFramebuffer(GL_FRAMEBUFFER, gl_framebuffer->framebuffer);
+	opengl->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl_target->texture, 0);
+	if (opengl->CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		log_error("cgfx", "gfx_opengl", NULL, "failed to create complete framebuffer");
+		gfx_opengl_framebuffer_free(framebuffer);
+		return 1;
+	}
+	return 0;
+}
+
+static int gfx_opengl_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->target == NULL ||
+	    framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = frame->gfx->data;
+	opengl->target	     = framebuffer->target;
+	opengl->framebuffer  = framebuffer;
+	opengl->surface	     = opengl->target->type == GFX_TARGET_SURFACE ? opengl->target->surface : opengl->surface;
+	if (_gfx_opengl_begin(frame->gfx, "pass begin", &opengl)) {
+		return 1;
+	}
+	if (gfx_opengl_bind_framebuffer(opengl)) {
+		return 1;
+	}
+	opengl->Viewport(frame->pass.viewport.x, frame->pass.viewport.y, frame->pass.viewport.width, frame->pass.viewport.height);
+	if (framebuffer->render_pass->load == GFX_LOAD_CLEAR) {
+		opengl->ClearColor(frame->pass.clear.r, frame->pass.clear.g, frame->pass.clear.b, frame->pass.clear.a);
+		opengl->Clear(GL_COLOR_BUFFER_BIT);
+	}
+	return 0;
+}
+
+static int gfx_opengl_bind_framebuffer(gfx_opengl_t *opengl)
+{
+	if (opengl->target == NULL || opengl->framebuffer == NULL) {
+		return 1;
+	}
+	if (opengl->target->type == GFX_TARGET_MEMORY) {
+		gfx_opengl_framebuffer_t *framebuffer = opengl->framebuffer->data;
+		if (framebuffer == NULL || framebuffer->framebuffer == 0) {
+			return 1;
+		}
+		opengl->BindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
+		return 0;
+	}
+	if (opengl->target->type == GFX_TARGET_SURFACE) {
 		opengl->BindFramebuffer(GL_FRAMEBUFFER, 0);
 		return 0;
 	}
@@ -485,7 +592,7 @@ static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation)
 static int _gfx_opengl_begin(gfx_t *gfx, const char *operation, gfx_opengl_t **out)
 {
 	if (gfx == NULL || gfx->data == NULL || out == NULL) {
-		return 1;
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
@@ -726,7 +833,7 @@ static void gfx_opengl_shader_free(gfx_shader_t *shader)
 		opengl->DeleteShader(gl_shader->shader);
 		gl_shader->shader = 0;
 	}
-	alloc_free(&shader->gfx->alloc, gl_shader, sizeof(*gl_shader));
+	alloc_free(&shader->gfx->alloc, gl_shader, sizeof(gfx_opengl_shader_t));
 	shader->data = NULL;
 }
 
@@ -926,37 +1033,6 @@ static int gfx_opengl_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_verte
 	return 0;
 }
 
-static int gfx_opengl_clear(gfx_t *gfx, u32 buffers)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-
-	unsigned int mask = 0;
-	if (buffers & GFX_CLEAR_COLOR_BUFFER) {
-		mask |= GL_COLOR_BUFFER_BIT;
-	}
-
-	gfx_opengl_t *opengl = NULL;
-	if (_gfx_opengl_begin(gfx, "clear", &opengl)) {
-		return 1;
-	}
-	if (opengl->target.type == GFX_TARGET_MEMORY) {
-		opengl->BindFramebuffer(GL_FRAMEBUFFER, opengl->framebuffer);
-		opengl->Viewport(0, 0, opengl->target.width, opengl->target.height);
-	} else if (opengl->target.type == GFX_TARGET_SURFACE) {
-		opengl->BindFramebuffer(GL_FRAMEBUFFER, 0);
-		opengl->Viewport(0, 0, opengl->target.width, opengl->target.height);
-	}
-
-	opengl->Clear(mask);
-	if ((buffers & GFX_CLEAR_COLOR_BUFFER) == 0 || opengl->target.type != GFX_TARGET_MEMORY) {
-		return 0;
-	}
-
-	return gfx_opengl_read_memory(opengl);
-}
-
 static int gfx_opengl_end(gfx_frame_t *frame)
 {
 	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
@@ -968,51 +1044,36 @@ static int gfx_opengl_end(gfx_frame_t *frame)
 		return 1;
 	}
 	gfx_opengl_pipeline_end(frame);
-	if (opengl->target.type == GFX_TARGET_MEMORY && gfx_opengl_read_memory(opengl)) {
-		return 1; // LCOV_EXCL_LINE
-	}
 
 	return 0;
 }
 
-static int gfx_opengl_present(gfx_t *gfx)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-
-	gfx_opengl_t *opengl = gfx->data;
-	if (opengl->target.type != GFX_TARGET_SURFACE || opengl->surface == NULL || opengl->surface->ops == NULL ||
-	    opengl->surface->ops->present == NULL) {
-		return 1;
-	}
-
-	return opengl->surface->ops->present(opengl->surface);
-}
-
 static gfx_driver_t gfx_opengl = {
-	.name		 = "opengl",
-	.api		 = GFX_API_OPENGL,
-	.init		 = gfx_opengl_init,
-	.free		 = gfx_opengl_free,
-	.proc		 = gfx_opengl_proc,
-	.set_target	 = gfx_opengl_set_target,
-	.viewport	 = gfx_opengl_viewport,
-	.begin		 = gfx_opengl_begin,
-	.clear_color	 = gfx_opengl_clear_color,
-	.clear		 = gfx_opengl_clear,
-	.buffer_init	 = gfx_opengl_buffer_init,
-	.buffer_free	 = gfx_opengl_buffer_free,
-	.buffer_set_data = gfx_opengl_buffer_set_data,
-	.buffer_bind	 = gfx_opengl_buffer_bind,
-	.shader_init	 = gfx_opengl_shader_init,
-	.shader_free	 = gfx_opengl_shader_free,
-	.pipeline_init	 = gfx_opengl_pipeline_init,
-	.pipeline_free	 = gfx_opengl_pipeline_free,
-	.pipeline_bind	 = gfx_opengl_pipeline_bind,
-	.draw		 = gfx_opengl_draw,
-	.end		 = gfx_opengl_end,
-	.present	 = gfx_opengl_present,
+	.name			= "opengl",
+	.api			= GFX_API_OPENGL,
+	.init			= gfx_opengl_init,
+	.free			= gfx_opengl_free,
+	.proc			= gfx_opengl_proc,
+	.render_pass_init	= gfx_opengl_render_pass_init,
+	.render_pass_free	= gfx_opengl_render_pass_free,
+	.target_init		= gfx_opengl_target_init,
+	.target_free		= gfx_opengl_target_free,
+	.target_read		= gfx_opengl_target_read,
+	.target_present		= gfx_opengl_target_present,
+	.framebuffer_init	= gfx_opengl_framebuffer_init,
+	.framebuffer_free	= gfx_opengl_framebuffer_free,
+	.framebuffer_pass_begin = gfx_opengl_framebuffer_pass_begin,
+	.buffer_init		= gfx_opengl_buffer_init,
+	.buffer_free		= gfx_opengl_buffer_free,
+	.buffer_set_data	= gfx_opengl_buffer_set_data,
+	.buffer_bind		= gfx_opengl_buffer_bind,
+	.shader_init		= gfx_opengl_shader_init,
+	.shader_free		= gfx_opengl_shader_free,
+	.pipeline_init		= gfx_opengl_pipeline_init,
+	.pipeline_free		= gfx_opengl_pipeline_free,
+	.pipeline_bind		= gfx_opengl_pipeline_bind,
+	.draw			= gfx_opengl_draw,
+	.end			= gfx_opengl_end,
 };
 
 GFX_DRIVER(gfx_opengl, &gfx_opengl);

@@ -1,6 +1,7 @@
 #include "buf.h"
 #include "fs.h"
 #include "gfx_driver.h"
+#include "gfx_framebuffer.h"
 #include "log.h"
 #include "proc.h"
 
@@ -71,15 +72,17 @@ int main(void)
 	};
 
 	static u8 pixels[WIDTH * HEIGHT * 4];
-	fs_t fs			= {0};
-	proc_t proc		= {0};
-	gfx_t gfx		= {0};
-	gfx_buffer_t vb		= {0};
-	gfx_shader_t vertex	= {0};
-	gfx_shader_t fragment	= {0};
-	gfx_pipeline_t pipeline = {0};
-	int ret			= 0;
-	strv_t driver_name	= STRV("software");
+	fs_t fs			      = {0};
+	proc_t proc		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_buffer_t vb		      = {0};
+	gfx_shader_t vertex	      = {0};
+	gfx_shader_t fragment	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	int ret			      = 0;
+	strv_t driver_name	      = STRV("software");
 
 	fs_init(&fs, 0, 0, ALLOC_STD);
 	proc_init(&proc, 0, 0, ALLOC_STD);
@@ -159,7 +162,33 @@ int main(void)
 		{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
 		{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
 	};
+	gfx_memory_target_config_t target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= WIDTH,
+		.height = HEIGHT,
+		.stride = WIDTH * 4,
+	};
+	gfx_target_t target = {0};
+	if (ret == 0 && gfx_target_init_memory(&target, &gfx, &target_config) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize memory target");
+		ret = 1;
+	}
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	if (ret == 0 && gfx_render_pass_init(&render_pass, &gfx, &render_pass_config) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize render pass");
+		ret = 1;
+	}
+	if (ret == 0 && gfx_framebuffer_init(&framebuffer, &target, &render_pass) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize framebuffer");
+		ret = 1;
+	}
 	gfx_pipeline_config_t pipeline_config = {
+		.render_pass	   = &render_pass,
 		.vs		   = vertex,
 		.fs		   = fragment,
 		.input_layout	   = input_layout,
@@ -169,33 +198,13 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to initialize pipeline");
 		ret = 1;
 	}
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= WIDTH,
-		.height = HEIGHT,
-		.stride = WIDTH * 4,
+	gfx_pass_config_t pass_config = {
+		.clear	  = {R / 255.0f, G / 255.0f, B / 255.0f, A / 255.0f},
+		.viewport = {0, 0, WIDTH, HEIGHT},
 	};
-	if (ret == 0 && gfx_set_target(&gfx, &target)) {
-		log_error("cgfx_example", "main", NULL, "failed to set memory render target");
-		ret = 1;
-	}
-	if (ret == 0 && gfx_viewport(&gfx, 0, 0, WIDTH, HEIGHT)) {
-		log_error("cgfx_example", "main", NULL, "failed to set viewport");
-		ret = 1;
-	}
-	if (ret == 0 && gfx_clear_color(&gfx, R / 255.0f, G / 255.0f, B / 255.0f, A / 255.0f)) {
-		log_error("cgfx_example", "main", NULL, "failed to set clear color");
-		ret = 1;
-	}
-	if (ret == 0 && gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER)) {
-		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
-		ret = 1;
-	}
 	gfx_frame_t frame = {0};
-	if (ret == 0 && gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target})) {
-		log_error("cgfx_example", "main", NULL, "failed to clear memory render target");
+	if (ret == 0 && gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config)) {
+		log_error("cgfx_example", "main", NULL, "failed to begin render pass");
 		ret = 1;
 	}
 	if (ret == 0 && gfx_pipeline_bind(&frame, &pipeline)) {
@@ -214,6 +223,10 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to end frame");
 		ret = 1;
 	}
+	if (ret == 0 && gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = WIDTH * 4})) {
+		log_error("cgfx_example", "main", NULL, "failed to read back rendered image");
+		ret = 1;
+	}
 
 	if (ret == 0 && (pixels[0] != R || pixels[1] != G || pixels[2] != B || pixels[3] != A)) {
 		log_error("cgfx_example", "main", NULL, "unexpected first pixel: %u %u %u %u", pixels[0], pixels[1], pixels[2], pixels[3]);
@@ -227,6 +240,9 @@ int main(void)
 	gfx_shader_free(&vertex);
 	gfx_shader_free(&fragment);
 	gfx_pipeline_free(&pipeline);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_target_free(&target);
+	gfx_render_pass_free(&render_pass);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	fs_free(&fs);
