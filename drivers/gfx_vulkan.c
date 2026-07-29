@@ -946,7 +946,7 @@ static void gfx_vulkan_swapchain_free(gfx_vulkan_t *vulkan, gfx_vulkan_target_t 
 {
 	for (u32 i = 0; i < target->swapchain_image_count; i++) {
 		if (target->swapchain_image_views[i] != 0) {
-			vulkan->DestroyImageView(vulkan->device, target->swapchain_image_views[i], NULL); // LCOV_EXCL_LINE
+			vulkan->DestroyImageView(vulkan->device, target->swapchain_image_views[i], NULL);
 		}
 	}
 	if (target->swapchain != 0) {
@@ -2092,7 +2092,7 @@ static int gfx_vulkan_framebuffer_init(gfx_framebuffer_t *framebuffer)
 static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *framebuffer)
 {
 	if (vulkan->frame.active || framebuffer == NULL || framebuffer->data == NULL) {
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 
 	vulkan->frame = (gfx_vulkan_frame_t){0};
@@ -2104,7 +2104,7 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 	switch (vulkan->target->type) {
 	case GFX_TARGET_MEMORY: {
 		if (target->image == 0 || target->image_view == 0 || vk_framebuffer->framebuffer == 0) {
-			return 1; // LCOV_EXCL_LINE
+			return 1;
 		}
 		vulkan->frame.image	   = target->image;
 		vulkan->frame.view	   = &target->image_view;
@@ -2120,7 +2120,7 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 		u32 i = target->swapchain_image_index;
 		if (target->swapchain_images[i] == 0 || target->swapchain_image_views[i] == 0 ||
 		    vk_framebuffer->swapchain_framebuffers[i] == 0) {
-			return 1; // LCOV_EXCL_LINE
+			return 1;
 		}
 		vulkan->frame.image	  = target->swapchain_images[i];
 		vulkan->frame.view	  = &target->swapchain_image_views[i];

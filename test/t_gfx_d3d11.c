@@ -13,6 +13,7 @@ enum {
 	S_OK					= 0,
 	T_D3D_DRIVER_TYPE_HARDWARE		= 1,
 	T_D3D11_SDK_VERSION			= 7,
+	T_D3D11_USAGE_DEFAULT			= 0,
 	T_D3D11_USAGE_STAGING			= 3,
 	T_D3D11_BIND_VERTEX_BUFFER		= 0x00000001,
 	T_D3D11_BIND_RENDER_TARGET		= 0x00000020,
@@ -381,7 +382,6 @@ static t_d3d11_texture_t t_texture;
 static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
 static gfx_surface_t t_surface;
-static gfx_target_t t_gfx_d3d11_target;
 static gfx_render_pass_t *t_gfx_d3d11_active_render_pass;
 
 static const gfx_layout_t t_gfx_d3d11_input_layout[] = {
@@ -397,6 +397,36 @@ typedef struct t_gfx_d3d11_shader_data_s {
 		t_d3d11_pixel_shader_t *pixel;
 	} shader;
 } t_gfx_d3d11_shader_data_t;
+
+typedef struct t_gfx_d3d11_target_data_s {
+	t_dxgi_swapchain_t *swapchain;
+	t_d3d11_texture_t *texture;
+} t_gfx_d3d11_target_data_t;
+
+typedef struct t_gfx_d3d11_data_s {
+	void *lib;
+	void *compiler_lib;
+	const gfx_target_t *target;
+	t_d3d11_device_t *device;
+	t_d3d11_context_t *context;
+	void *D3D11CreateDevice;
+	void *D3DCompile;
+} t_gfx_d3d11_data_t;
+
+typedef struct t_gfx_d3d11_framebuffer_data_s {
+	t_d3d11_view_t *render_target;
+} t_gfx_d3d11_framebuffer_data_t;
+
+typedef struct t_gfx_d3d11_buffer_data_s {
+	t_d3d11_buffer_t *buffer;
+} t_gfx_d3d11_buffer_data_t;
+
+typedef struct t_gfx_d3d11_pipeline_data_s {
+	t_d3d11_input_layout_t *input_layout;
+	t_d3d11_vertex_shader_t *vertex_shader;
+	t_d3d11_pixel_shader_t *pixel_shader;
+	UINT stride;
+} t_gfx_d3d11_pipeline_data_t;
 
 static gfx_pipeline_config_t t_gfx_d3d11_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
 {
@@ -1035,247 +1065,6 @@ static int t_gfx_d3d11_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stage
 	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
-typedef struct gfx_frame_config_s {
-	const gfx_target_t *target;
-} gfx_frame_config_t;
-
-#define GFX_CLEAR_COLOR_BUFFER 1u
-
-static gfx_target_t t_gfx_d3d11_bound_target;
-static gfx_render_pass_t t_gfx_d3d11_bound_render_pass;
-static gfx_framebuffer_t t_gfx_d3d11_bound_framebuffer;
-static gfx_color_t t_gfx_d3d11_clear_color = {0.0f, 0.0f, 0.0f, 0.0f};
-static gfx_rect_t t_gfx_d3d11_viewport;
-
-static void t_gfx_d3d11_unset_target(gfx_t *gfx)
-{
-	if (t_gfx_d3d11_bound_framebuffer.gfx == gfx) {
-		gfx_framebuffer_free(&t_gfx_d3d11_bound_framebuffer);
-	}
-	if (t_gfx_d3d11_bound_render_pass.gfx == gfx) {
-		gfx_render_pass_free(&t_gfx_d3d11_bound_render_pass);
-	}
-	if (t_gfx_d3d11_bound_target.gfx == gfx) {
-		gfx_target_free(&t_gfx_d3d11_bound_target);
-	}
-	t_gfx_d3d11_active_render_pass = NULL;
-	t_gfx_d3d11_viewport	       = (gfx_rect_t){0};
-}
-
-static int t_gfx_d3d11_set_target_compat(gfx_t *gfx, const gfx_target_t *target)
-{
-	if (gfx == NULL || gfx->drv == NULL || target == NULL) {
-		return 1;
-	}
-	if (t_gfx_d3d11_bound_target.gfx == gfx && t_gfx_d3d11_bound_target.type == target->type &&
-	    t_gfx_d3d11_bound_target.format == target->format && t_gfx_d3d11_bound_target.data == target->data &&
-	    t_gfx_d3d11_bound_target.surface == target->surface && t_gfx_d3d11_bound_target.width == target->width &&
-	    t_gfx_d3d11_bound_target.height == target->height && t_gfx_d3d11_bound_target.stride == target->stride) {
-		return 0;
-	}
-	if (t_gfx_d3d11_bound_target.gfx == gfx && t_gfx_d3d11_bound_target.type == GFX_TARGET_SURFACE &&
-	    target->type == GFX_TARGET_SURFACE && t_gfx_d3d11_bound_target.surface == target->surface &&
-	    t_gfx_d3d11_bound_target.width != 0 && t_gfx_d3d11_bound_target.height != 0 &&
-	    (t_gfx_d3d11_bound_target.width != target->width || t_gfx_d3d11_bound_target.height != target->height)) {
-		if (gfx_target_resize(&t_gfx_d3d11_bound_target, target->width, target->height)) {
-			return 1;
-		}
-	}
-	t_gfx_d3d11_unset_target(gfx);
-	if (target->type == GFX_TARGET_NONE) {
-		return 0;
-	}
-
-	gfx_target_t *created = NULL;
-	if (target->type == GFX_TARGET_MEMORY) {
-		created = gfx_target_init_memory(&t_gfx_d3d11_bound_target,
-						 gfx,
-						 &(gfx_memory_target_config_t){
-							 .format = target->format,
-							 .data	 = target->data,
-							 .width	 = target->width,
-							 .height = target->height,
-							 .stride = target->stride,
-						 });
-	} else if (target->type == GFX_TARGET_SURFACE) {
-		created = gfx_target_init_surface(&t_gfx_d3d11_bound_target,
-						  gfx,
-						  &(gfx_surface_target_config_t){
-							  .format  = target->format,
-							  .surface = target->surface,
-							  .width   = target->width,
-							  .height  = target->height,
-						  });
-	}
-	if (created == NULL) {
-		return 1;
-	}
-	if (gfx_render_pass_init(&t_gfx_d3d11_bound_render_pass,
-				 gfx,
-				 &(gfx_render_pass_config_t){
-					 .color_format = t_gfx_d3d11_bound_target.format,
-					 .load	       = GFX_LOAD_CLEAR,
-					 .store	       = GFX_STORE_STORE,
-				 }) != &t_gfx_d3d11_bound_render_pass) {
-		t_gfx_d3d11_unset_target(gfx);
-		return 1;
-	}
-	t_gfx_d3d11_active_render_pass = &t_gfx_d3d11_bound_render_pass;
-	if (gfx_framebuffer_init(&t_gfx_d3d11_bound_framebuffer, &t_gfx_d3d11_bound_target, &t_gfx_d3d11_bound_render_pass) !=
-	    &t_gfx_d3d11_bound_framebuffer) {
-		t_gfx_d3d11_unset_target(gfx);
-		return 1;
-	}
-	return 0;
-}
-
-static int t_gfx_d3d11_begin_compat(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config)
-{
-	if (config != NULL && config->target != NULL && t_gfx_d3d11_set_target_compat(gfx, config->target)) {
-		return 1;
-	}
-	if (t_gfx_d3d11_bound_framebuffer.gfx != gfx) {
-		return 1;
-	}
-	return gfx_framebuffer_pass_begin(&t_gfx_d3d11_bound_framebuffer,
-					  frame,
-					  &(gfx_pass_config_t){
-						  .clear    = t_gfx_d3d11_clear_color,
-						  .viewport = t_gfx_d3d11_viewport,
-					  });
-}
-
-static int t_gfx_d3d11_clear_color_compat(gfx_t *gfx, float r, float g, float b, float a)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-	t_gfx_d3d11_clear_color = (gfx_color_t){r, g, b, a};
-	return 0;
-}
-
-static int t_gfx_d3d11_viewport_compat(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
-{
-	if (gfx == NULL || gfx->data == NULL || width == 0 || height == 0) {
-		return 1;
-	}
-	t_gfx_d3d11_viewport = (gfx_rect_t){x, y, width, height};
-	if (t_context_vtbl.RSSetViewports == NULL) {
-		return 1;
-	}
-	D3D11_VIEWPORT viewport = {
-		.TopLeftX = (float)x,
-		.TopLeftY = (float)y,
-		.Width	  = (float)width,
-		.Height	  = (float)height,
-		.MinDepth = 0.0f,
-		.MaxDepth = 1.0f,
-	};
-	t_context_vtbl.RSSetViewports(&t_context, 1, &viewport);
-	return 0;
-}
-
-static int t_gfx_d3d11_clear_compat(gfx_t *gfx, u32 buffers)
-{
-	if (buffers == 0) {
-		return 0;
-	}
-	if (t_gfx_d3d11_bound_framebuffer.gfx != gfx) {
-		return 1;
-	}
-	gfx_frame_t frame = {0};
-	if (t_gfx_d3d11_begin_compat(gfx, &frame, NULL)) {
-		return 1;
-	}
-	return gfx_end(&frame);
-}
-
-static int t_gfx_d3d11_present_compat(gfx_t *gfx)
-{
-	if (t_gfx_d3d11_bound_target.gfx != gfx) {
-		return 1;
-	}
-	return gfx_target_present(&t_gfx_d3d11_bound_target);
-}
-
-static void t_gfx_d3d11_free_compat(gfx_t *gfx)
-{
-	t_gfx_d3d11_unset_target(gfx);
-	gfx_free(gfx);
-}
-
-#define gfx_set_target	t_gfx_d3d11_set_target_compat
-#define gfx_begin	t_gfx_d3d11_begin_compat
-#define gfx_clear_color t_gfx_d3d11_clear_color_compat
-#define gfx_viewport	t_gfx_d3d11_viewport_compat
-#define gfx_clear	t_gfx_d3d11_clear_compat
-#define gfx_present	t_gfx_d3d11_present_compat
-#define gfx_free	t_gfx_d3d11_free_compat
-
-static int t_gfx_d3d11_draw(gfx_t *gfx, const gfx_target_t *target, const gfx_vertex_2d_t vertices[3])
-{
-	if (vertices == NULL) {
-		return 1;
-	}
-	gfx_buffer_t buffer = {0};
-	if (gfx_buffer_init(&buffer, gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) != &buffer) {
-		return 1;
-	}
-	if (gfx_buffer_set_data(&buffer, vertices, sizeof(gfx_vertex_2d_t) * 3)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	if (t_gfx_d3d11_shader(gfx, &vs, GFX_SHADER_STAGE_VERTEX)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	if (t_gfx_d3d11_shader(gfx, &fs, GFX_SHADER_STAGE_FRAGMENT)) {
-		gfx_shader_free(&vs);
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
-	int ret			     = gfx_pipeline_init(&pipeline, gfx, &config) != &pipeline;
-	gfx_frame_t frame	     = {0};
-	int began		     = 0;
-	if (ret == 0) {
-		ret = gfx_begin(gfx, &frame, &(gfx_frame_config_t){.target = target});
-	}
-	if (ret == 0) {
-		began = 1;
-		ret   = gfx_pipeline_bind(&frame, &pipeline);
-	}
-	if (ret == 0) {
-		ret = gfx_buffer_bind(&frame, &buffer);
-	}
-	if (ret == 0) {
-		ret = gfx_draw(&frame, 3, 0);
-	}
-	if (began && gfx_end(&frame)) {
-		ret = 1;
-	}
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_buffer_free(&buffer);
-	return ret;
-}
-
-static int t_gfx_d3d11_set_surface_target(gfx_t *gfx, u16 width, u16 height)
-{
-	t_gfx_d3d11_target = (gfx_target_t){
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_surface,
-		.width	 = width,
-		.height	 = height,
-	};
-	return gfx_set_target(gfx, &t_gfx_d3d11_target);
-}
-
 TEST(gfx_d3d11_driver_is_registered)
 {
 	START;
@@ -1524,88 +1313,6 @@ TEST(gfx_d3d11_native_null_data)
 	END;
 }
 
-TEST(gfx_d3d11_set_surface_target_gets_buffer)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-
-	EXPECT_EQ(t_get_buffer_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_creates_render_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-
-	EXPECT_EQ(t_create_render_target_view_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_releases_buffer)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-
-	EXPECT_EQ(t_release_texture_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_resizes_swapchain)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	t_gfx_d3d11_set_surface_target(&gfx, 800, 600);
-
-	EXPECT_EQ(t_resize_buffers_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_passes_resize_width)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	t_gfx_d3d11_set_surface_target(&gfx, 800, 600);
-
-	EXPECT_EQ(t_resize_width, 800);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_d3d11_set_target_null_data)
 {
 	START;
@@ -1617,138 +1324,6 @@ TEST(gfx_d3d11_set_target_null_data)
 
 	EXPECT_EQ(gfx.drv->target_init(&target), 1);
 
-	END;
-}
-
-TEST(gfx_d3d11_set_target_unknown_type)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type = GFX_TARGET_MEMORY,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_target_none_clears_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &(gfx_target_t){.type = GFX_TARGET_NONE}), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_invalid_surface_api)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_surface_t surface = t_surface;
-	surface.api	      = GFX_API_OPENGL;
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_get_buffer_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_get_buffer_ret = -1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 640, 480), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_render_target_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_create_render_target_view_ret = -1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 640, 480), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_reuses_existing_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-
-	EXPECT_EQ(t_get_buffer_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_set_surface_target_resize_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	t_resize_buffers_ret = -1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_d3d11_set_surface_target(&gfx, 800, 600), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -1794,116 +1369,6 @@ TEST(gfx_d3d11_render_pass_init_alloc_failure)
 	END;
 }
 
-TEST(gfx_d3d11_memory_target_creates_texture)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_create_texture_2d_calls, 1);
-	EXPECT_EQ(t_create_texture_bind_flags, T_D3D11_BIND_RENDER_TARGET);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_memory_target_create_texture_missing_callback)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_device_vtbl.CreateTexture2D = NULL;
-	u8 pixels[4]		      = {0};
-	gfx_target_t target	      = {
-			  .type	  = GFX_TARGET_MEMORY,
-			  .format = GFX_FORMAT_RGBA8,
-			  .data	  = pixels,
-			  .width  = 1,
-			  .height = 1,
-			  .stride = 4,
-	  };
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	t_device_vtbl.CreateTexture2D = t_CreateTexture2D;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_memory_target_create_texture_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_create_texture_2d_ret = -1;
-	u8 pixels[4]		= {0};
-	gfx_target_t target	= {
-		    .type   = GFX_TARGET_MEMORY,
-		    .format = GFX_FORMAT_RGBA8,
-		    .data   = pixels,
-		    .width  = 1,
-		    .height = 1,
-		    .stride = 4,
-	    };
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_memory_target_read_success)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	u8 readback[4] = {0};
-
-	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = readback, .stride = 4}), 0);
-	EXPECT_EQ(t_copy_resource_calls, 1);
-	EXPECT_EQ(t_map_calls, 1);
-	EXPECT_EQ(t_unmap_calls, 1);
-	EXPECT_EQ(readback[0], 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_d3d11_memory_target_read_invalid_config)
 {
 	START;
@@ -1919,140 +1384,174 @@ TEST(gfx_d3d11_memory_target_read_invalid_config)
 	END;
 }
 
-TEST(gfx_d3d11_memory_target_read_without_bound_target)
+TEST(gfx_d3d11_memory_target_init_creates_texture)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.gfx	= &gfx,
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx.drv->target_init(&target), 0);
+	u8 pixels[8]	    = {0};
+	gfx_target_t target = {0};
 
-	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	EXPECT_EQ(t_create_texture_2d_calls, 1);
+	EXPECT_EQ(t_create_texture_width, 2);
+	EXPECT_EQ(t_create_texture_height, 1);
+	EXPECT_EQ(t_create_texture_usage, T_D3D11_USAGE_DEFAULT);
+	EXPECT_EQ(t_create_texture_bind_flags, T_D3D11_BIND_RENDER_TARGET);
 
-	gfx.drv->target_free(&target);
+	gfx_target_free(&target);
+	EXPECT_EQ(t_release_texture_calls, 1);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_memory_target_read_missing_context_callback)
+TEST(gfx_d3d11_memory_target_init_missing_create_texture_callback)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_context_vtbl.Map = NULL;
+	HRESULT(*saved)
+	(t_d3d11_device_t *, const D3D11_TEXTURE2D_DESC *, const void *, t_d3d11_texture_t **) = t_device_vtbl.CreateTexture2D;
+	t_device_vtbl.CreateTexture2D							       = NULL;
+	u8 pixels[4]									       = {0};
+	gfx_target_t target								       = {0};
 
-	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 1,
+						   .height = 1,
+						   .stride = 4,
+					   }));
+	EXPECT_NULL(target.driver_data);
 
-	t_context_vtbl.Map = t_Map;
+	t_device_vtbl.CreateTexture2D = saved;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_memory_target_read_create_texture_failure)
+TEST(gfx_d3d11_memory_target_init_create_texture_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
 	t_create_texture_2d_ret = -1;
+	u8 pixels[4]		= {0};
+	gfx_target_t target	= {0};
 
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_memory_target_read_map_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_map_ret = -1;
-
-	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 1,
+						   .height = 1,
+						   .stride = 4,
+					   }));
+	EXPECT_NULL(target.driver_data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_memory_target_read_short_row_pitch)
+TEST(gfx_d3d11_surface_target_resize_calls_swapchain)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_map_row_pitch = 3;
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
 
-	EXPECT_EQ(gfx_target_read(&t_gfx_d3d11_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
-	EXPECT_EQ(t_unmap_calls, 1);
+	EXPECT_EQ(gfx_target_resize(&target, 800, 600), 0);
+	EXPECT_EQ(t_resize_buffers_calls, 1);
+	EXPECT_EQ(t_resize_width, 800);
+	EXPECT_EQ(t_resize_height, 600);
 
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_surface_target_resize_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	t_resize_buffers_ret = -1;
+
+	EXPECT_EQ(gfx_target_resize(&target, 800, 600), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_surface_target_present_calls_surface)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+
+	EXPECT_EQ(gfx_target_present(&target), 0);
+	EXPECT_EQ(t_surface_present_calls, 1);
+
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2298,6 +1797,206 @@ TEST(gfx_d3d11_framebuffer_init_unknown_target_direct)
 	END;
 }
 
+TEST(gfx_d3d11_framebuffer_init_memory_creates_render_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(t_create_render_target_view_calls, 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	EXPECT_EQ(t_release_view_calls, 1);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_render_target_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_create_render_target_view_ret = -1;
+
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_surface_gets_buffer)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(t_get_buffer_calls, 1);
+	EXPECT_EQ(t_create_render_target_view_calls, 1);
+	EXPECT_EQ(t_release_texture_calls, 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_surface_get_buffer_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_get_buffer_ret = -1;
+
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_init_surface_render_target_failure_releases_buffer)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_create_render_target_view_ret = -1;
+
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	EXPECT_EQ(t_release_texture_calls, 1);
+
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct)
 {
 	START;
@@ -2340,6 +2039,397 @@ TEST(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct)
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
 
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_pass_begin_sets_targets_and_clears)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear    = {.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.4f},
+						     .viewport = {.x = 1, .y = 2, .width = 3, .height = 4},
+					     }),
+		  0);
+	EXPECT_EQ(t_om_set_render_targets_calls, 1);
+	EXPECT_EQ(t_render_target_count, 1);
+	EXPECT_EQ(t_rs_set_viewports_calls, 1);
+	EXPECT_EQ(t_viewport_count, 1);
+	EXPECT_EQ(t_viewport.TopLeftX, 1.0f);
+	EXPECT_EQ(t_viewport.TopLeftY, 2.0f);
+	EXPECT_EQ(t_viewport.Width, 3.0f);
+	EXPECT_EQ(t_viewport.Height, 4.0f);
+	EXPECT_EQ(t_clear_render_target_view_calls, 1);
+	EXPECT_EQ(t_clear_color[0], 0.1f);
+	EXPECT_EQ(t_clear_color[1], 0.2f);
+	EXPECT_EQ(t_clear_color[2], 0.3f);
+	EXPECT_EQ(t_clear_color[3], 0.4f);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_pass_begin_missing_render_target_callbacks)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.load = GFX_LOAD_LOAD,
+		.data = &render_pass,
+	};
+	t_gfx_d3d11_target_data_t driver_target		  = {.texture = &t_texture};
+	t_gfx_d3d11_framebuffer_data_t driver_framebuffer = {.render_target = &t_view};
+	gfx_target_t target				  = {
+					      .gfx	   = &gfx,
+					      .type	   = GFX_TARGET_MEMORY,
+					      .driver_data = &driver_target,
+					      .width	   = 1,
+					      .height	   = 1,
+	      };
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+		.data	     = &driver_framebuffer,
+	};
+	gfx_frame_t frame							  = {.gfx = &gfx};
+	void (*saved)(t_d3d11_context_t *, UINT, t_d3d11_view_t *const *, void *) = t_context_vtbl.OMSetRenderTargets;
+	t_context_vtbl.OMSetRenderTargets					  = NULL;
+
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
+
+	t_context_vtbl.OMSetRenderTargets = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.load = GFX_LOAD_CLEAR,
+		.data = &render_pass,
+	};
+	t_gfx_d3d11_target_data_t driver_target		  = {.texture = &t_texture};
+	t_gfx_d3d11_framebuffer_data_t driver_framebuffer = {.render_target = &t_view};
+	gfx_target_t target				  = {
+					      .gfx	   = &gfx,
+					      .type	   = GFX_TARGET_MEMORY,
+					      .driver_data = &driver_target,
+					      .width	   = 1,
+					      .height	   = 1,
+	      };
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+		.data	     = &driver_framebuffer,
+	};
+	gfx_frame_t frame						     = {.gfx = &gfx};
+	void (*saved)(t_d3d11_context_t *, t_d3d11_view_t *, const float[4]) = t_context_vtbl.ClearRenderTargetView;
+	t_context_vtbl.ClearRenderTargetView				     = NULL;
+
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
+
+	t_context_vtbl.ClearRenderTargetView = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_copies_memory)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 target_pixels[4]	      = {0};
+	u8 read_pixels[4]	      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = target_pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = read_pixels, .stride = 4}), 0);
+	EXPECT_EQ(t_copy_resource_calls, 1);
+	EXPECT_EQ(t_copy_resource_dst_is_texture, 1);
+	EXPECT_EQ(t_copy_resource_src_is_texture, 1);
+	EXPECT_EQ(t_map_calls, 1);
+	EXPECT_EQ(t_map_type, T_D3D11_MAP_READ);
+	EXPECT_EQ(t_unmap_calls, 1);
+	EXPECT_EQ(read_pixels[0], 1);
+	EXPECT_EQ(read_pixels[1], 2);
+	EXPECT_EQ(read_pixels[2], 3);
+	EXPECT_EQ(read_pixels[3], 4);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_requires_active_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_missing_callbacks)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]	    = {0};
+	gfx_target_t target = {
+		.gfx	= &gfx,
+		.type	= GFX_TARGET_MEMORY,
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	t_gfx_d3d11_target_data_t driver_target		   = {.texture = &t_texture};
+	target.driver_data				   = &driver_target;
+	void (*saved)(t_d3d11_context_t *, void *, void *) = t_context_vtbl.CopyResource;
+	t_context_vtbl.CopyResource			   = NULL;
+	((t_gfx_d3d11_data_t *)gfx.data)->target	   = &target;
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	t_context_vtbl.CopyResource = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_create_staging_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	t_create_texture_2d_ret = -1;
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_map_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	t_map_ret = -1;
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(t_release_texture_calls, 1);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_target_read_rejects_short_row_pitch)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	t_map_row_pitch = 3;
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(t_unmap_calls, 1);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2535,220 +2625,6 @@ TEST(gfx_d3d11_pipeline_init_create_input_layout_failure_direct)
 	END;
 }
 
-TEST(gfx_d3d11_clear_calls_context)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_clear_render_target_view_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_clear_uses_red)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_clear_color(&gfx, 0.25f, 0.5f, 0.75f, 1.0f);
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_clear_color[0], 0.25f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_clear_color_null_data)
-{
-	START;
-
-	gfx_t gfx = {
-		.drv = t_gfx_d3d11_driver(),
-	};
-
-	EXPECT_EQ(t_gfx_d3d11_clear_color_compat(&gfx, 0.0f, 0.0f, 0.0f, 0.0f), 1);
-
-	END;
-}
-
-TEST(gfx_d3d11_viewport_null_data)
-{
-	START;
-
-	gfx_t gfx = {
-		.drv = t_gfx_d3d11_driver(),
-	};
-	EXPECT_NOT_NULL(gfx.drv);
-
-	EXPECT_EQ(t_gfx_d3d11_viewport_compat(&gfx, 1, 2, 3, 4), 1);
-
-	END;
-}
-
-TEST(gfx_d3d11_viewport_missing_context_callback)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_context_vtbl.RSSetViewports = NULL;
-
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 1);
-
-	t_context_vtbl.RSSetViewports = t_RSSetViewports;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_calls_context)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
-	EXPECT_EQ(t_rs_set_viewports_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_passes_count)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport_count, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_passes_x)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.TopLeftX, 1.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_passes_y)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.TopLeftY, 2.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_passes_width)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.Width, 3.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_passes_height)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.Height, 4.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_sets_min_depth)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.MinDepth, 0.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_viewport_sets_max_depth)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_viewport.MaxDepth, 1.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_d3d11_clear_null_data)
 {
 	START;
@@ -2759,53 +2635,6 @@ TEST(gfx_d3d11_clear_null_data)
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(NULL, NULL), 1);
 
-	END;
-}
-
-TEST(gfx_d3d11_clear_zero_buffers)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, 0), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_clear_without_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_present_calls_surface)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_present(&gfx);
-
-	EXPECT_EQ(t_surface_present_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -2835,37 +2664,6 @@ TEST(gfx_d3d11_end_null_frame)
 	END;
 }
 
-TEST(gfx_d3d11_draw_null_buffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, NULL, NULL), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_without_target)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, NULL, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_d3d11_begin_null_frame)
 {
 	START;
@@ -2875,45 +2673,6 @@ TEST(gfx_d3d11_begin_null_frame)
 
 	EXPECT_EQ(drv->framebuffer_pass_begin(NULL, NULL), 1);
 
-	END;
-}
-
-TEST(gfx_d3d11_begin_missing_render_target_callback)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	void (*saved)(t_d3d11_context_t *, UINT, t_d3d11_view_t *const *, void *) = t_context_vtbl.OMSetRenderTargets;
-	t_context_vtbl.OMSetRenderTargets					  = NULL;
-	gfx_frame_t frame							  = {.gfx = &gfx, .active = 1};
-
-	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&t_gfx_d3d11_bound_framebuffer, &frame), 1);
-
-	t_context_vtbl.OMSetRenderTargets = saved;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_clear_missing_clear_callback)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	void (*saved)(t_d3d11_context_t *, t_d3d11_view_t *, const float[4]) = t_context_vtbl.ClearRenderTargetView;
-	t_context_vtbl.ClearRenderTargetView				     = NULL;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	t_context_vtbl.ClearRenderTargetView = saved;
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -3336,6 +3095,46 @@ TEST(gfx_d3d11_pipeline_init_null_data)
 	END;
 }
 
+TEST(gfx_d3d11_pipeline_init_success)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_d3d11_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
+
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	EXPECT_EQ(t_create_input_layout_calls, 1);
+	EXPECT_EQ(t_input_element_count, 2);
+	EXPECT_STR(t_input_semantic_name[0], "POSITION");
+	EXPECT_STR(t_input_semantic_name[1], "COLOR");
+
+	gfx_pipeline_free(&pipeline);
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_pipeline_init_missing_input_layout_callback)
 {
 	START;
@@ -3494,62 +3293,6 @@ TEST(gfx_d3d11_pipeline_init_unsupported_input_layout)
 	proc_free(&proc);
 	END;
 }
-
-TEST(gfx_d3d11_draw_success)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_compiles_shaders)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
-
-	EXPECT_EQ(t_d3d_compile_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_creates_buffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
-
-	EXPECT_EQ(t_create_buffer_calls, 1);
-	EXPECT_EQ(t_create_buffer_bytes, sizeof(t_d3d11_vertex_2d_t) * 3);
-	EXPECT_EQ(t_create_buffer_bind_flags, T_D3D11_BIND_VERTEX_BUFFER);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_d3d11_buffer_set_data_missing_update_callback)
 {
 	START;
@@ -3573,29 +3316,33 @@ TEST(gfx_d3d11_buffer_set_data_missing_update_callback)
 	END;
 }
 
-TEST(gfx_d3d11_draw_creates_input_layout)
+TEST(gfx_d3d11_buffer_set_data_uploads_vertices)
 {
 	START;
 
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f, .y = 2.0f, .r = 3.0f, .g = 4.0f, .b = 5.0f, .a = 6.0f},
+		{.x = 7.0f, .y = 8.0f},
+		{.x = 9.0f, .y = 10.0f},
+	};
 
-	EXPECT_EQ(t_create_input_layout_calls, 1);
-	EXPECT_EQ(t_input_element_count, 2);
-	EXPECT_STR(t_input_semantic_name[0], "POSITION");
-	EXPECT_EQ(t_input_semantic_index[0], 0);
-	EXPECT_STR(t_input_semantic_name[1], "COLOR");
-	EXPECT_EQ(t_input_semantic_index[1], 0);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
+	EXPECT_EQ(t_update_subresource_calls, 1);
+	EXPECT_EQ(t_uploaded_vertices[0].x, 1.0f);
+	EXPECT_EQ(t_uploaded_vertices[0].y, 2.0f);
+	EXPECT_EQ(t_uploaded_vertices[2].x, 9.0f);
+	EXPECT_EQ(t_uploaded_vertices[2].y, 10.0f);
 
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
-
 TEST(gfx_d3d11_pipeline_bind_null_frame)
 {
 	START;
@@ -3605,77 +3352,6 @@ TEST(gfx_d3d11_pipeline_bind_null_frame)
 
 	EXPECT_EQ(drv->pipeline_bind(NULL, NULL), 1);
 
-	END;
-}
-
-TEST(gfx_d3d11_pipeline_bind_missing_shader_callback)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	void (*saved)(t_d3d11_context_t *, t_d3d11_vertex_shader_t *, void *const *, UINT) = t_context_vtbl.VSSetShader;
-	t_context_vtbl.VSSetShader							   = NULL;
-	gfx_frame_t frame								   = {.gfx = &gfx, .active = 1};
-
-	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
-
-	t_context_vtbl.VSSetShader = saved;
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_binds_render_target)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
-
-	EXPECT_EQ(t_om_set_render_targets_calls, 1);
-	EXPECT_EQ(t_render_target_count, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_binds_vertex_buffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
-
-	EXPECT_EQ(t_ia_set_vertex_buffers_calls, 1);
-	EXPECT_EQ(t_vertex_buffer_start_slot, 0);
-	EXPECT_EQ(t_vertex_buffer_count, 1);
-	EXPECT_EQ(t_vertex_buffer_stride, sizeof(t_d3d11_vertex_2d_t));
-	EXPECT_EQ(t_vertex_buffer_offset, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -3691,28 +3367,126 @@ TEST(gfx_d3d11_buffer_bind_null_frame)
 	END;
 }
 
-TEST(gfx_d3d11_buffer_bind_zero_stride)
+TEST(gfx_d3d11_pipeline_bind_binds_shaders)
 {
 	START;
 
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_buffer_t buffer = {0};
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_frame_t frame	      = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_d3d11_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_ia_set_input_layout_calls, 1);
+	EXPECT_EQ(t_vs_set_shader_calls, 1);
+	EXPECT_EQ(t_ps_set_shader_calls, 1);
+
+	gfx.frame = NULL;
+	gfx_pipeline_free(&pipeline);
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_binds_vertex_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_buffer_t buffer	      = {0};
+	gfx_frame_t frame	      = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_d3d11_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	struct {
-		void *input_layout;
-		void *vertex_shader;
-		void *pixel_shader;
-		UINT stride;
-	} pipeline_data		= {0};
-	gfx_pipeline_t pipeline = {.gfx = &gfx, .data = &pipeline_data};
-	gfx_frame_t frame	= {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx.frame = &frame;
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(t_ia_set_vertex_buffers_calls, 1);
+	EXPECT_EQ(t_vertex_buffer_start_slot, 0);
+	EXPECT_EQ(t_vertex_buffer_count, 1);
+	EXPECT_EQ(t_vertex_buffer_stride, sizeof(t_d3d11_vertex_2d_t));
+	EXPECT_EQ(t_vertex_buffer_offset, 0);
+
+	gfx.frame = NULL;
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_rejects_zero_stride)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_pipeline_data_t driver_pipeline = {
+		.input_layout = &t_input_layout,
+		.stride	      = 0,
+	};
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
+	gfx_pipeline_t pipeline			= {
+				.gfx  = &gfx,
+				.data = &driver_pipeline,
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+		.active	  = 1,
+	};
 
 	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
 
-	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3725,47 +3499,60 @@ TEST(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_d3d11_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	t_gfx_d3d11_pipeline_data_t driver_pipeline = {
+		.input_layout = &t_input_layout,
+		.stride	      = sizeof(t_d3d11_vertex_2d_t),
+	};
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
+	gfx_pipeline_t pipeline			= {
+				.gfx  = &gfx,
+				.data = &driver_pipeline,
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+		.active	  = 1,
+	};
 	void (*saved)(t_d3d11_context_t *, UINT, UINT, t_d3d11_buffer_t *const *, const UINT *, const UINT *) =
 		t_context_vtbl.IASetVertexBuffers;
 	t_context_vtbl.IASetVertexBuffers = NULL;
-	gfx_frame_t frame		  = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
 
 	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
 
 	t_context_vtbl.IASetVertexBuffers = saved;
-	gfx_buffer_free(&buffer);
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_d3d11_draw_uses_triangle_list)
+TEST(gfx_d3d11_pipeline_bind_missing_shader_callback)
 {
 	START;
 
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
+	t_gfx_d3d11_pipeline_data_t driver_pipeline = {
+		.input_layout  = &t_input_layout,
+		.stride	       = sizeof(t_d3d11_vertex_2d_t),
+		.vertex_shader = &t_vertex_shader,
+		.pixel_shader  = &t_pixel_shader,
+	};
+	gfx_pipeline_t pipeline = {
+		.gfx  = &gfx,
+		.data = &driver_pipeline,
+	};
+	gfx_frame_t frame					     = {.gfx = &gfx, .active = 1};
+	void (*saved)(t_d3d11_context_t *, t_d3d11_input_layout_t *) = t_context_vtbl.IASetInputLayout;
+	t_context_vtbl.IASetInputLayout				     = NULL;
 
-	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
-	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 
+	t_context_vtbl.IASetInputLayout = saved;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3790,45 +3577,21 @@ TEST(gfx_d3d11_draw_missing_draw_callback)
 	END;
 }
 
-TEST(gfx_d3d11_draw_draws_three_vertices)
+TEST(gfx_d3d11_draw_calls_context)
 {
 	START;
 
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 640, 480);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
+	gfx_frame_t frame = {.gfx = &gfx, .active = 1};
 
+	EXPECT_EQ(gfx.drv->draw(&frame, 3, 2), 0);
+	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
+	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	EXPECT_EQ(t_draw_calls, 1);
 	EXPECT_EQ(t_draw_vertex_count, 3);
-	EXPECT_EQ(t_draw_start_vertex, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_d3d11_draw_uploads_first_vertex)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_set_surface_target(&gfx, 200, 100);
-	gfx_vertex_2d_t vertices[3] = {
-		{.x = -0.5f, .y = 0.5f, .r = 0.25f, .g = 0.5f, .b = 0.75f, .a = 1.0f},
-		{.x = 0.0f, .y = 0.0f},
-		{.x = 0.0f, .y = 0.0f},
-	};
-	t_gfx_d3d11_draw(&gfx, &t_gfx_d3d11_target, vertices);
-
-	EXPECT_EQ(t_update_subresource_calls, 1);
-	EXPECT_EQ(t_uploaded_vertices[0].x, -0.5f);
-	EXPECT_EQ(t_uploaded_vertices[0].y, 0.5f);
-	EXPECT_EQ(t_uploaded_vertices[0].r, 0.25f);
+	EXPECT_EQ(t_draw_start_vertex, 2);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3845,21 +3608,6 @@ TEST(gfx_d3d11_present_null_data)
 
 	EXPECT_EQ(gfx.drv->target_present(&(gfx_target_t){0}), 1);
 
-	END;
-}
-
-TEST(gfx_d3d11_present_without_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_present(&gfx), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -3932,31 +3680,16 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_native_sets_device);
 	RUN(gfx_d3d11_native_null_data);
 	RUN(gfx_d3d11_set_target_null_data);
-	RUN(gfx_d3d11_set_target_unknown_type);
-	RUN(gfx_d3d11_set_target_none_clears_target);
-	RUN(gfx_d3d11_set_surface_target_invalid_surface_api);
-	RUN(gfx_d3d11_set_surface_target_get_buffer_failure);
-	RUN(gfx_d3d11_set_surface_target_render_target_failure);
-	RUN(gfx_d3d11_set_surface_target_gets_buffer);
-	RUN(gfx_d3d11_set_surface_target_creates_render_target);
-	RUN(gfx_d3d11_set_surface_target_releases_buffer);
-	RUN(gfx_d3d11_set_surface_target_reuses_existing_target);
-	RUN(gfx_d3d11_set_surface_target_resizes_swapchain);
-	RUN(gfx_d3d11_set_surface_target_passes_resize_width);
-	RUN(gfx_d3d11_set_surface_target_resize_failure);
 	RUN(gfx_d3d11_render_pass_free_null_data);
 	RUN(gfx_d3d11_render_pass_init_invalid_config);
 	RUN(gfx_d3d11_render_pass_init_alloc_failure);
-	RUN(gfx_d3d11_memory_target_creates_texture);
-	RUN(gfx_d3d11_memory_target_create_texture_missing_callback);
-	RUN(gfx_d3d11_memory_target_create_texture_failure);
-	RUN(gfx_d3d11_memory_target_read_success);
 	RUN(gfx_d3d11_memory_target_read_invalid_config);
-	RUN(gfx_d3d11_memory_target_read_without_bound_target);
-	RUN(gfx_d3d11_memory_target_read_missing_context_callback);
-	RUN(gfx_d3d11_memory_target_read_create_texture_failure);
-	RUN(gfx_d3d11_memory_target_read_map_failure);
-	RUN(gfx_d3d11_memory_target_read_short_row_pitch);
+	RUN(gfx_d3d11_memory_target_init_creates_texture);
+	RUN(gfx_d3d11_memory_target_init_missing_create_texture_callback);
+	RUN(gfx_d3d11_memory_target_init_create_texture_failure);
+	RUN(gfx_d3d11_surface_target_resize_calls_swapchain);
+	RUN(gfx_d3d11_surface_target_resize_failure);
+	RUN(gfx_d3d11_surface_target_present_calls_surface);
 	RUN(gfx_d3d11_target_free_null_data_direct);
 	RUN(gfx_d3d11_target_init_alloc_failure_direct);
 	RUN(gfx_d3d11_target_resize_invalid_direct);
@@ -3967,7 +3700,21 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_framebuffer_init_memory_without_texture_direct);
 	RUN(gfx_d3d11_framebuffer_init_surface_without_swapchain_direct);
 	RUN(gfx_d3d11_framebuffer_init_unknown_target_direct);
+	RUN(gfx_d3d11_framebuffer_init_memory_creates_render_target);
+	RUN(gfx_d3d11_framebuffer_init_render_target_failure);
+	RUN(gfx_d3d11_framebuffer_init_surface_gets_buffer);
+	RUN(gfx_d3d11_framebuffer_init_surface_get_buffer_failure);
+	RUN(gfx_d3d11_framebuffer_init_surface_render_target_failure_releases_buffer);
 	RUN(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct);
+	RUN(gfx_d3d11_framebuffer_pass_begin_sets_targets_and_clears);
+	RUN(gfx_d3d11_framebuffer_pass_begin_missing_render_target_callbacks);
+	RUN(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback);
+	RUN(gfx_d3d11_target_read_copies_memory);
+	RUN(gfx_d3d11_target_read_requires_active_target);
+	RUN(gfx_d3d11_target_read_missing_callbacks);
+	RUN(gfx_d3d11_target_read_create_staging_failure);
+	RUN(gfx_d3d11_target_read_map_failure);
+	RUN(gfx_d3d11_target_read_rejects_short_row_pitch);
 	RUN(gfx_d3d11_pipeline_init_invalid_config_direct);
 	RUN(gfx_d3d11_pipeline_init_missing_shader_callback_direct);
 	RUN(gfx_d3d11_pipeline_init_alloc_failure_direct);
@@ -3975,29 +3722,10 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic_direct);
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout_direct);
 	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure_direct);
-	RUN(gfx_d3d11_clear_color_null_data);
-	RUN(gfx_d3d11_viewport_null_data);
-	RUN(gfx_d3d11_viewport_missing_context_callback);
-	RUN(gfx_d3d11_viewport_calls_context);
-	RUN(gfx_d3d11_viewport_passes_count);
-	RUN(gfx_d3d11_viewport_passes_x);
-	RUN(gfx_d3d11_viewport_passes_y);
-	RUN(gfx_d3d11_viewport_passes_width);
-	RUN(gfx_d3d11_viewport_passes_height);
-	RUN(gfx_d3d11_viewport_sets_min_depth);
-	RUN(gfx_d3d11_viewport_sets_max_depth);
 	RUN(gfx_d3d11_clear_null_data);
-	RUN(gfx_d3d11_clear_zero_buffers);
-	RUN(gfx_d3d11_clear_without_target);
-	RUN(gfx_d3d11_clear_calls_context);
-	RUN(gfx_d3d11_clear_uses_red);
 	RUN(gfx_d3d11_begin_null_frame);
-	RUN(gfx_d3d11_begin_missing_render_target_callback);
-	RUN(gfx_d3d11_clear_missing_clear_callback);
 	RUN(gfx_d3d11_draw_null_data);
 	RUN(gfx_d3d11_end_null_frame);
-	RUN(gfx_d3d11_draw_null_buffer);
-	RUN(gfx_d3d11_draw_without_target);
 	RUN(gfx_d3d11_buffer_init_unsupported_type);
 	RUN(gfx_d3d11_buffer_free_null_data);
 	RUN(gfx_d3d11_buffer_init_null_config);
@@ -4021,31 +3749,25 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_free_null_data);
 	RUN(gfx_d3d11_pipeline_init_null_config);
 	RUN(gfx_d3d11_pipeline_init_null_data);
+	RUN(gfx_d3d11_pipeline_init_success);
 	RUN(gfx_d3d11_pipeline_init_missing_input_layout_callback);
 	RUN(gfx_d3d11_pipeline_init_alloc_failure);
 	RUN(gfx_d3d11_pipeline_init_element_alloc_failure);
 	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure);
 	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic);
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout);
-	RUN(gfx_d3d11_draw_success);
-	RUN(gfx_d3d11_draw_compiles_shaders);
-	RUN(gfx_d3d11_draw_creates_buffer);
 	RUN(gfx_d3d11_buffer_set_data_missing_update_callback);
-	RUN(gfx_d3d11_draw_creates_input_layout);
+	RUN(gfx_d3d11_buffer_set_data_uploads_vertices);
 	RUN(gfx_d3d11_pipeline_bind_null_frame);
-	RUN(gfx_d3d11_pipeline_bind_missing_shader_callback);
-	RUN(gfx_d3d11_draw_binds_render_target);
-	RUN(gfx_d3d11_draw_binds_vertex_buffer);
 	RUN(gfx_d3d11_buffer_bind_null_frame);
-	RUN(gfx_d3d11_buffer_bind_zero_stride);
+	RUN(gfx_d3d11_pipeline_bind_binds_shaders);
+	RUN(gfx_d3d11_buffer_bind_binds_vertex_buffer);
+	RUN(gfx_d3d11_buffer_bind_rejects_zero_stride);
 	RUN(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback);
-	RUN(gfx_d3d11_draw_uses_triangle_list);
+	RUN(gfx_d3d11_pipeline_bind_missing_shader_callback);
 	RUN(gfx_d3d11_draw_missing_draw_callback);
-	RUN(gfx_d3d11_draw_draws_three_vertices);
-	RUN(gfx_d3d11_draw_uploads_first_vertex);
+	RUN(gfx_d3d11_draw_calls_context);
 	RUN(gfx_d3d11_present_null_data);
-	RUN(gfx_d3d11_present_without_target);
-	RUN(gfx_d3d11_present_calls_surface);
 	RUN(gfx_d3d11_free_null_data);
 	RUN(gfx_d3d11_free_releases_context);
 	RUN(gfx_d3d11_free_releases_device);

@@ -89,6 +89,36 @@ static int t_gfx_opengl_compiler_initialized;
 static gfx_surface_t t_gfx_opengl_surface;
 static gfx_render_pass_t *t_gfx_opengl_active_render_pass;
 
+typedef struct t_gfx_opengl_data_s {
+	void *gl_lib;
+	const gfx_target_t *target;
+	const gfx_framebuffer_t *framebuffer;
+	gfx_surface_t *surface;
+} t_gfx_opengl_data_t;
+
+typedef struct t_gfx_opengl_target_data_s {
+	unsigned int texture;
+} t_gfx_opengl_target_data_t;
+
+typedef struct t_gfx_opengl_framebuffer_data_s {
+	unsigned int framebuffer;
+} t_gfx_opengl_framebuffer_data_t;
+
+typedef struct t_gfx_opengl_buffer_data_s {
+	unsigned int buffer;
+} t_gfx_opengl_buffer_data_t;
+
+typedef struct t_gfx_opengl_shader_data_s {
+	unsigned int shader;
+} t_gfx_opengl_shader_data_t;
+
+typedef struct t_gfx_opengl_pipeline_data_s {
+	unsigned int program;
+	const gfx_layout_t *input_layout;
+	size_t input_layout_size;
+	int stride;
+} t_gfx_opengl_pipeline_data_t;
+
 static const gfx_layout_t t_gfx_opengl_input_layout[] = {
 	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
 	{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
@@ -796,244 +826,6 @@ static int t_gfx_opengl_shader(gfx_t *gfx, gfx_shader_t *shader)
 	return t_gfx_opengl_shader_stage(gfx, shader, GFX_SHADER_STAGE_VERTEX);
 }
 
-typedef struct gfx_frame_config_s {
-	const gfx_target_t *target;
-} gfx_frame_config_t;
-
-#define GFX_CLEAR_COLOR_BUFFER 1u
-
-static gfx_target_t t_gfx_opengl_bound_target;
-static gfx_render_pass_t t_gfx_opengl_bound_render_pass;
-static gfx_framebuffer_t t_gfx_opengl_bound_framebuffer;
-static gfx_color_t t_gfx_opengl_clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
-static gfx_rect_t t_gfx_opengl_viewport;
-
-static void t_gfx_opengl_unset_target(gfx_t *gfx)
-{
-	if (t_gfx_opengl_bound_target.gfx == gfx && t_gfx_opengl_bound_target.type == GFX_TARGET_SURFACE &&
-	    t_gfx_opengl_bound_target.surface != NULL && t_gfx_opengl_bound_target.surface->ops != NULL &&
-	    t_gfx_opengl_bound_target.surface->ops->clear_current != NULL) {
-		t_gfx_opengl_bound_target.surface->ops->clear_current(t_gfx_opengl_bound_target.surface);
-	}
-	if (t_gfx_opengl_bound_framebuffer.gfx == gfx) {
-		gfx_framebuffer_free(&t_gfx_opengl_bound_framebuffer);
-	}
-	if (t_gfx_opengl_bound_render_pass.gfx == gfx) {
-		gfx_render_pass_free(&t_gfx_opengl_bound_render_pass);
-	}
-	if (t_gfx_opengl_bound_target.gfx == gfx) {
-		gfx_target_free(&t_gfx_opengl_bound_target);
-	}
-	t_gfx_opengl_active_render_pass = NULL;
-	t_gfx_opengl_viewport		= (gfx_rect_t){0};
-}
-
-static int t_gfx_opengl_set_target_compat(gfx_t *gfx, const gfx_target_t *target)
-{
-	if (gfx == NULL || gfx->drv == NULL || target == NULL) {
-		return 1;
-	}
-	if (t_gfx_opengl_bound_target.gfx == gfx && t_gfx_opengl_bound_target.type == target->type &&
-	    t_gfx_opengl_bound_target.format == target->format && t_gfx_opengl_bound_target.data == target->data &&
-	    t_gfx_opengl_bound_target.surface == target->surface && t_gfx_opengl_bound_target.width == target->width &&
-	    t_gfx_opengl_bound_target.height == target->height && t_gfx_opengl_bound_target.stride == target->stride) {
-		return 0;
-	}
-	t_gfx_opengl_unset_target(gfx);
-	if (target->type == GFX_TARGET_NONE) {
-		return 0;
-	}
-
-	gfx_target_t *created = NULL;
-	if (target->type == GFX_TARGET_MEMORY) {
-		created = gfx_target_init_memory(&t_gfx_opengl_bound_target,
-						 gfx,
-						 &(gfx_memory_target_config_t){
-							 .format = target->format,
-							 .data	 = target->data,
-							 .width	 = target->width,
-							 .height = target->height,
-							 .stride = target->stride,
-						 });
-	} else if (target->type == GFX_TARGET_SURFACE) {
-		created = gfx_target_init_surface(&t_gfx_opengl_bound_target,
-						  gfx,
-						  &(gfx_surface_target_config_t){
-							  .format  = target->format,
-							  .surface = target->surface,
-							  .width   = target->width,
-							  .height  = target->height,
-						  });
-	}
-	if (created == NULL) {
-		return 1;
-	}
-	if (gfx_render_pass_init(&t_gfx_opengl_bound_render_pass,
-				 gfx,
-				 &(gfx_render_pass_config_t){
-					 .color_format = t_gfx_opengl_bound_target.format,
-					 .load	       = GFX_LOAD_CLEAR,
-					 .store	       = GFX_STORE_STORE,
-				 }) != &t_gfx_opengl_bound_render_pass) {
-		t_gfx_opengl_unset_target(gfx);
-		return 1;
-	}
-	t_gfx_opengl_active_render_pass = &t_gfx_opengl_bound_render_pass;
-	if (gfx_framebuffer_init(&t_gfx_opengl_bound_framebuffer, &t_gfx_opengl_bound_target, &t_gfx_opengl_bound_render_pass) !=
-	    &t_gfx_opengl_bound_framebuffer) {
-		t_gfx_opengl_unset_target(gfx);
-		return 1;
-	}
-	return 0;
-}
-
-static int t_gfx_opengl_begin_compat(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config)
-{
-	if (config != NULL && config->target != NULL && t_gfx_opengl_set_target_compat(gfx, config->target)) {
-		return 1;
-	}
-	if (t_gfx_opengl_bound_framebuffer.gfx != gfx) {
-		return 1;
-	}
-	return gfx_framebuffer_pass_begin(&t_gfx_opengl_bound_framebuffer,
-					  frame,
-					  &(gfx_pass_config_t){
-						  .clear    = t_gfx_opengl_clear_color,
-						  .viewport = t_gfx_opengl_viewport,
-					  });
-}
-
-static int t_gfx_opengl_clear_color_compat(gfx_t *gfx, float r, float g, float b, float a)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-	if (t_gfx_opengl_bound_target.gfx == gfx && t_gfx_opengl_bound_target.type == GFX_TARGET_SURFACE &&
-	    t_gfx_opengl_bound_target.surface != NULL && t_gfx_opengl_bound_target.surface->ops != NULL &&
-	    t_gfx_opengl_bound_target.surface->ops->make_current != NULL &&
-	    t_gfx_opengl_bound_target.surface->ops->make_current(t_gfx_opengl_bound_target.surface)) {
-		return 1;
-	}
-	t_gfx_opengl_clear_color = (gfx_color_t){r, g, b, a};
-	t_glClearColor(r, g, b, a);
-	return 0;
-}
-
-static int t_gfx_opengl_viewport_compat(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
-{
-	if (gfx == NULL || gfx->data == NULL || width == 0 || height == 0) {
-		return 1;
-	}
-	if (t_gfx_opengl_bound_target.gfx == gfx && t_gfx_opengl_bound_target.type == GFX_TARGET_SURFACE &&
-	    t_gfx_opengl_bound_target.surface != NULL && t_gfx_opengl_bound_target.surface->ops != NULL &&
-	    t_gfx_opengl_bound_target.surface->ops->make_current != NULL &&
-	    t_gfx_opengl_bound_target.surface->ops->make_current(t_gfx_opengl_bound_target.surface)) {
-		return 1;
-	}
-	t_gfx_opengl_viewport = (gfx_rect_t){x, y, width, height};
-	t_glViewport(x, y, width, height);
-	return 0;
-}
-
-static int t_gfx_opengl_clear_compat(gfx_t *gfx, u32 buffers)
-{
-	if (buffers == 0) {
-		return 0;
-	}
-	if (t_gfx_opengl_bound_framebuffer.gfx != gfx) {
-		t_glClear(0x00004000);
-		return 0;
-	}
-	gfx_frame_t frame = {0};
-	if (t_gfx_opengl_begin_compat(gfx, &frame, NULL)) {
-		return 1;
-	}
-	int ret = gfx_end(&frame);
-	if (ret == 0 && t_gfx_opengl_bound_target.type == GFX_TARGET_MEMORY) {
-		ret = gfx_target_read(&t_gfx_opengl_bound_target,
-				      &(gfx_memory_readback_config_t){
-					      .data   = t_gfx_opengl_bound_target.data,
-					      .stride = t_gfx_opengl_bound_target.stride,
-				      });
-	}
-	return ret;
-}
-
-static int t_gfx_opengl_present_compat(gfx_t *gfx)
-{
-	if (t_gfx_opengl_bound_target.gfx != gfx) {
-		return 1;
-	}
-	return gfx_target_present(&t_gfx_opengl_bound_target);
-}
-
-static void t_gfx_opengl_free_compat(gfx_t *gfx)
-{
-	t_gfx_opengl_unset_target(gfx);
-	gfx_free(gfx);
-}
-
-#define gfx_set_target	t_gfx_opengl_set_target_compat
-#define gfx_begin	t_gfx_opengl_begin_compat
-#define gfx_clear_color t_gfx_opengl_clear_color_compat
-#define gfx_viewport	t_gfx_opengl_viewport_compat
-#define gfx_clear	t_gfx_opengl_clear_compat
-#define gfx_present	t_gfx_opengl_present_compat
-#define gfx_free	t_gfx_opengl_free_compat
-
-static int t_gfx_opengl_draw(gfx_t *gfx, const gfx_target_t *target, const gfx_vertex_2d_t vertices[3])
-{
-	(void)target;
-	if (vertices == NULL) {
-		return 1;
-	}
-	gfx_buffer_t buffer = {0};
-	if (gfx_buffer_init(&buffer, gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) != &buffer) {
-		return 1;
-	}
-	if (gfx_buffer_set_data(&buffer, vertices, sizeof(gfx_vertex_2d_t) * 3)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	if (t_gfx_opengl_shader_stage(gfx, &vs, GFX_SHADER_STAGE_VERTEX)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	if (t_gfx_opengl_shader_stage(gfx, &fs, GFX_SHADER_STAGE_FRAGMENT)) {
-		gfx_shader_free(&vs);
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	int ret			     = gfx_pipeline_init(&pipeline, gfx, &config) != &pipeline;
-	gfx_frame_t frame	     = {0};
-	int began		     = 0;
-	if (ret == 0) {
-		ret = gfx_begin(gfx, &frame, &(gfx_frame_config_t){.target = target});
-	}
-	if (ret == 0) {
-		began = 1;
-		ret   = gfx_pipeline_bind(&frame, &pipeline);
-	}
-	if (ret == 0) {
-		ret = gfx_buffer_bind(&frame, &buffer);
-	}
-	if (ret == 0) {
-		ret = gfx_draw(&frame, 3, 0);
-	}
-	if (began && gfx_end(&frame)) {
-		ret = 1;
-	}
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_buffer_free(&buffer);
-	return ret;
-}
-
 static gfx_target_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height, size_t stride)
 {
 	return (gfx_target_t){
@@ -1043,17 +835,6 @@ static gfx_target_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height
 		.width	= width,
 		.height = height,
 		.stride = stride,
-	};
-}
-
-static gfx_target_t t_gfx_opengl_surface_target(gfx_surface_t *surface, u16 width, u16 height)
-{
-	return (gfx_target_t){
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = surface,
-		.width	 = width,
-		.height	 = height,
 	};
 }
 
@@ -1334,80 +1115,6 @@ TEST(gfx_opengl_free_null_data)
 
 	END;
 }
-
-TEST(gfx_opengl_clear_color_calls_gl)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 0);
-	EXPECT_EQ(t_gl_clear_color_calls, 1);
-	EXPECT_EQ(t_gl_r, 0.1f);
-	EXPECT_EQ(t_gl_g, 0.2f);
-	EXPECT_EQ(t_gl_b, 0.3f);
-	EXPECT_EQ(t_gl_a, 0.4f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_color_surface_makes_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_make_current_calls = 0;
-
-	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 1);
-	EXPECT_EQ(t_gl_clear_color_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_color_surface_make_current_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_make_current_ret = 0;
-	t_gl_clear_color_calls	   = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_clear_color(&gfx, 0.1f, 0.2f, 0.3f, 0.4f), 1);
-	log_set_quiet(0, 0);
-	EXPECT_EQ(t_gl_clear_color_calls, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_clear_color_null_data)
 {
 	START;
@@ -1436,163 +1143,6 @@ TEST(gfx_opengl_viewport_null_data)
 	END;
 }
 
-TEST(gfx_opengl_viewport_calls_gl)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
-	EXPECT_EQ(t_gl_viewport_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_surface_makes_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_make_current_calls = 0;
-
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 1);
-	EXPECT_EQ(t_gl_viewport_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_surface_make_current_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_make_current_ret = 0;
-	t_gl_viewport_calls	   = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 1);
-	log_set_quiet(0, 0);
-	EXPECT_EQ(t_gl_viewport_calls, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_passes_x)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_gl_viewport_x, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_passes_y)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_gl_viewport_y, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_passes_width)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_gl_viewport_width, 3);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_viewport_passes_height)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	gfx_viewport(&gfx, 1, 2, 3, 4);
-
-	EXPECT_EQ(t_gl_viewport_height, 4);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_draw_null_data)
 {
 	START;
@@ -1604,37 +1154,6 @@ TEST(gfx_opengl_draw_null_data)
 
 	EXPECT_EQ(gfx.drv->draw(NULL, 3, 0), 1);
 
-	END;
-}
-
-TEST(gfx_opengl_draw_null_buffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, NULL, NULL), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_draw_without_target)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, NULL, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -1710,151 +1229,6 @@ TEST(gfx_opengl_init_missing_draw_symbol)
 	END;
 }
 
-TEST(gfx_opengl_begin_memory_binds_framebuffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 0);
-	EXPECT_EQ(t_gl_framebuffer, 22);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_begin_surface_binds_default_framebuffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 0);
-	EXPECT_EQ(t_gl_framebuffer, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_shader_init_creates_shaders)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_create_shader_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_shader_init_compiles_shaders)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_compile_shader_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_init_links_program)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_link_program_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_init_creates_buffer)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_gen_buffers_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_init_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_buffer_t buffer	   = {0};
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_buffer_free_null_data)
 {
 	START;
@@ -1926,6 +1300,80 @@ TEST(gfx_opengl_buffer_init_create_buffer_failure)
 	END;
 }
 
+TEST(gfx_opengl_buffer_free_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77};
+	gfx_buffer_t buffer			 = {
+				     .gfx  = &gfx,
+				     .data = &driver_buffer,
+	     };
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+
+	log_set_quiet(0, 1);
+	gfx.drv->buffer_free(&buffer);
+	log_set_quiet(0, 0);
+	EXPECT_PTR(buffer.data, &driver_buffer);
+	EXPECT_EQ(t_gl_delete_buffers_calls, 0);
+
+	t_surface_make_current_ret		   = 1;
+	((t_gfx_opengl_data_t *)gfx.data)->surface = NULL;
+	buffer.data				   = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_init_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+	gfx_buffer_t buffer			   = {0};
+
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_init_missing_make_current_callback)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_surface_t surface = {
+		.api	= GFX_API_OPENGL,
+		.handle = 0x4321,
+		.ops	= NULL,
+	};
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &surface;
+	gfx_buffer_t buffer			   = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_surface_make_current_calls, 0);
+
+	((t_gfx_opengl_data_t *)gfx.data)->surface = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_buffer_set_data_null_data)
 {
 	START;
@@ -1942,336 +1390,52 @@ TEST(gfx_opengl_buffer_set_data_null_data)
 	END;
 }
 
-TEST(gfx_opengl_buffer_set_data_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_buffer_t buffer	    = {0};
-	gfx_vertex_2d_t vertices[3] = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_buffer_free(&buffer);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_free_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	gfx_buffer_free(&buffer);
-	log_set_quiet(0, 0);
-
-	EXPECT_NOT_NULL(buffer.data);
-	t_surface_make_current_ret = 1;
-	gfx_buffer_free(&buffer);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_bind_uses_program)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_use_program_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_buffer_set_data_uploads_vertices)
 {
 	START;
 
-	proc_t proc = {0};
 	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_buffer_data_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_set_data_uploads_vertex_bytes)
-{
-	START;
-
 	proc_t proc = {0};
-	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_buffer_data_size, 72);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_set_data_passes_first_vertex_x)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {
-		{.x = 7.0f},
-		{.x = 0.0f},
-		{.x = 0.0f},
-	};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_buffer_first_x, 7.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_set_data_passes_last_vertex_y)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {
-		{.x = 0.0f},
-		{.x = 0.0f},
-		{.y = 8.0f},
-	};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_buffer_last_y, 8.0f);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_bind_sets_vertex_attributes)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_vertex_attrib_pointer_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_draw_draws_arrays)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_draw_arrays_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_draw_uses_triangles)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_draw_mode, 4);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_draw_draws_three_vertices)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	EXPECT_EQ(t_gl_draw_count, 3);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_reuses_program)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_pipeline_t pipeline	    = {0};
-	gfx_shader_t vs		    = {0};
-	gfx_shader_t fs		    = {0};
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
 	gfx_buffer_t buffer = {0};
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f},
+		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
+		{.y = 2.0f},
+	};
+
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
-
-	gfx_frame_t frame = {0};
-	EXPECT_EQ(gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target}), 0);
-	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
-	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
-	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
-	EXPECT_EQ(gfx_end(&frame), 0);
-	EXPECT_EQ(gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target}), 0);
-	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
-	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
-	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
-	EXPECT_EQ(gfx_end(&frame), 0);
-
-	EXPECT_EQ(t_gl_create_program_calls, 1);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 2);
+	EXPECT_EQ(t_gl_buffer_data_calls, 1);
+	EXPECT_EQ(t_gl_buffer_data_size, sizeof(vertices));
+	EXPECT_EQ(t_gl_buffer_first_x, 1.0f);
+	EXPECT_EQ(t_gl_buffer_last_y, 2.0f);
 
 	gfx_buffer_free(&buffer);
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_free_deletes_buffer)
+TEST(gfx_opengl_buffer_set_data_make_current_failure)
 {
 	START;
 
-	proc_t proc = {0};
 	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_gl_delete_buffers_calls, 1);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_free_deletes_program)
-{
-	START;
-
 	proc_t proc = {0};
-	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_gfx_opengl_draw(&gfx, &target, vertices);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+	gfx_vertex_2d_t vertices[3]		   = {0};
 
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+
+	t_surface_make_current_ret = 1;
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
-
-	EXPECT_EQ(t_gl_delete_program_calls, 1);
-
 	proc_free(&proc);
 	END;
 }
@@ -2320,28 +1484,6 @@ TEST(gfx_opengl_shader_init_without_diagnostic_symbols)
 	END;
 }
 
-TEST(gfx_opengl_shader_init_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	t_surface_make_current_ret = 0;
-	gfx_shader_t shader	   = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 1);
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_shader_free_null_data)
 {
 	START;
@@ -2354,6 +1496,35 @@ TEST(gfx_opengl_shader_free_null_data)
 
 	gfx_shader_free(&shader);
 
+	END;
+}
+
+TEST(gfx_opengl_shader_free_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_shader_data_t driver_shader = {.shader = 88};
+	gfx_shader_t shader			 = {
+				     .gfx  = &gfx,
+				     .data = &driver_shader,
+	     };
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+
+	log_set_quiet(0, 1);
+	gfx.drv->shader_free(&shader);
+	log_set_quiet(0, 0);
+	EXPECT_PTR(shader.data, &driver_shader);
+	EXPECT_EQ(t_gl_delete_shader_calls, 0);
+
+	t_surface_make_current_ret		   = 1;
+	((t_gfx_opengl_data_t *)gfx.data)->surface = NULL;
+	shader.data				   = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
 	END;
 }
 
@@ -2392,6 +1563,27 @@ TEST(gfx_opengl_shader_init_null_data)
 	END;
 }
 
+TEST(gfx_opengl_shader_init_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+	gfx_shader_t shader			   = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_shader_init_null_gl_version)
 {
 	START;
@@ -2426,6 +1618,52 @@ TEST(gfx_opengl_shader_init_create_shader_reports_gl_error)
 	log_set_quiet(0, 0);
 
 	gfx_shader_free(&shader);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_shader_init_compile_failure_with_info_log)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gl_shader_status  = 0;
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_get_shader_info_log_calls, 1);
+	EXPECT_EQ(t_gl_delete_shader_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_shader_init_compile_failure_without_info_log)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	t_gl_shader_info_log_available = 0;
+	proc_t proc		       = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_opengl_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	t_gl_shader_status  = 0;
+	gfx_shader_t shader = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &shader, GFX_SHADER_STAGE_VERTEX), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_get_shader_info_log_calls, 0);
+	EXPECT_EQ(t_gl_delete_shader_calls, 1);
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2493,99 +1731,6 @@ TEST(gfx_opengl_shader_init_unsupported_stage)
 	END;
 }
 
-TEST(gfx_opengl_shader_init_vertex_compile_failure)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_shader_fail_call = 1;
-	proc_t proc	      = {0};
-	gfx_t gfx	      = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_shader_init_vertex_compile_failure_without_info_log)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_shader_fail_call	       = 1;
-	t_gl_shader_info_log_available = 0;
-	proc_t proc		       = {0};
-	gfx_t gfx		       = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_shader_init_fragment_compile_failure)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_shader_fail_call = 2;
-	proc_t proc	      = {0};
-	gfx_t gfx	      = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_init_create_program_failure)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_create_program_ret = 0;
-	proc_t proc		= {0};
-	gfx_t gfx		= {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_pipeline_init_alloc_failure)
 {
 	START;
@@ -2613,28 +1758,37 @@ TEST(gfx_opengl_pipeline_init_alloc_failure)
 	END;
 }
 
-TEST(gfx_opengl_pipeline_init_surface_make_current_failure)
+TEST(gfx_opengl_pipeline_init_make_current_failure)
 {
 	START;
 
-	proc_t proc = {0};
 	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
 	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
 	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	t_surface_make_current_ret   = 0;
-	gfx_pipeline_t pipe	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass		   = &render_pass;
+	gfx_pipeline_config_t config		   = t_gfx_opengl_pipeline_config(vs, fs);
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
 
-	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_pipeline_init(&pipe, &gfx, &config));
-	log_set_quiet(0, 0);
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
 
-	t_surface_make_current_ret = 1;
+	t_surface_make_current_ret	= 1;
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
 	gfx_shader_free(&fs);
 	gfx_shader_free(&vs);
 	gfx_free(&gfx);
@@ -2673,6 +1827,125 @@ TEST(gfx_opengl_pipeline_init_null_data)
 	END;
 }
 
+TEST(gfx_opengl_pipeline_init_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config	= t_gfx_opengl_pipeline_config(vs, fs);
+
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	EXPECT_EQ(t_gl_create_program_calls, 1);
+	EXPECT_EQ(t_gl_attach_shader_calls, 2);
+	EXPECT_EQ(t_gl_link_program_calls, 1);
+	EXPECT_EQ(t_gl_get_program_iv_calls, 1);
+
+	gfx_pipeline_free(&pipeline);
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_init_create_program_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config	= t_gfx_opengl_pipeline_config(vs, fs);
+	t_gl_create_program_ret		= 0;
+
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_init_link_failure_with_info_log)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	t_gl_program_info_log_available = 1;
+	proc_t proc			= {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_opengl_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config	= t_gfx_opengl_pipeline_config(vs, fs);
+	t_gl_program_status		= 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_get_program_info_log_calls, 1);
+
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_pipeline_free_null_data_direct)
 {
 	START;
@@ -2682,6 +1955,35 @@ TEST(gfx_opengl_pipeline_free_null_data_direct)
 
 	drv->pipeline_free(NULL);
 
+	END;
+}
+
+TEST(gfx_opengl_pipeline_free_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+	gfx_pipeline_t pipeline			     = {
+				     .gfx  = &gfx,
+				     .data = &driver_pipeline,
+	     };
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+
+	log_set_quiet(0, 1);
+	gfx.drv->pipeline_free(&pipeline);
+	log_set_quiet(0, 0);
+	EXPECT_PTR(pipeline.data, &driver_pipeline);
+	EXPECT_EQ(t_gl_delete_program_calls, 0);
+
+	t_surface_make_current_ret		   = 1;
+	((t_gfx_opengl_data_t *)gfx.data)->surface = NULL;
+	pipeline.data				   = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
 	END;
 }
 
@@ -2727,6 +2029,49 @@ TEST(gfx_opengl_pipeline_init_alloc_failure_direct)
 	log_set_quiet(0, 0);
 
 	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_init_link_failure_without_info_log)
+{
+	START;
+
+	t_gfx_opengl_reset();
+	t_gl_program_info_log_available = 0;
+	proc_t proc			= {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_opengl_symbols(&proc);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_opengl_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config	= t_gfx_opengl_pipeline_config(vs, fs);
+	t_gl_program_status		= 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_get_program_info_log_calls, 0);
+
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2796,159 +2141,6 @@ TEST(gfx_opengl_pipeline_init_unsupported_input_layout)
 	END;
 }
 
-TEST(gfx_opengl_pipeline_init_link_failure)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_program_status = 0;
-	proc_t proc	    = {0};
-	gfx_t gfx	    = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_init_link_failure_with_info_log)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_program_status		= 0;
-	t_gl_program_info_log_available = 1;
-	proc_t proc			= {0};
-	gfx_t gfx			= {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-	log_set_quiet(0, 0);
-
-	EXPECT_EQ(t_gl_get_program_info_log_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_begin_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_buffer_t buffer	    = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	gfx_frame_t frame = {0};
-	EXPECT_EQ(gfx_begin(&gfx, &frame, &(gfx_frame_config_t){.target = &target}), 1);
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_buffer_free(&buffer);
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_bind_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	gfx_frame_t frame	   = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_buffer_free(&buffer);
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_bind_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	gfx_frame_t frame	   = {.gfx = &gfx, .active = 1};
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
-	log_set_quiet(0, 0);
-
-	t_surface_make_current_ret = 1;
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_end_null_frame)
 {
 	START;
@@ -2961,140 +2153,236 @@ TEST(gfx_opengl_end_null_frame)
 	END;
 }
 
-TEST(gfx_opengl_end_without_pipeline)
+TEST(gfx_opengl_pipeline_bind_uses_program)
 {
 	START;
 
-	proc_t proc = {0};
 	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_frame_t frame = {.gfx = &gfx, .active = 1};
+	gfx_render_pass_t render_pass		     = {.gfx = &gfx, .data = &render_pass};
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	gfx_pipeline_t pipeline = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.data	     = &driver_pipeline,
+	};
+	gfx_frame_t frame = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.active	     = 1,
+	};
+	gfx.frame = &frame;
 
-	EXPECT_EQ(gfx.drv->end(&frame), 0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_gl_use_program_calls, 1);
+	EXPECT_EQ(t_gl_program, 99);
+
+	gfx.frame = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_bind_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+	gfx_pipeline_t pipeline			     = {
+				     .gfx  = &gfx,
+				     .data = &driver_pipeline,
+	     };
+	gfx_frame_t frame = {
+		.gfx = &gfx,
+	};
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_use_program_calls, 0);
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_bind_sets_attributes)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass		     = {.gfx = &gfx, .data = &render_pass};
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77};
+	gfx_pipeline_t pipeline			 = {
+				 .gfx	      = &gfx,
+				 .render_pass = &render_pass,
+				 .data	      = &driver_pipeline,
+	 };
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.pipeline    = &pipeline,
+		.active	     = 1,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(t_gl_enable_vertex_attrib_array_calls, 2);
+	EXPECT_EQ(t_gl_vertex_attrib_pointer_calls, 2);
+	EXPECT_EQ(t_gl_attrib_index, 1);
+	EXPECT_EQ(t_gl_vertex_attrib_size, 4);
+	EXPECT_EQ(t_gl_vertex_attrib_stride, sizeof(gfx_vertex_2d_t));
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_end_surface_make_current_failure)
+TEST(gfx_opengl_buffer_bind_make_current_failure)
 {
 	START;
 
-	proc_t proc = {0};
 	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_frame_t frame	   = {.gfx = &gfx, .active = 1};
-	t_surface_make_current_ret = 0;
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77};
+	gfx_pipeline_t pipeline			 = {
+				 .gfx  = &gfx,
+				 .data = &driver_pipeline,
+	 };
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+	};
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 0);
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_draw_calls_gl)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_frame_t frame = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->draw(&frame, 3, 2), 0);
+	EXPECT_EQ(t_gl_draw_arrays_calls, 1);
+	EXPECT_EQ(t_gl_draw_mode, 0x0004);
+	EXPECT_EQ(t_gl_draw_count, 3);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_end_disables_attributes)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	gfx_pipeline_t pipeline = {
+		.gfx  = &gfx,
+		.data = &driver_pipeline,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+	};
+
+	EXPECT_EQ(gfx.drv->end(&frame), 0);
+	EXPECT_EQ(t_gl_disable_vertex_attrib_array_calls, 2);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 1);
+	EXPECT_EQ(t_gl_use_program_calls, 1);
+	EXPECT_EQ(t_gl_program, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_end_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	gfx_pipeline_t pipeline = {
+		.gfx  = &gfx,
+		.data = &driver_pipeline,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+	};
+	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
+	t_surface_make_current_ret		   = 0;
 
 	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx.drv->end(&frame), 1);
 	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gl_disable_vertex_attrib_array_calls, 0);
 
 	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_buffer_init_create_buffer_failure_in_draw_sequence)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_gen_buffer_ret = 0;
-	proc_t proc	    = {0};
-	gfx_t gfx	    = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-	EXPECT_EQ(t_gfx_opengl_draw(&gfx, &target, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_end_memory_reads_pixels)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_opengl_draw(&gfx, &target, vertices);
-	EXPECT_EQ(gfx_target_read(&t_gfx_opengl_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
-
-	EXPECT_EQ(t_gl_read_pixels_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_shader_free_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t shader = {0};
-	EXPECT_EQ(t_gfx_opengl_shader(&gfx, &shader), 0);
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	gfx_shader_free(&shader);
-	log_set_quiet(0, 0);
-	EXPECT_NOT_NULL(shader.data);
-
-	t_surface_make_current_ret = 1;
-	gfx_shader_free(&shader);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_pipeline_free_surface_make_current_failure)
-{
-	START;
-
-	proc_t proc = {0};
-	gfx_t gfx   = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 1, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_opengl_pipeline_config(vs, fs);
-	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	t_surface_make_current_ret = 0;
-
-	log_set_quiet(0, 1);
-	gfx_pipeline_free(&pipeline);
-	log_set_quiet(0, 0);
-	EXPECT_NOT_NULL(pipeline.data);
-
-	t_surface_make_current_ret = 1;
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3299,6 +2587,30 @@ TEST(gfx_opengl_target_free_surface_make_current_failure)
 	END;
 }
 
+TEST(gfx_opengl_render_pass_init_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass = {0};
+
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	gfx_render_pass_free(&render_pass);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_memory_target_init_invalid_config)
 {
 	START;
@@ -3387,6 +2699,84 @@ TEST(gfx_opengl_surface_target_init_invalid_config)
 	END;
 }
 
+TEST(gfx_opengl_surface_target_init_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_opengl_surface,
+						   .width   = 2,
+						   .height  = 2,
+					   }),
+		   &target);
+	EXPECT_EQ(t_surface_make_current_calls, 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_surface_target_init_make_current_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_surface_make_current_ret = 0;
+	gfx_target_t target	   = {0};
+
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_opengl_surface,
+						    .width   = 2,
+						    .height  = 2,
+					    }));
+
+	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_target_present_calls_surface)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_opengl_surface,
+						   .width   = 2,
+						   .height  = 2,
+					   }),
+		   &target);
+
+	EXPECT_EQ(gfx_target_present(&target), 0);
+	EXPECT_EQ(t_surface_present_calls, 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_target_init_none)
 {
 	START;
@@ -3460,34 +2850,75 @@ TEST(gfx_opengl_target_read_without_bound_target)
 	END;
 }
 
-TEST(gfx_opengl_set_target_invalid_format)
+TEST(gfx_opengl_target_read_without_bound_framebuffer)
 {
 	START;
 
+	gfx_t gfx   = {0};
 	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_NONE,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
+	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	    = &gfx;
+	EXPECT_EQ(gfx.drv->target_init(&target), 0);
+	((t_gfx_opengl_data_t *)gfx.data)->target      = &target;
+	((t_gfx_opengl_data_t *)gfx.data)->framebuffer = NULL;
 
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(t_gl_read_pixels_calls, 0);
 
+	gfx.drv->target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
+TEST(gfx_opengl_target_read_reads_rows)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	u8 pixels[8]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 2,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+
+	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
+	EXPECT_EQ(t_gl_read_pixels_calls, 2);
+	EXPECT_EQ(t_gl_read_pixels_first_y, 1);
+	EXPECT_EQ(t_gl_read_pixels_y, 0);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
 TEST(gfx_opengl_init_missing_framebuffer_symbol)
 {
 	START;
@@ -3507,132 +2938,6 @@ TEST(gfx_opengl_init_missing_framebuffer_symbol)
 	proc_free(&proc);
 	END;
 }
-
-TEST(gfx_opengl_set_target_success)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_target_reuses_framebuffer_symbols)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_target_creates_texture)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(t_gl_gen_textures_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_target_creates_framebuffer)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(t_gl_gen_framebuffers_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_target_incomplete_framebuffer)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	t_gl_framebuffer_status = 0;
-	proc_t proc		= {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_framebuffer_free_null_data)
 {
 	START;
@@ -3803,6 +3108,84 @@ TEST(gfx_opengl_framebuffer_init_surface_make_current_failure)
 	END;
 }
 
+TEST(gfx_opengl_framebuffer_init_surface_success)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_opengl_surface,
+						   .width   = 2,
+						   .height  = 2,
+					   }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_framebuffer_init_incomplete_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gl_framebuffer_status	      = 0;
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_framebuffer_pass_begin_bind_failure)
 {
 	START;
@@ -3837,27 +3220,6 @@ TEST(gfx_opengl_framebuffer_pass_begin_bind_failure)
 	proc_free(&proc);
 	END;
 }
-
-TEST(gfx_opengl_target_read_without_framebuffer)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	gfx_framebuffer_free(&t_gfx_opengl_bound_framebuffer);
-
-	EXPECT_EQ(gfx.drv->target_read(&t_gfx_opengl_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_opengl_framebuffer_pass_begin_zero_memory_framebuffer)
 {
 	START;
@@ -3899,574 +3261,142 @@ TEST(gfx_opengl_framebuffer_pass_begin_zero_memory_framebuffer)
 	END;
 }
 
-TEST(gfx_opengl_free_deletes_framebuffer)
+TEST(gfx_opengl_framebuffer_pass_begin_clears_memory_target)
 {
 	START;
 
-	t_gfx_opengl_reset();
+	gfx_t gfx   = {0};
 	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_delete_framebuffers_calls = 0;
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 1,
+						  .height = 1,
+						  .stride = 4,
+					  }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
 
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_gl_delete_framebuffers_calls, 1);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_free_deletes_texture)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_delete_textures_calls = 0;
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_gl_delete_textures_calls, 1);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_maps_color_buffer)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(t_gl_clear_calls, 1);
-	EXPECT_EQ(t_gl_mask, 0x00004000);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_memory_binds_framebuffer)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	gfx_set_target(&gfx, &target);
-	t_gl_bind_framebuffer_calls = 0;
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear    = {.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.4f},
+						     .viewport = {.x = 1, .y = 2, .width = 3, .height = 4},
+					     }),
+		  0);
 	EXPECT_EQ(t_gl_bind_framebuffer_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_memory_sets_viewport)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[24]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 3, 2, 12);
-	gfx_set_target(&gfx, &target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
+	EXPECT_EQ(t_gl_viewport_calls, 1);
+	EXPECT_EQ(t_gl_viewport_x, 1);
+	EXPECT_EQ(t_gl_viewport_y, 2);
 	EXPECT_EQ(t_gl_viewport_width, 3);
-	EXPECT_EQ(t_gl_viewport_height, 2);
+	EXPECT_EQ(t_gl_viewport_height, 4);
+	EXPECT_EQ(t_gl_clear_color_calls, 1);
+	EXPECT_EQ(t_gl_clear_calls, 1);
+	EXPECT_EQ(t_gl_r, 0.1f);
+	EXPECT_EQ(t_gl_g, 0.2f);
+	EXPECT_EQ(t_gl_b, 0.3f);
+	EXPECT_EQ(t_gl_a, 0.4f);
 
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_clear_memory_reads_rows)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[16]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 2, 8);
-	gfx_set_target(&gfx, &target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_gl_read_pixels_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_memory_flips_y)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	u8 pixels[16]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 2, 8);
-	gfx_set_target(&gfx, &target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_gl_read_pixels_first_y, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_invalid_surface)
+TEST(gfx_opengl_framebuffer_pass_begin_binds_surface_framebuffer)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_surface_t surface = {
-		.api = GFX_API_SOFTWARE,
-		.ops = &t_gfx_opengl_surface_ops,
-	};
-	gfx_target_t target = t_gfx_opengl_surface_target(&surface, 1, 1);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_accepts_surface)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_makes_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(t_surface_make_current_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_uses_library_framebuffer_symbols)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_fallback_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_uses_glvnd_library)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_glvnd_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_uses_default_library)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_present_calls_surface_present)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(gfx_present(&gfx), 0);
-	EXPECT_EQ(t_surface_present_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_make_current_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	t_surface_make_current_ret = 0;
-	gfx_target_t target	   = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_reuses_surface_on_resize)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t first_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &first_target);
-	t_surface_make_current_calls  = 0;
-	t_surface_clear_current_calls = 0;
-	gfx_target_t resized_target   = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 7, 5);
-
-	EXPECT_EQ(gfx_set_target(&gfx, &resized_target), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 2);
-	EXPECT_EQ(t_surface_clear_current_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_surface_target_updates_size_on_resize)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t first_target   = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_target_t resized_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 7, 5);
-	gfx_set_target(&gfx, &first_target);
-	gfx_set_target(&gfx, &resized_target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_gl_viewport_width, 7);
-	EXPECT_EQ(t_gl_viewport_height, 5);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_surface_binds_default_framebuffer)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_frame_t frame	      = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_opengl_surface,
+						   .width   = 2,
+						   .height  = 2,
+					   }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
 	t_gl_bind_framebuffer_calls = 0;
 
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
 	EXPECT_EQ(t_gl_bind_framebuffer_calls, 1);
 	EXPECT_EQ(t_gl_framebuffer, 0);
 
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_clear_surface_sets_viewport)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_gl_viewport_width, 3);
-	EXPECT_EQ(t_gl_viewport_height, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_surface_makes_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_make_current_calls = 0;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(t_surface_make_current_calls, 2);
-	EXPECT_EQ(t_gl_clear_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_surface_make_current_failure)
+TEST(gfx_opengl_framebuffer_pass_begin_make_current_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
+	gfx_render_pass_t render_pass = {
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
+	gfx_target_t target = {
+		.gfx	 = &gfx,
+		.type	 = GFX_TARGET_SURFACE,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_opengl_surface,
+		.width	 = 2,
+		.height	 = 2,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.target	     = &target,
+		.render_pass = &render_pass,
+		.data	     = &framebuffer,
+	};
+	gfx_frame_t frame	   = {.gfx = &gfx};
 	t_surface_make_current_ret = 0;
-	t_gl_clear_calls	   = 0;
 
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-	log_set_quiet(0, 0);
-	EXPECT_EQ(t_gl_clear_calls, 0);
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
 
 	t_surface_make_current_ret = 1;
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_present_swaps_buffers)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(gfx_present(&gfx), 0);
-	EXPECT_EQ(t_surface_present_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_free_clears_surface_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &target);
-	t_surface_clear_current_calls = 0;
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_surface_clear_current_calls, 1);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_set_target_none_clears_surface_current)
-{
-	START;
-
-	t_gfx_opengl_reset();
-	proc_t proc = {0};
-	proc_init(&proc, 0, 1, ALLOC_STD);
-	t_gfx_opengl_symbols(&proc);
-	gfx_t gfx	  = {0};
-	gfx_driver_t *drv = t_gfx_opengl_driver();
-	EXPECT_NOT_NULL(drv);
-	gfx_init(&gfx, drv, &(gfx_config_t){0}, &proc, ALLOC_STD);
-	gfx_target_t surface_target = t_gfx_opengl_surface_target(&t_gfx_opengl_surface, 3, 2);
-	gfx_set_target(&gfx, &surface_target);
-	t_surface_clear_current_calls = 0;
-
-	gfx_target_t target = {
-		.type = GFX_TARGET_NONE,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_surface_clear_current_calls, 1);
-
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -4483,54 +3413,6 @@ TEST(gfx_opengl_clear_null_data)
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(NULL, NULL), 1);
 
-	END;
-}
-
-TEST(gfx_opengl_set_target_unknown_type)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type = (gfx_target_type_t)99,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_clear_without_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_opengl_present_without_surface_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_present(&gfx), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -4570,87 +3452,59 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_init_success);
 	RUN(gfx_opengl_free_does_not_use_init_surface);
 	RUN(gfx_opengl_free_null_data);
-	RUN(gfx_opengl_clear_color_calls_gl);
-	RUN(gfx_opengl_clear_color_surface_makes_current);
-	RUN(gfx_opengl_clear_color_surface_make_current_failure);
 	RUN(gfx_opengl_clear_color_null_data);
 	RUN(gfx_opengl_viewport_null_data);
-	RUN(gfx_opengl_viewport_calls_gl);
-	RUN(gfx_opengl_viewport_surface_makes_current);
-	RUN(gfx_opengl_viewport_surface_make_current_failure);
-	RUN(gfx_opengl_viewport_passes_x);
-	RUN(gfx_opengl_viewport_passes_y);
-	RUN(gfx_opengl_viewport_passes_width);
-	RUN(gfx_opengl_viewport_passes_height);
 	RUN(gfx_opengl_draw_null_data);
-	RUN(gfx_opengl_draw_null_buffer);
-	RUN(gfx_opengl_draw_without_target);
 	RUN(gfx_opengl_begin_null_frame);
 	RUN(gfx_opengl_buffer_bind_null_frame);
 	RUN(gfx_opengl_pipeline_bind_null_frame);
 	RUN(gfx_opengl_init_missing_draw_symbol);
-	RUN(gfx_opengl_begin_memory_binds_framebuffer);
-	RUN(gfx_opengl_begin_surface_binds_default_framebuffer);
-	RUN(gfx_opengl_shader_init_creates_shaders);
-	RUN(gfx_opengl_shader_init_compiles_shaders);
-	RUN(gfx_opengl_pipeline_init_links_program);
-	RUN(gfx_opengl_buffer_init_creates_buffer);
-	RUN(gfx_opengl_buffer_init_surface_make_current_failure);
 	RUN(gfx_opengl_buffer_free_null_data);
+	RUN(gfx_opengl_buffer_free_make_current_failure);
 	RUN(gfx_opengl_buffer_init_null_config);
 	RUN(gfx_opengl_buffer_init_alloc_failure);
 	RUN(gfx_opengl_buffer_init_create_buffer_failure);
+	RUN(gfx_opengl_buffer_init_make_current_failure);
+	RUN(gfx_opengl_buffer_init_missing_make_current_callback);
 	RUN(gfx_opengl_buffer_set_data_null_data);
-	RUN(gfx_opengl_buffer_set_data_surface_make_current_failure);
-	RUN(gfx_opengl_buffer_free_surface_make_current_failure);
-	RUN(gfx_opengl_pipeline_bind_uses_program);
 	RUN(gfx_opengl_buffer_set_data_uploads_vertices);
-	RUN(gfx_opengl_buffer_set_data_uploads_vertex_bytes);
-	RUN(gfx_opengl_buffer_set_data_passes_first_vertex_x);
-	RUN(gfx_opengl_buffer_set_data_passes_last_vertex_y);
-	RUN(gfx_opengl_buffer_bind_sets_vertex_attributes);
-	RUN(gfx_opengl_draw_draws_arrays);
-	RUN(gfx_opengl_draw_uses_triangles);
-	RUN(gfx_opengl_draw_draws_three_vertices);
-	RUN(gfx_opengl_pipeline_reuses_program);
-	RUN(gfx_opengl_free_deletes_buffer);
-	RUN(gfx_opengl_free_deletes_program);
+	RUN(gfx_opengl_buffer_set_data_make_current_failure);
 	RUN(gfx_opengl_shader_init_create_shader_failure);
 	RUN(gfx_opengl_shader_init_without_diagnostic_symbols);
-	RUN(gfx_opengl_shader_init_surface_make_current_failure);
 	RUN(gfx_opengl_shader_free_null_data);
+	RUN(gfx_opengl_shader_free_make_current_failure);
 	RUN(gfx_opengl_shader_init_null_config);
 	RUN(gfx_opengl_shader_init_null_data);
+	RUN(gfx_opengl_shader_init_make_current_failure);
 	RUN(gfx_opengl_shader_init_null_gl_version);
 	RUN(gfx_opengl_shader_init_create_shader_reports_gl_error);
+	RUN(gfx_opengl_shader_init_compile_failure_with_info_log);
+	RUN(gfx_opengl_shader_init_compile_failure_without_info_log);
 	RUN(gfx_opengl_shader_init_alloc_failure);
 	RUN(gfx_opengl_shader_init_transpile_failure);
 	RUN(gfx_opengl_shader_init_unsupported_stage);
-	RUN(gfx_opengl_shader_init_vertex_compile_failure);
-	RUN(gfx_opengl_shader_init_vertex_compile_failure_without_info_log);
-	RUN(gfx_opengl_shader_init_fragment_compile_failure);
-	RUN(gfx_opengl_pipeline_init_create_program_failure);
 	RUN(gfx_opengl_pipeline_init_alloc_failure);
-	RUN(gfx_opengl_pipeline_init_surface_make_current_failure);
 	RUN(gfx_opengl_pipeline_init_null_config);
 	RUN(gfx_opengl_pipeline_init_null_data);
+	RUN(gfx_opengl_pipeline_init_make_current_failure);
+	RUN(gfx_opengl_pipeline_init_create_program_failure);
+	RUN(gfx_opengl_pipeline_init_link_failure_with_info_log);
+	RUN(gfx_opengl_pipeline_init_success);
 	RUN(gfx_opengl_pipeline_free_null_data_direct);
+	RUN(gfx_opengl_pipeline_free_make_current_failure);
 	RUN(gfx_opengl_pipeline_init_invalid_config_direct);
 	RUN(gfx_opengl_pipeline_init_alloc_failure_direct);
 	RUN(gfx_opengl_pipeline_init_unsupported_input_layout_direct);
+	RUN(gfx_opengl_pipeline_init_link_failure_without_info_log);
 	RUN(gfx_opengl_pipeline_init_unsupported_input_layout);
-	RUN(gfx_opengl_pipeline_init_link_failure);
-	RUN(gfx_opengl_pipeline_init_link_failure_with_info_log);
-	RUN(gfx_opengl_begin_surface_make_current_failure);
-	RUN(gfx_opengl_buffer_bind_surface_make_current_failure);
-	RUN(gfx_opengl_pipeline_bind_surface_make_current_failure);
 	RUN(gfx_opengl_end_null_frame);
-	RUN(gfx_opengl_end_without_pipeline);
-	RUN(gfx_opengl_end_surface_make_current_failure);
-	RUN(gfx_opengl_buffer_init_create_buffer_failure_in_draw_sequence);
-	RUN(gfx_opengl_end_memory_reads_pixels);
-	RUN(gfx_opengl_shader_free_surface_make_current_failure);
-	RUN(gfx_opengl_pipeline_free_surface_make_current_failure);
+	RUN(gfx_opengl_pipeline_bind_uses_program);
+	RUN(gfx_opengl_pipeline_bind_make_current_failure);
+	RUN(gfx_opengl_buffer_bind_sets_attributes);
+	RUN(gfx_opengl_buffer_bind_make_current_failure);
+	RUN(gfx_opengl_draw_calls_gl);
+	RUN(gfx_opengl_end_disables_attributes);
+	RUN(gfx_opengl_end_make_current_failure);
 	RUN(gfx_opengl_proc_loads_symbol);
 	RUN(gfx_opengl_proc_sets_symbol);
 	RUN(gfx_opengl_proc_null_data);
@@ -4659,6 +3513,7 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_render_pass_free_null_data);
 	RUN(gfx_opengl_render_pass_init_invalid_config);
 	RUN(gfx_opengl_render_pass_init_alloc_failure);
+	RUN(gfx_opengl_render_pass_init_success);
 	RUN(gfx_opengl_set_target_null_data);
 	RUN(gfx_opengl_target_free_null_data);
 	RUN(gfx_opengl_target_free_surface_make_current_failure);
@@ -4666,54 +3521,30 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_memory_target_init_alloc_failure);
 	RUN(gfx_opengl_memory_target_init_surface_make_current_failure);
 	RUN(gfx_opengl_surface_target_init_invalid_config);
+	RUN(gfx_opengl_surface_target_init_success);
+	RUN(gfx_opengl_surface_target_init_make_current_failure);
+	RUN(gfx_opengl_target_present_calls_surface);
 	RUN(gfx_opengl_target_init_none);
 	RUN(gfx_opengl_target_init_unknown_type);
 	RUN(gfx_opengl_target_read_null_config);
 	RUN(gfx_opengl_target_read_without_bound_target);
-	RUN(gfx_opengl_set_target_invalid_format);
+	RUN(gfx_opengl_target_read_without_bound_framebuffer);
+	RUN(gfx_opengl_target_read_reads_rows);
 	RUN(gfx_opengl_init_missing_framebuffer_symbol);
-	RUN(gfx_opengl_set_target_success);
-	RUN(gfx_opengl_set_target_unknown_type);
-	RUN(gfx_opengl_set_target_reuses_framebuffer_symbols);
-	RUN(gfx_opengl_set_target_creates_texture);
-	RUN(gfx_opengl_set_target_creates_framebuffer);
-	RUN(gfx_opengl_set_target_incomplete_framebuffer);
 	RUN(gfx_opengl_framebuffer_free_null_data);
 	RUN(gfx_opengl_framebuffer_free_surface_make_current_failure);
 	RUN(gfx_opengl_framebuffer_init_invalid_config);
 	RUN(gfx_opengl_framebuffer_init_alloc_failure);
 	RUN(gfx_opengl_framebuffer_init_invalid_target_type);
 	RUN(gfx_opengl_framebuffer_init_surface_make_current_failure);
+	RUN(gfx_opengl_framebuffer_init_surface_success);
+	RUN(gfx_opengl_framebuffer_init_incomplete_failure);
 	RUN(gfx_opengl_framebuffer_pass_begin_bind_failure);
-	RUN(gfx_opengl_target_read_without_framebuffer);
 	RUN(gfx_opengl_framebuffer_pass_begin_zero_memory_framebuffer);
-	RUN(gfx_opengl_free_deletes_framebuffer);
-	RUN(gfx_opengl_free_deletes_texture);
-	RUN(gfx_opengl_clear_maps_color_buffer);
-	RUN(gfx_opengl_clear_memory_binds_framebuffer);
-	RUN(gfx_opengl_clear_memory_sets_viewport);
-	RUN(gfx_opengl_clear_memory_reads_rows);
-	RUN(gfx_opengl_clear_memory_flips_y);
-	RUN(gfx_opengl_set_surface_target_invalid_surface);
-	RUN(gfx_opengl_set_surface_target_accepts_surface);
-	RUN(gfx_opengl_set_surface_target_makes_current);
-	RUN(gfx_opengl_set_surface_target_uses_library_framebuffer_symbols);
-	RUN(gfx_opengl_set_surface_target_uses_glvnd_library);
-	RUN(gfx_opengl_set_surface_target_uses_default_library);
-	RUN(gfx_opengl_present_calls_surface_present);
-	RUN(gfx_opengl_set_surface_target_make_current_failure);
-	RUN(gfx_opengl_set_surface_target_reuses_surface_on_resize);
-	RUN(gfx_opengl_set_surface_target_updates_size_on_resize);
-	RUN(gfx_opengl_clear_surface_binds_default_framebuffer);
-	RUN(gfx_opengl_clear_surface_sets_viewport);
-	RUN(gfx_opengl_clear_surface_makes_current);
-	RUN(gfx_opengl_clear_surface_make_current_failure);
-	RUN(gfx_opengl_present_swaps_buffers);
-	RUN(gfx_opengl_free_clears_surface_current);
-	RUN(gfx_opengl_set_target_none_clears_surface_current);
+	RUN(gfx_opengl_framebuffer_pass_begin_clears_memory_target);
+	RUN(gfx_opengl_framebuffer_pass_begin_binds_surface_framebuffer);
+	RUN(gfx_opengl_framebuffer_pass_begin_make_current_failure);
 	RUN(gfx_opengl_clear_null_data);
-	RUN(gfx_opengl_clear_without_target);
-	RUN(gfx_opengl_present_without_surface_target);
 	RUN(gfx_opengl_present_null_data);
 
 	t_gfx_opengl_compiler_free();

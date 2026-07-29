@@ -389,7 +389,6 @@ static VkImage t_vk_swapchain_images[20];
 static u32 t_vk_present_image_index;
 static gfx_shader_compiler_t t_gfx_vulkan_compiler;
 static int t_gfx_vulkan_compiler_initialized;
-static gfx_render_pass_t *t_gfx_vulkan_active_render_pass;
 
 typedef struct t_gfx_vulkan_target_data_s {
 	VkImage image;
@@ -421,21 +420,26 @@ typedef struct t_gfx_vulkan_framebuffer_data_s {
 	VkFramebuffer swapchain_framebuffers[8];
 } t_gfx_vulkan_framebuffer_data_t;
 
+typedef struct t_gfx_vulkan_buffer_data_s {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	VkDeviceSize memory_size;
+	int memory_coherent;
+} t_gfx_vulkan_buffer_data_t;
+
+typedef struct t_gfx_vulkan_shader_data_s {
+	VkShaderModule module;
+} t_gfx_vulkan_shader_data_t;
+
+typedef struct t_gfx_vulkan_pipeline_data_s {
+	VkPipelineLayout pipeline_layout;
+	VkPipeline pipeline;
+} t_gfx_vulkan_pipeline_data_t;
+
 static const gfx_layout_t t_gfx_vulkan_input_layout[] = {
 	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
 	{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
 };
-
-static gfx_pipeline_config_t t_gfx_vulkan_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
-{
-	return (gfx_pipeline_config_t){
-		.render_pass	   = t_gfx_vulkan_active_render_pass,
-		.vs		   = vs,
-		.fs		   = fs,
-		.input_layout	   = t_gfx_vulkan_input_layout,
-		.input_layout_size = sizeof(t_gfx_vulkan_input_layout),
-	};
-}
 
 static void *t_gfx_vulkan_alloc_fail(alloc_t *alloc, size_t size)
 {
@@ -1654,212 +1658,6 @@ static int t_gfx_vulkan_shader(gfx_t *gfx, gfx_shader_t *shader, gfx_shader_stag
 	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
-typedef struct gfx_frame_config_s {
-	const gfx_target_t *target;
-} gfx_frame_config_t;
-
-#define GFX_CLEAR_COLOR_BUFFER 1u
-
-static gfx_target_t t_gfx_vulkan_bound_target;
-static gfx_render_pass_t t_gfx_vulkan_bound_render_pass;
-static gfx_framebuffer_t t_gfx_vulkan_bound_framebuffer;
-static gfx_color_t t_gfx_vulkan_clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
-static gfx_rect_t t_gfx_vulkan_viewport;
-
-static void t_gfx_vulkan_unset_target(gfx_t *gfx)
-{
-	if (t_gfx_vulkan_bound_framebuffer.gfx == gfx) {
-		gfx_framebuffer_free(&t_gfx_vulkan_bound_framebuffer);
-	}
-	if (t_gfx_vulkan_bound_render_pass.gfx == gfx) {
-		gfx_render_pass_free(&t_gfx_vulkan_bound_render_pass);
-	}
-	if (t_gfx_vulkan_bound_target.gfx == gfx) {
-		gfx_target_free(&t_gfx_vulkan_bound_target);
-	}
-	t_gfx_vulkan_active_render_pass = NULL;
-	t_gfx_vulkan_viewport		= (gfx_rect_t){0};
-}
-
-static int t_gfx_vulkan_set_target_compat(gfx_t *gfx, const gfx_target_t *target)
-{
-	if (gfx == NULL || gfx->drv == NULL || target == NULL) {
-		return 1;
-	}
-	if (t_gfx_vulkan_bound_target.gfx == gfx && t_gfx_vulkan_bound_target.type == target->type &&
-	    t_gfx_vulkan_bound_target.format == target->format && t_gfx_vulkan_bound_target.data == target->data &&
-	    t_gfx_vulkan_bound_target.surface == target->surface && t_gfx_vulkan_bound_target.width == target->width &&
-	    t_gfx_vulkan_bound_target.height == target->height && t_gfx_vulkan_bound_target.stride == target->stride) {
-		return 0;
-	}
-	t_gfx_vulkan_unset_target(gfx);
-	if (target->type == GFX_TARGET_NONE) {
-		return 0;
-	}
-
-	gfx_target_t *created = NULL;
-	if (target->type == GFX_TARGET_MEMORY) {
-		created = gfx_target_init_memory(&t_gfx_vulkan_bound_target,
-						 gfx,
-						 &(gfx_memory_target_config_t){
-							 .format = target->format,
-							 .data	 = target->data,
-							 .width	 = target->width,
-							 .height = target->height,
-							 .stride = target->stride,
-						 });
-	} else if (target->type == GFX_TARGET_SURFACE) {
-		created = gfx_target_init_surface(&t_gfx_vulkan_bound_target,
-						  gfx,
-						  &(gfx_surface_target_config_t){
-							  .format  = target->format,
-							  .surface = target->surface,
-							  .width   = target->width,
-							  .height  = target->height,
-						  });
-	}
-	if (created == NULL) {
-		return 1;
-	}
-	if (gfx_render_pass_init(&t_gfx_vulkan_bound_render_pass,
-				 gfx,
-				 &(gfx_render_pass_config_t){
-					 .color_format = t_gfx_vulkan_bound_target.format,
-					 .load	       = GFX_LOAD_CLEAR,
-					 .store	       = GFX_STORE_STORE,
-				 }) != &t_gfx_vulkan_bound_render_pass) {
-		t_gfx_vulkan_unset_target(gfx);
-		return 1;
-	}
-	t_gfx_vulkan_active_render_pass = &t_gfx_vulkan_bound_render_pass;
-	if (gfx_framebuffer_init(&t_gfx_vulkan_bound_framebuffer, &t_gfx_vulkan_bound_target, &t_gfx_vulkan_bound_render_pass) !=
-	    &t_gfx_vulkan_bound_framebuffer) {
-		t_gfx_vulkan_unset_target(gfx);
-		return 1;
-	}
-	return 0;
-}
-
-static int t_gfx_vulkan_begin_compat(gfx_t *gfx, gfx_frame_t *frame, const gfx_frame_config_t *config)
-{
-	if (config != NULL && config->target != NULL && t_gfx_vulkan_set_target_compat(gfx, config->target)) {
-		return 1;
-	}
-	if (t_gfx_vulkan_bound_framebuffer.gfx != gfx) {
-		return 1;
-	}
-	return gfx_framebuffer_pass_begin(&t_gfx_vulkan_bound_framebuffer,
-					  frame,
-					  &(gfx_pass_config_t){
-						  .clear    = t_gfx_vulkan_clear_color,
-						  .viewport = t_gfx_vulkan_viewport,
-					  });
-}
-
-static int t_gfx_vulkan_clear_color_compat(gfx_t *gfx, float r, float g, float b, float a)
-{
-	if (gfx == NULL || gfx->data == NULL) {
-		return 1;
-	}
-	t_gfx_vulkan_clear_color = (gfx_color_t){r, g, b, a};
-	return 0;
-}
-
-static int t_gfx_vulkan_viewport_compat(gfx_t *gfx, u16 x, u16 y, u16 width, u16 height)
-{
-	if (gfx == NULL || gfx->data == NULL || width == 0 || height == 0) {
-		return 1;
-	}
-	t_gfx_vulkan_viewport = (gfx_rect_t){x, y, width, height};
-	return 0;
-}
-
-static int t_gfx_vulkan_clear_compat(gfx_t *gfx, u32 buffers)
-{
-	if (buffers == 0) {
-		return 0;
-	}
-	gfx_frame_t frame = {0};
-	if (t_gfx_vulkan_begin_compat(gfx, &frame, NULL)) {
-		return 1;
-	}
-	return gfx_end(&frame);
-}
-
-static int t_gfx_vulkan_present_compat(gfx_t *gfx)
-{
-	if (t_gfx_vulkan_bound_target.gfx != gfx) {
-		return 1;
-	}
-	return gfx_target_present(&t_gfx_vulkan_bound_target);
-}
-
-static void t_gfx_vulkan_free_compat(gfx_t *gfx)
-{
-	t_gfx_vulkan_unset_target(gfx);
-	gfx_free(gfx);
-}
-
-#define gfx_set_target	t_gfx_vulkan_set_target_compat
-#define gfx_begin	t_gfx_vulkan_begin_compat
-#define gfx_clear_color t_gfx_vulkan_clear_color_compat
-#define gfx_viewport	t_gfx_vulkan_viewport_compat
-#define gfx_clear	t_gfx_vulkan_clear_compat
-#define gfx_present	t_gfx_vulkan_present_compat
-#define gfx_free	t_gfx_vulkan_free_compat
-
-static int t_gfx_vulkan_draw(gfx_t *gfx, const gfx_target_t *target, const gfx_vertex_2d_t vertices[3])
-{
-	if (vertices == NULL) {
-		return 1;
-	}
-	gfx_buffer_t buffer = {0};
-	if (gfx_buffer_init(&buffer, gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) != &buffer) {
-		return 1;
-	}
-	if (gfx_buffer_set_data(&buffer, vertices, sizeof(gfx_vertex_2d_t) * 3)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	if (t_gfx_vulkan_shader(gfx, &vs, GFX_SHADER_STAGE_VERTEX)) {
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	if (t_gfx_vulkan_shader(gfx, &fs, GFX_SHADER_STAGE_FRAGMENT)) {
-		gfx_shader_free(&vs);
-		gfx_buffer_free(&buffer);
-		return 1;
-	}
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_vulkan_pipeline_config(vs, fs);
-	int ret			     = gfx_pipeline_init(&pipeline, gfx, &config) != &pipeline;
-	gfx_frame_t frame	     = {0};
-	int began		     = 0;
-	if (ret == 0) {
-		ret = gfx_begin(gfx, &frame, &(gfx_frame_config_t){.target = target});
-	}
-	if (ret == 0) {
-		began = 1;
-		ret   = gfx_pipeline_bind(&frame, &pipeline);
-	}
-	if (ret == 0) {
-		ret = gfx_buffer_bind(&frame, &buffer);
-	}
-	if (ret == 0) {
-		ret = gfx_draw(&frame, 3, 0);
-	}
-	if (began && gfx_end(&frame)) {
-		ret = 1;
-	}
-	gfx_pipeline_free(&pipeline);
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_buffer_free(&buffer);
-	return ret;
-}
-
 static int t_gfx_vulkan_init_gfx_current(gfx_t *gfx, proc_t *proc)
 {
 	proc_init(proc, 0, 1, ALLOC_STD);
@@ -1916,35 +1714,6 @@ static int t_gfx_vulkan_init_surface_gfx_without_device_extensions(gfx_t *gfx, p
 	t_gfx_vulkan_symbols(proc);
 	gfx_driver_t *drv = t_gfx_vulkan_driver();
 	return gfx_init(gfx, drv, &(gfx_config_t){.plan = &plan}, proc, ALLOC_STD) != gfx;
-}
-
-static gfx_target_t t_gfx_vulkan_target;
-
-static int t_gfx_vulkan_set_memory_target(gfx_t *gfx, u8 *pixels)
-{
-	t_gfx_vulkan_target = (gfx_target_t){
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 2,
-		.height = 1,
-		.stride = 8,
-	};
-
-	return gfx_set_target(gfx, &t_gfx_vulkan_target);
-}
-
-static int t_gfx_vulkan_set_surface_target(gfx_t *gfx)
-{
-	t_gfx_vulkan_target = (gfx_target_t){
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	return gfx_set_target(gfx, &t_gfx_vulkan_target);
 }
 
 TEST(gfx_vulkan_driver_is_registered)
@@ -2797,50 +2566,6 @@ TEST(gfx_vulkan_native_null_data)
 	END;
 }
 
-TEST(gfx_vulkan_set_target_zero_width)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	u8 pixels[8]	    = {0};
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 0,
-		.height = 1,
-		.stride = 8,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_unknown_type)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type	= (gfx_target_type_t)99,
-		.width	= 1,
-		.height = 1,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_vulkan_set_target_null_data)
 {
 	START;
@@ -2858,1445 +2583,6 @@ TEST(gfx_vulkan_set_target_null_data)
 	END;
 }
 
-TEST(gfx_vulkan_set_target_creates_image)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	EXPECT_EQ(t_vk_create_image_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_allocates_memory)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	EXPECT_EQ(t_vk_allocate_memory_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_binds_memory)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	EXPECT_EQ(t_vk_bind_image_memory_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_invalid_format)
-{
-	START;
-
-	u8 pixels[4] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_NONE,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_invalid_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_NONE,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_missing_host_memory)
-{
-	START;
-
-	u8 pixels[4] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory_flags   = 0;
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 1,
-		.stride = 4,
-	};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_memory_target_create_image_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_create_image_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_memory_target_allocate_memory_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_allocate_memory_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_memory_target_bind_memory_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_bind_image_memory_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_memory_target_invalid_row_pitch)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_row_pitch = 4;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_without_surface_support)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_checks_support)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(t_vk_get_surface_support_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_creates_swapchain)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-
-	EXPECT_EQ(t_vk_create_swapchain_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_passes_extent)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 640);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_recreates_swapchain_on_resize)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-
-	t_vk_swapchain = 12;
-	EXPECT_EQ(gfx_framebuffer_resize(&t_gfx_vulkan_bound_framebuffer, 800, 600), 0);
-
-	EXPECT_EQ(t_vk_create_swapchain_calls, 2);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 800);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.height, 600);
-	EXPECT_EQ(t_vk_swapchain_create.oldSwapchain, (VkSwapchainKHR)9);
-	EXPECT_EQ(t_vk_device_wait_idle_calls, 1);
-	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
-	EXPECT_EQ(t_vk_swapchain, (VkSwapchainKHR)9);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_requested_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_format_count = 2;
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_UNORM, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-	t_vk_surface_formats[1] = (VkSurfaceFormatKHR){.format = VK_FORMAT_R8G8B8A8_UNORM, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8_UNORM,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_R8G8B8A8_UNORM);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_prefers_unorm_fallback)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_format_count = 2;
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-	t_vk_surface_formats[1] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_UNORM, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8_UNORM,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	gfx_set_target(&gfx, &target);
-
-	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_B8G8R8A8_UNORM);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_unsupported_queue)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_supported = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_capabilities_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_missing_transfer_usage)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.supportedUsageFlags = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_format_count_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats_count_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_format_list_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_format_count_is_limited)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_format_count = 20;
-	for (u32 i = 0; i < sizeof(t_vk_surface_formats) / sizeof(t_vk_surface_formats[0]); i++) {
-		t_vk_surface_formats[i] =
-			(VkSurfaceFormatKHR){.format = VK_FORMAT_R8G8B8A8_UNORM, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-	}
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_no_compatible_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = 99, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_wildcard_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = 0, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_R8G8B8A8_UNORM);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_srgb_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_R8G8B8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8_SRGB,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_R8G8B8A8_SRGB);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_bgra_srgb_format)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){.format = VK_FORMAT_B8G8R8A8_SRGB, .colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR};
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_BGRA8_SRGB,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 640,
-		.height	 = 480,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageFormat, VK_FORMAT_B8G8R8A8_SRGB);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_clamps_extent_min)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.minImageExtent.width = 2;
-
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 1,
-		.height	 = 1,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_clamps_extent_max)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_vulkan_surface,
-		.width	 = 5000,
-		.height	 = 5000,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 4096);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_current_extent)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 320);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_limits_requested_image_count)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.minImageCount = 3;
-	t_vk_surface_capabilities.maxImageCount = 3;
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(t_vk_swapchain_create.minImageCount, 3);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_uses_fallback_composite_alpha)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.supportedCompositeAlpha = 2;
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(t_vk_swapchain_create.compositeAlpha, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_missing_composite_alpha)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_surface_capabilities.supportedCompositeAlpha = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_create_swapchain_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_create_swapchain_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_swapchain_image_count_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_get_swapchain_images_count_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_swapchain_image_count_zero)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_swapchain_image_count = 0;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_swapchain_image_count_is_limited)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_swapchain_image_count = 20;
-
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_surface_target_swapchain_image_list_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	t_vk_get_swapchain_images_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_reuses_acquired_image)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(t_vk_acquire_next_image_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_refreshes_current_extent)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-
-	t_vk_swapchain				= 12;
-	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 800, .height = 600};
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	EXPECT_EQ(gfx_framebuffer_resize(&t_gfx_vulkan_bound_framebuffer, 800, 600), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(t_vk_create_swapchain_calls, 2);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.width, 800);
-	EXPECT_EQ(t_vk_swapchain_create.imageExtent.height, 600);
-	EXPECT_EQ(t_vk_swapchain_create.oldSwapchain, (VkSwapchainKHR)9);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_acquire_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_acquire_next_image_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_reset_fences_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_reset_fences_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_refresh_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_surface_capabilities_ret = 1;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_invalid_current_extent)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 0, .height = 600};
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_repeated_out_of_date)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_acquire_next_image_ret = VK_ERROR_OUT_OF_DATE_KHR;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-	EXPECT_EQ(t_vk_acquire_next_image_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_out_of_date_refresh_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_acquire_next_image_ret	  = VK_ERROR_OUT_OF_DATE_KHR;
-	t_vk_surface_capabilities_fail_at = t_vk_get_surface_capabilities_calls + 2;
-
-	log_set_quiet(0, 1);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-	log_set_quiet(0, 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_accepts_suboptimal_acquire)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_acquire_next_image_ret = VK_SUBOPTIMAL_KHR;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_acquire_index_out_of_range)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	t_vk_acquire_next_image_index = 2;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_begin_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_vk_begin_command_buffer_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_end_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_vk_end_command_buffer_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_submit_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_vk_queue_submit_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_acquires_image)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(t_vk_acquire_next_image_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_surface_clears_swapchain_image)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_begin_render_pass_calls, 1);
-	EXPECT_EQ(t_vk_begin_render_pass_clear_value_count, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_present_queues_image)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(gfx_present(&gfx), 0);
-	EXPECT_EQ(t_vk_queue_present_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_present_passes_image_index)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-	gfx_present(&gfx);
-
-	EXPECT_EQ(t_vk_present_image_index, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_free_destroys_swapchain)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_set_target_none_destroys_swapchain)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_surface_target(&gfx);
-	t_vk_destroy_swapchain_calls = 0;
-
-	gfx_target_t target = {
-		.type = GFX_TARGET_NONE,
-	};
-
-	EXPECT_EQ(gfx_set_target(&gfx, &target), 0);
-	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_color_sets_red)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	gfx_clear_color(&gfx, 0.25f, 0.5f, 0.75f, 1.0f);
-	u8 pixels[8] = {0};
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_clear_color[0], 0.25f);
-	EXPECT_EQ(t_vk_begin_render_pass_clear_value_count, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_records_barriers)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_pipeline_barrier_calls, 2);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_uses_general_layout)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_last_barrier.newLayout, VK_IMAGE_LAYOUT_GENERAL);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_submits_queue)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_queue_submit_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_waits_for_fence)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-
-	EXPECT_EQ(t_vk_wait_for_fences_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_copies_first_pixel)
-{
-	START;
-
-	t_vk_memory[4] = 1;
-	t_vk_memory[5] = 2;
-	t_vk_memory[6] = 3;
-	t_vk_memory[7] = 4;
-	u8 pixels[8]   = {0};
-	gfx_t gfx      = {0};
-	proc_t proc    = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory[4] = 1;
-	t_vk_memory[5] = 2;
-	t_vk_memory[6] = 3;
-	t_vk_memory[7] = 4;
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-	EXPECT_EQ(gfx_target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
-
-	EXPECT_EQ(pixels[0], 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_uses_stride)
-{
-	START;
-
-	u8 pixels[16] = {0};
-	gfx_t gfx     = {0};
-	proc_t proc   = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory[12] = 9;
-	t_vk_row_pitch	= 8;
-
-	gfx_target_t target = {
-		.type	= GFX_TARGET_MEMORY,
-		.format = GFX_FORMAT_RGBA8,
-		.data	= pixels,
-		.width	= 1,
-		.height = 2,
-		.stride = 8,
-	};
-
-	gfx_set_target(&gfx, &target);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-	EXPECT_EQ(gfx_target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
-
-	EXPECT_EQ(pixels[8], 9);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_invalidates_non_coherent_memory)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER);
-	EXPECT_EQ(gfx_target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
-
-	EXPECT_EQ(t_vk_invalidate_mapped_memory_ranges_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_non_coherent_invalidate_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_invalidate_mapped_memory_ranges_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(gfx_target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_map_memory_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_map_memory_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	EXPECT_EQ(gfx_target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_reset_fences_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_reset_fences_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_end_command_buffer_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_end_command_buffer_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_queue_submit_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_queue_submit_ret = 1;
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_clear_skips_zero_buffers)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, 0), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_free_destroys_image)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_vk_destroyed_image, (VkImage)7);
-
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_free_frees_memory)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	t_gfx_vulkan_set_memory_target(&gfx, pixels);
-
-	gfx_free(&gfx);
-
-	EXPECT_EQ(t_vk_freed_memory, (VkDeviceMemory)8);
-
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_vulkan_clear_null_data)
 {
 	START;
@@ -4308,21 +2594,6 @@ TEST(gfx_vulkan_clear_null_data)
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(NULL, NULL), 1);
 
-	END;
-}
-
-TEST(gfx_vulkan_clear_without_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
 	END;
 }
 
@@ -4353,22 +2624,6 @@ TEST(gfx_vulkan_viewport_null_data)
 
 	END;
 }
-
-TEST(gfx_vulkan_viewport_success)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(gfx_viewport(&gfx, 1, 2, 3, 4), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_vulkan_draw_null_data)
 {
 	START;
@@ -4435,37 +2690,6 @@ TEST(gfx_vulkan_draw_inactive_frame)
 	gfx_frame_t frame = {.gfx = &gfx};
 
 	EXPECT_EQ(gfx.drv->draw(&frame, 3, 0), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_null_buffer)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, NULL, NULL), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_without_target)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, NULL, vertices), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -4628,15 +2852,13 @@ TEST(gfx_vulkan_buffer_set_data_null_data)
 	END;
 }
 
-TEST(gfx_vulkan_buffer_set_data_map_memory_failure)
+TEST(gfx_vulkan_buffer_set_data_map_failure)
 {
 	START;
 
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
 	gfx_buffer_t buffer = {0};
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
 	gfx_vertex_2d_t vertices[3] = {0};
@@ -4650,22 +2872,19 @@ TEST(gfx_vulkan_buffer_set_data_map_memory_failure)
 	END;
 }
 
-TEST(gfx_vulkan_buffer_set_data_flushes_non_coherent_memory)
+TEST(gfx_vulkan_buffer_set_data_flushes_noncoherent_memory)
 {
 	START;
 
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_memory_flags	    = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-	gfx_buffer_t buffer	    = {0};
-	gfx_vertex_2d_t vertices[3] = {0};
+	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	gfx_buffer_t buffer = {0};
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	gfx_vertex_2d_t vertices[3] = {0};
 
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
-
 	EXPECT_EQ(t_vk_flush_mapped_memory_ranges_calls, 1);
 
 	gfx_buffer_free(&buffer);
@@ -4678,18 +2897,17 @@ TEST(gfx_vulkan_buffer_set_data_flush_failure)
 {
 	START;
 
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	t_vk_memory_flags		    = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
-	t_vk_flush_mapped_memory_ranges_ret = 1;
-	gfx_buffer_t buffer		    = {0};
-	gfx_vertex_2d_t vertices[3]	    = {0};
+	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	gfx_buffer_t buffer = {0};
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	gfx_vertex_2d_t vertices[3]	    = {0};
+	t_vk_flush_mapped_memory_ranges_ret = 1;
 
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
 
 	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
@@ -4856,264 +3074,685 @@ TEST(gfx_vulkan_pipeline_init_null_data)
 	END;
 }
 
-TEST(gfx_vulkan_pipeline_init_create_render_pass_failure)
+TEST(gfx_vulkan_memory_target_render_flow)
 {
 	START;
 
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
+	u8 pixels[16] = {0};
+	gfx_t gfx     = {0};
+	proc_t proc   = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_create_render_pass_ret = 1;
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 1);
-	log_set_quiet(0, 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_pipeline_init_alloc_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx.alloc		     = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_vulkan_pipeline_config(vs, fs);
-
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
-
-	gfx.alloc = ALLOC_STD;
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_pipeline_init_attribute_alloc_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 2,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
 	gfx_shader_t vs = {0};
 	gfx_shader_t fs = {0};
 	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
 	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	gfx.alloc		     = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std};
-	t_gfx_vulkan_alloc_fail_at   = 2;
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_vulkan_pipeline_config(vs, fs);
-
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
-
-	gfx.alloc = ALLOC_STD;
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_pipeline_init_unsupported_input_layout)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	const gfx_layout_t layout[] = {
-		{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
-	};
-	gfx_pipeline_t pipeline	     = {0};
-	gfx_pipeline_config_t config = t_gfx_vulkan_pipeline_config(vs, fs);
-	config.input_layout	     = layout;
-	config.input_layout_size     = sizeof(layout);
-
-	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
-	log_set_quiet(0, 0);
-
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_pipeline_init_create_pipeline_layout_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	t_vk_create_pipeline_layout_ret = 1;
-	gfx_pipeline_t pipeline		= {0};
-	gfx_pipeline_config_t config	= t_gfx_vulkan_pipeline_config(vs, fs);
-
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
-
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_pipeline_init_create_graphics_pipelines_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_shader_t vs = {0};
-	gfx_shader_t fs = {0};
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
-	EXPECT_EQ(t_gfx_vulkan_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
-	t_vk_create_graphics_pipelines_ret = 1;
-	gfx_pipeline_t pipeline		   = {0};
-	gfx_pipeline_config_t config	   = t_gfx_vulkan_pipeline_config(vs, fs);
-
-	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
-
-	gfx_shader_free(&fs);
-	gfx_shader_free(&vs);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_success)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_creates_pipeline)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices);
-
-	EXPECT_EQ(t_vk_create_graphics_pipelines_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_binds_vertex_buffer)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices);
-
-	EXPECT_EQ(t_vk_bind_vertex_buffers_calls, 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_draws_three_vertices)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-
-	t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices);
-
-	EXPECT_EQ(t_vk_draw_vertex_count, 3);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_passes_first_vertex_x)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .vs		= vs,
+					     .fs		= fs,
+					     .input_layout	= t_gfx_vulkan_input_layout,
+					     .input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+				     }),
+		   &pipeline);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
 	gfx_vertex_2d_t vertices[3] = {
-		{.x = 7.0f},
-		{.x = 0.0f},
-		{.x = 0.0f},
+		{.x = 1.0f},
+		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
+		{.y = 2.0f},
 	};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear    = {.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.4f},
+						     .viewport = {.x = 1, .y = 2, .width = 3, .height = 4},
+					     }),
+		  0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
+	EXPECT_EQ(t_vk_begin_render_pass_calls, 1);
+	EXPECT_EQ(t_vk_begin_render_pass_clear_value_count, 1);
+	EXPECT_EQ(t_vk_bind_pipeline_calls, 1);
+	EXPECT_EQ(t_vk_bind_vertex_buffers_calls, 1);
+	EXPECT_EQ(t_vk_set_viewport_calls, 1);
+	EXPECT_EQ(t_vk_set_scissor_calls, 1);
+	EXPECT_EQ(t_vk_draw_calls, 1);
+	EXPECT_EQ(t_vk_end_render_pass_calls, 1);
+	EXPECT_EQ(t_vk_queue_submit_calls, 1);
+	EXPECT_EQ(t_vk_invalidate_mapped_memory_ranges_calls, 0);
+	EXPECT_EQ(t_vk_map_memory_calls, 2);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 2);
 
-	t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices);
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
 
-	EXPECT_EQ(t_vk_vertex_first_x, 7);
+TEST(gfx_vulkan_surface_target_present_flow)
+{
+	START;
 
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(gfx_target_present(&target), 0);
+	EXPECT_EQ(t_vk_acquire_next_image_calls, 1);
+	EXPECT_EQ(t_vk_queue_present_calls, 1);
+	EXPECT_EQ(t_vk_present_image_index, 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_refresh_capabilities_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_surface_capabilities_ret = 1;
+	gfx_frame_t frame	      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+	log_set_quiet(0, 0);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_refresh_invalid_extent)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 0, .height = 480};
+	gfx_frame_t frame			= {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_refresh_changed_extent)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
+	gfx_frame_t frame			= {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_reset_fences_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_reset_fences_ret = 1;
+	gfx_frame_t frame     = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_pass_begin_command_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_begin_command_buffer_ret = 1;
+	gfx_frame_t frame	      = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_acquire_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_acquire_next_image_ret = 1;
+	gfx_frame_t frame	    = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_wait_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_wait_for_fences_ret = 1;
+	gfx_frame_t frame	 = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_acquire_out_of_date_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_acquire_next_image_ret	  = VK_ERROR_OUT_OF_DATE_KHR;
+	t_vk_surface_capabilities_fail_at = t_vk_get_surface_capabilities_calls + 2;
+	gfx_frame_t frame		  = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_acquire_exhausted)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_acquire_next_image_ret = VK_ERROR_OUT_OF_DATE_KHR;
+	gfx_frame_t frame	    = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_pass_begin_acquire_invalid_index)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_vk_acquire_next_image_index = 8;
+	gfx_frame_t frame	      = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_command_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
+	t_vk_end_command_buffer_ret = 1;
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_submit_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
+	t_vk_queue_submit_ret = 1;
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_finish_missing_target_data)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
+	void *target_data  = target.driver_data;
+	target.driver_data = NULL;
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	target.driver_data = target_data;
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -5199,81 +3838,6 @@ TEST(gfx_vulkan_draw_create_framebuffer_failure)
 	END;
 }
 
-TEST(gfx_vulkan_draw_begin_command_buffer_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3]   = {0};
-	t_vk_begin_command_buffer_ret = 1;
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_end_command_buffer_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_vk_end_command_buffer_ret = 1;
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_queue_submit_failure)
-{
-	START;
-
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_vk_queue_submit_ret	    = 1;
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_surface_acquire_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-	t_vk_acquire_next_image_ret = 1;
-
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_vulkan_draw_surface_framebuffer_failure)
 {
 	START;
@@ -5307,34 +3871,6 @@ TEST(gfx_vulkan_draw_surface_framebuffer_failure)
 
 	gfx_render_pass_free(&render_pass);
 	gfx_target_free(&target);
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_draw_recreates_swapchain_draw_targets_after_resize)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	gfx_vertex_2d_t vertices[3] = {0};
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 0);
-
-	t_vk_swapchain				= 12;
-	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
-	EXPECT_EQ(gfx_framebuffer_resize(&t_gfx_vulkan_bound_framebuffer, 320, 240), 0);
-	t_gfx_vulkan_target.width  = 320;
-	t_gfx_vulkan_target.height = 240;
-	EXPECT_EQ(t_gfx_vulkan_draw(&gfx, &t_gfx_vulkan_target, vertices), 0);
-
-	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 2);
-	EXPECT_EQ(t_vk_destroy_image_view_calls, 2);
-	EXPECT_EQ(t_vk_create_framebuffer_calls, 4);
-	EXPECT_EQ(t_vk_create_image_view_calls, 4);
-
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -5384,58 +3920,6 @@ TEST(gfx_vulkan_present_null_data)
 	END;
 }
 
-TEST(gfx_vulkan_present_without_acquired_image)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-
-	EXPECT_EQ(gfx_present(&gfx), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_present_failure)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_vk_queue_present_ret = 1;
-
-	EXPECT_EQ(gfx_present(&gfx), 1);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
-TEST(gfx_vulkan_present_accepts_suboptimal_present)
-{
-	START;
-
-	gfx_t gfx   = {0};
-	proc_t proc = {0};
-	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_surface_target(&gfx), 0);
-	EXPECT_EQ(gfx_clear(&gfx, GFX_CLEAR_COLOR_BUFFER), 0);
-	t_vk_queue_present_ret = VK_SUBOPTIMAL_KHR;
-
-	EXPECT_EQ(gfx_present(&gfx), 0);
-
-	gfx_free(&gfx);
-	proc_free(&proc);
-	END;
-}
-
 TEST(gfx_vulkan_render_pass_init_rejects_unknown_format)
 {
 	START;
@@ -5481,6 +3965,30 @@ TEST(gfx_vulkan_render_pass_init_alloc_failure)
 	END;
 }
 
+TEST(gfx_vulkan_render_pass_init_create_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_render_pass_ret   = 1;
+	gfx_render_pass_t render_pass = {0};
+
+	EXPECT_NULL(gfx_render_pass_init(&render_pass,
+					 &gfx,
+					 &(gfx_render_pass_config_t){
+						 .color_format = GFX_FORMAT_RGBA8,
+						 .load	       = GFX_LOAD_CLEAR,
+						 .store	       = GFX_STORE_STORE,
+					 }));
+	EXPECT_NULL(render_pass.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_render_pass_init_uses_load_load)
 {
 	START;
@@ -5500,6 +4008,36 @@ TEST(gfx_vulkan_render_pass_init_uses_load_load)
 		   &render_pass);
 
 	gfx_render_pass_free(&render_pass);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_render_pass_init_uses_supported_formats)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	const gfx_format_t formats[] = {
+		GFX_FORMAT_BGRA8_UNORM,
+		GFX_FORMAT_RGBA8_SRGB,
+		GFX_FORMAT_BGRA8_SRGB,
+	};
+	for (size_t i = 0; i < sizeof(formats) / sizeof(formats[0]); i++) {
+		gfx_render_pass_t render_pass = {0};
+		EXPECT_PTR(gfx_render_pass_init(&render_pass,
+						&gfx,
+						&(gfx_render_pass_config_t){
+							.color_format = formats[i],
+							.load	      = GFX_LOAD_LOAD,
+							.store	      = GFX_STORE_STORE,
+						}),
+			   &render_pass);
+		gfx_render_pass_free(&render_pass);
+	}
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -5599,6 +4137,601 @@ TEST(gfx_vulkan_surface_target_init_alloc_failure)
 	END;
 }
 
+TEST(gfx_vulkan_surface_target_init_without_wsi)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_surface_support_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_supported = 0;
+	gfx_target_t target    = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_capabilities_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities_ret = 1;
+	gfx_target_t target	      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_usage_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities.supportedUsageFlags = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+	gfx_target_t target			      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_format_count_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_formats_count_ret = 1;
+	gfx_target_t target	       = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_format_list_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_formats_ret = 1;
+	gfx_target_t target	 = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_limits_surface_formats)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_format_count = 20;
+	gfx_target_t target	  = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_undefined_format)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_formats[0].format = 0;
+	gfx_target_t target	       = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_prefers_supported_format)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_formats[0].format = VK_FORMAT_B8G8R8A8_UNORM;
+	gfx_target_t target	       = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_EQ(target.format, GFX_FORMAT_BGRA8_UNORM);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_rejects_unsupported_format)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_formats[0].format = 999;
+	gfx_target_t target	       = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_clamps_extent_and_image_count)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities.maxImageCount		= 1;
+	t_vk_surface_capabilities.minImageExtent.width	= 10;
+	t_vk_surface_capabilities.minImageExtent.height = 20;
+	t_vk_surface_capabilities.maxImageExtent.width	= 100;
+	t_vk_surface_capabilities.maxImageExtent.height = 200;
+	gfx_target_t target				= {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 1,
+						   .height  = 300,
+					   }),
+		   &target);
+	EXPECT_EQ(t_vk_swapchain_create.minImageCount, 1);
+	EXPECT_EQ(target.width, 10);
+	EXPECT_EQ(target.height, 200);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_uses_current_extent)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
+	gfx_target_t target			= {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_EQ(target.width, 320);
+	EXPECT_EQ(target.height, 240);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_chooses_nonopaque_alpha)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities.supportedCompositeAlpha = 2;
+	gfx_target_t target				  = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_EQ(t_vk_swapchain_create.compositeAlpha, 2);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_rejects_missing_alpha)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_capabilities.supportedCompositeAlpha = 0;
+	gfx_target_t target				  = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_create_swapchain_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_create_swapchain_ret = 1;
+	gfx_target_t target	  = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_swapchain_count_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_get_swapchain_images_count_ret = 1;
+	gfx_target_t target		    = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_limits_swapchain_images)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_swapchain_image_count = 20;
+	for (u32 i = 0; i < sizeof(t_vk_swapchain_images) / sizeof(t_vk_swapchain_images[0]); i++) {
+		t_vk_swapchain_images[i] = 100 + i;
+	}
+	gfx_target_t target = {0};
+
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	EXPECT_EQ(((t_gfx_vulkan_target_data_t *)target.driver_data)->swapchain_image_count, 8);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_surface_target_init_swapchain_list_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_get_swapchain_images_ret = 1;
+	gfx_target_t target	      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_target_init_surface(&target,
+					    &gfx,
+					    &(gfx_surface_target_config_t){
+						    .format  = GFX_FORMAT_RGBA8,
+						    .surface = &t_gfx_vulkan_surface,
+						    .width   = 640,
+						    .height  = 480,
+					    }));
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_target_resize_recreates_swapchain)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	t_vk_swapchain = 19;
+
+	EXPECT_EQ(gfx_target_resize(&target, 320, 240), 0);
+	EXPECT_EQ(t_vk_device_wait_idle_calls, 1);
+	EXPECT_EQ(t_vk_destroy_swapchain_calls, 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_target_present_requires_acquired_swapchain)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+
+	EXPECT_EQ(gfx_target_present(&target), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_target_present_recreates_on_out_of_date)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	((t_gfx_vulkan_target_data_t *)target.driver_data)->swapchain_acquired = 1;
+	t_vk_queue_present_ret						       = VK_ERROR_OUT_OF_DATE_KHR;
+
+	EXPECT_EQ(gfx_target_present(&target), 0);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_target_present_queue_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_surface(&target,
+					   &gfx,
+					   &(gfx_surface_target_config_t){
+						   .format  = GFX_FORMAT_RGBA8,
+						   .surface = &t_gfx_vulkan_surface,
+						   .width   = 640,
+						   .height  = 480,
+					   }),
+		   &target);
+	((t_gfx_vulkan_target_data_t *)target.driver_data)->swapchain_acquired = 1;
+	t_vk_queue_present_ret						       = 1;
+
+	EXPECT_EQ(gfx_target_present(&target), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_memory_target_init_alloc_failure)
 {
 	START;
@@ -5608,6 +4741,136 @@ TEST(gfx_vulkan_memory_target_init_alloc_failure)
 	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	gfx.alloc	    = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	gfx_target_t target = {0};
+
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 2,
+						   .height = 1,
+						   .stride = 8,
+					   }));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_target_init_create_image_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_image_ret = 1;
+	gfx_target_t target   = {0};
+
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 2,
+						   .height = 1,
+						   .stride = 8,
+					   }));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_target_init_memory_type_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_memory_type_bits = 0;
+	gfx_target_t target   = {0};
+
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 2,
+						   .height = 1,
+						   .stride = 8,
+					   }));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_target_init_allocate_memory_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_allocate_memory_ret = 1;
+	gfx_target_t target	 = {0};
+
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 2,
+						   .height = 1,
+						   .stride = 8,
+					   }));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_target_init_bind_memory_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_bind_image_memory_ret = 1;
+	gfx_target_t target	   = {0};
+
+	EXPECT_NULL(gfx_target_init_memory(&target,
+					   &gfx,
+					   &(gfx_memory_target_config_t){
+						   .format = GFX_FORMAT_RGBA8,
+						   .data   = pixels,
+						   .width  = 2,
+						   .height = 1,
+						   .stride = 8,
+					   }));
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_target_init_row_pitch_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_row_pitch	    = 7;
 	gfx_target_t target = {0};
 
 	EXPECT_NULL(gfx_target_init_memory(&target,
@@ -5689,7 +4952,7 @@ TEST(gfx_vulkan_target_read_requires_bound_target)
 	END;
 }
 
-TEST(gfx_vulkan_target_read_rejects_active_frame_direct)
+TEST(gfx_vulkan_target_read_noncoherent_memory)
 {
 	START;
 
@@ -5697,18 +4960,89 @@ TEST(gfx_vulkan_target_read_rejects_active_frame_direct)
 	gfx_t gfx    = {0};
 	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_frame_t frame = {0};
-	EXPECT_EQ(gfx_begin(&gfx, &frame, NULL), 0);
+	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	((t_gfx_vulkan_data_head_t *)gfx.data)->target = &target;
 
-	EXPECT_EQ(gfx.drv->target_read(&t_gfx_vulkan_bound_target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 1);
+	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
+	EXPECT_EQ(t_vk_invalidate_mapped_memory_ranges_calls, 1);
 
-	EXPECT_EQ(gfx_end(&frame), 0);
+	gfx_target_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
+TEST(gfx_vulkan_target_read_invalidate_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	((t_gfx_vulkan_data_head_t *)gfx.data)->target = &target;
+	t_vk_invalidate_mapped_memory_ranges_ret       = 1;
+
+	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_target_read_map_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	((t_gfx_vulkan_data_head_t *)gfx.data)->target = &target;
+	t_vk_map_memory_ret			       = 1;
+
+	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 1);
+
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
 TEST(gfx_vulkan_framebuffer_init_null_direct)
 {
 	START;
@@ -6170,6 +5504,50 @@ TEST(gfx_vulkan_framebuffer_pass_begin_unknown_target_type_direct)
 	END;
 }
 
+TEST(gfx_vulkan_framebuffer_pass_begin_rejects_active_frame)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_target_t target = {0};
+	EXPECT_PTR(gfx_target_init_memory(&target,
+					  &gfx,
+					  &(gfx_memory_target_config_t){
+						  .format = GFX_FORMAT_RGBA8,
+						  .data	  = pixels,
+						  .width  = 2,
+						  .height = 1,
+						  .stride = 8,
+					  }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {.gfx = &gfx};
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 0);
+	gfx_frame_t second = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &second), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_pipeline_init_rejects_invalid_config_direct)
 {
 	START;
@@ -6186,28 +5564,172 @@ TEST(gfx_vulkan_pipeline_init_rejects_invalid_config_direct)
 	END;
 }
 
-TEST(gfx_vulkan_end_requires_target_data_direct)
+TEST(gfx_vulkan_pipeline_init_alloc_failure_direct)
 {
 	START;
 
-	u8 pixels[8] = {0};
-	gfx_t gfx    = {0};
-	proc_t proc  = {0};
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	EXPECT_EQ(t_gfx_vulkan_set_memory_target(&gfx, pixels), 0);
-	gfx_frame_t frame = {0};
-	EXPECT_EQ(gfx_begin(&gfx, &frame, NULL), 0);
-	((t_gfx_vulkan_data_head_t *)gfx.data)->target = NULL;
+	gfx.alloc = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	gfx_pipeline_t pipeline			  = {.gfx = &gfx};
 
-	EXPECT_EQ(gfx.drv->end(&frame), 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline,
+					 &(gfx_pipeline_config_t){
+						 .render_pass	    = &render_pass,
+						 .vs		    = vs,
+						 .fs		    = fs,
+						 .input_layout	    = t_gfx_vulkan_input_layout,
+						 .input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+					 }),
+		  1);
 
-	gfx.frame    = NULL;
-	frame.active = 0;
+	gfx.alloc = ALLOC_STD;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
+TEST(gfx_vulkan_pipeline_init_create_layout_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_pipeline_layout_ret		  = 1;
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	gfx_pipeline_t pipeline			  = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline,
+					 &(gfx_pipeline_config_t){
+						 .render_pass	    = &render_pass,
+						 .vs		    = vs,
+						 .fs		    = fs,
+						 .input_layout	    = t_gfx_vulkan_input_layout,
+						 .input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+					 }),
+		  1);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_alloc_count   = 0;
+	t_gfx_vulkan_alloc_fail_at = 2;
+	gfx.alloc		   = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	gfx_pipeline_t pipeline			  = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline,
+					 &(gfx_pipeline_config_t){
+						 .render_pass	    = &render_pass,
+						 .vs		    = vs,
+						 .fs		    = fs,
+						 .input_layout	    = t_gfx_vulkan_input_layout,
+						 .input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+					 }),
+		  1);
+	EXPECT_NULL(pipeline.data);
+
+	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_pipeline_init_unsupported_layout_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	const gfx_layout_t layout[]		  = {
+		      {.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
+	      };
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline,
+					 &(gfx_pipeline_config_t){
+						 .render_pass	    = &render_pass,
+						 .vs		    = vs,
+						 .fs		    = fs,
+						 .input_layout	    = layout,
+						 .input_layout_size = sizeof(layout),
+					 }),
+		  1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_pipeline_init_create_pipeline_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_graphics_pipelines_ret	  = 1;
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	gfx_pipeline_t pipeline			  = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline,
+					 &(gfx_pipeline_config_t){
+						 .render_pass	    = &render_pass,
+						 .vs		    = vs,
+						 .fs		    = fs,
+						 .input_layout	    = t_gfx_vulkan_input_layout,
+						 .input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+					 }),
+		  1);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
 STEST(gfx_vulkan)
 {
 	SSTART;
@@ -6262,94 +5784,15 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_proc_missing_symbol);
 	RUN(gfx_vulkan_proc_alloc_failure);
 	RUN(gfx_vulkan_native_null_data);
-	RUN(gfx_vulkan_set_target_zero_width);
-	RUN(gfx_vulkan_set_target_unknown_type);
 	RUN(gfx_vulkan_set_target_null_data);
-	RUN(gfx_vulkan_set_target_creates_image);
-	RUN(gfx_vulkan_set_target_allocates_memory);
-	RUN(gfx_vulkan_set_target_binds_memory);
-	RUN(gfx_vulkan_set_target_invalid_format);
-	RUN(gfx_vulkan_set_surface_target_invalid_format);
-	RUN(gfx_vulkan_set_target_missing_host_memory);
-	RUN(gfx_vulkan_set_memory_target_create_image_failure);
-	RUN(gfx_vulkan_set_memory_target_allocate_memory_failure);
-	RUN(gfx_vulkan_set_memory_target_bind_memory_failure);
-	RUN(gfx_vulkan_set_memory_target_invalid_row_pitch);
-	RUN(gfx_vulkan_set_surface_target_without_surface_support);
-	RUN(gfx_vulkan_set_surface_target_checks_support);
-	RUN(gfx_vulkan_set_surface_target_creates_swapchain);
-	RUN(gfx_vulkan_set_surface_target_passes_extent);
-	RUN(gfx_vulkan_set_surface_target_recreates_swapchain_on_resize);
-	RUN(gfx_vulkan_set_surface_target_uses_requested_format);
-	RUN(gfx_vulkan_set_surface_target_prefers_unorm_fallback);
-	RUN(gfx_vulkan_set_surface_target_unsupported_queue);
-	RUN(gfx_vulkan_set_surface_target_capabilities_failure);
-	RUN(gfx_vulkan_set_surface_target_missing_transfer_usage);
-	RUN(gfx_vulkan_set_surface_target_format_count_failure);
-	RUN(gfx_vulkan_set_surface_target_format_list_failure);
-	RUN(gfx_vulkan_set_surface_target_format_count_is_limited);
-	RUN(gfx_vulkan_set_surface_target_no_compatible_format);
-	RUN(gfx_vulkan_set_surface_target_uses_wildcard_format);
-	RUN(gfx_vulkan_set_surface_target_uses_srgb_format);
-	RUN(gfx_vulkan_set_surface_target_uses_bgra_srgb_format);
-	RUN(gfx_vulkan_set_surface_target_clamps_extent_min);
-	RUN(gfx_vulkan_set_surface_target_clamps_extent_max);
-	RUN(gfx_vulkan_set_surface_target_uses_current_extent);
-	RUN(gfx_vulkan_set_surface_target_limits_requested_image_count);
-	RUN(gfx_vulkan_set_surface_target_uses_fallback_composite_alpha);
-	RUN(gfx_vulkan_set_surface_target_missing_composite_alpha);
-	RUN(gfx_vulkan_set_surface_target_create_swapchain_failure);
-	RUN(gfx_vulkan_set_surface_target_swapchain_image_count_failure);
-	RUN(gfx_vulkan_set_surface_target_swapchain_image_count_zero);
-	RUN(gfx_vulkan_set_surface_target_swapchain_image_count_is_limited);
-	RUN(gfx_vulkan_set_surface_target_swapchain_image_list_failure);
-	RUN(gfx_vulkan_clear_surface_reuses_acquired_image);
-	RUN(gfx_vulkan_clear_surface_refreshes_current_extent);
-	RUN(gfx_vulkan_clear_surface_acquire_failure);
-	RUN(gfx_vulkan_clear_surface_reset_fences_failure);
-	RUN(gfx_vulkan_clear_surface_refresh_failure);
-	RUN(gfx_vulkan_clear_surface_invalid_current_extent);
-	RUN(gfx_vulkan_clear_surface_repeated_out_of_date);
-	RUN(gfx_vulkan_clear_surface_out_of_date_refresh_failure);
-	RUN(gfx_vulkan_clear_surface_accepts_suboptimal_acquire);
-	RUN(gfx_vulkan_clear_surface_acquire_index_out_of_range);
-	RUN(gfx_vulkan_clear_surface_begin_failure);
-	RUN(gfx_vulkan_clear_surface_end_failure);
-	RUN(gfx_vulkan_clear_surface_submit_failure);
-	RUN(gfx_vulkan_clear_surface_acquires_image);
-	RUN(gfx_vulkan_clear_surface_clears_swapchain_image);
-	RUN(gfx_vulkan_present_queues_image);
-	RUN(gfx_vulkan_present_passes_image_index);
-	RUN(gfx_vulkan_free_destroys_swapchain);
-	RUN(gfx_vulkan_set_target_none_destroys_swapchain);
-	RUN(gfx_vulkan_clear_color_sets_red);
-	RUN(gfx_vulkan_clear_records_barriers);
-	RUN(gfx_vulkan_clear_uses_general_layout);
-	RUN(gfx_vulkan_clear_submits_queue);
-	RUN(gfx_vulkan_clear_waits_for_fence);
-	RUN(gfx_vulkan_clear_copies_first_pixel);
-	RUN(gfx_vulkan_clear_uses_stride);
-	RUN(gfx_vulkan_clear_invalidates_non_coherent_memory);
-	RUN(gfx_vulkan_clear_non_coherent_invalidate_failure);
-	RUN(gfx_vulkan_clear_map_memory_failure);
-	RUN(gfx_vulkan_clear_reset_fences_failure);
-	RUN(gfx_vulkan_clear_end_command_buffer_failure);
-	RUN(gfx_vulkan_clear_queue_submit_failure);
-	RUN(gfx_vulkan_clear_skips_zero_buffers);
-	RUN(gfx_vulkan_free_destroys_image);
-	RUN(gfx_vulkan_free_frees_memory);
 	RUN(gfx_vulkan_clear_null_data);
-	RUN(gfx_vulkan_clear_without_target);
 	RUN(gfx_vulkan_clear_color_null_data);
 	RUN(gfx_vulkan_viewport_null_data);
-	RUN(gfx_vulkan_viewport_success);
 	RUN(gfx_vulkan_draw_null_data);
 	RUN(gfx_vulkan_begin_null_frame);
 	RUN(gfx_vulkan_buffer_bind_null_frame);
 	RUN(gfx_vulkan_pipeline_bind_null_frame);
 	RUN(gfx_vulkan_draw_inactive_frame);
-	RUN(gfx_vulkan_draw_null_buffer);
-	RUN(gfx_vulkan_draw_without_target);
 	RUN(gfx_vulkan_buffer_init_unsupported_type);
 	RUN(gfx_vulkan_buffer_init_alloc_failure);
 	RUN(gfx_vulkan_buffer_free_null_data);
@@ -6359,8 +5802,8 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_buffer_init_allocate_memory_failure);
 	RUN(gfx_vulkan_buffer_init_bind_memory_failure);
 	RUN(gfx_vulkan_buffer_set_data_null_data);
-	RUN(gfx_vulkan_buffer_set_data_map_memory_failure);
-	RUN(gfx_vulkan_buffer_set_data_flushes_non_coherent_memory);
+	RUN(gfx_vulkan_buffer_set_data_map_failure);
+	RUN(gfx_vulkan_buffer_set_data_flushes_noncoherent_memory);
 	RUN(gfx_vulkan_buffer_set_data_flush_failure);
 	RUN(gfx_vulkan_shader_free_null_data);
 	RUN(gfx_vulkan_shader_init_null_config);
@@ -6371,44 +5814,71 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_pipeline_free_null_data);
 	RUN(gfx_vulkan_pipeline_init_null_config);
 	RUN(gfx_vulkan_pipeline_init_null_data);
-	RUN(gfx_vulkan_pipeline_init_create_render_pass_failure);
-	RUN(gfx_vulkan_pipeline_init_alloc_failure);
-	RUN(gfx_vulkan_pipeline_init_attribute_alloc_failure);
-	RUN(gfx_vulkan_pipeline_init_unsupported_input_layout);
-	RUN(gfx_vulkan_pipeline_init_create_pipeline_layout_failure);
-	RUN(gfx_vulkan_pipeline_init_create_graphics_pipelines_failure);
-	RUN(gfx_vulkan_draw_success);
-	RUN(gfx_vulkan_draw_creates_pipeline);
-	RUN(gfx_vulkan_draw_binds_vertex_buffer);
-	RUN(gfx_vulkan_draw_draws_three_vertices);
-	RUN(gfx_vulkan_draw_passes_first_vertex_x);
+	RUN(gfx_vulkan_memory_target_render_flow);
+	RUN(gfx_vulkan_surface_target_present_flow);
+	RUN(gfx_vulkan_surface_pass_begin_refresh_capabilities_failure);
+	RUN(gfx_vulkan_surface_pass_begin_refresh_invalid_extent);
+	RUN(gfx_vulkan_surface_pass_begin_refresh_changed_extent);
+	RUN(gfx_vulkan_surface_pass_begin_reset_fences_failure);
+	RUN(gfx_vulkan_memory_pass_begin_command_failure);
+	RUN(gfx_vulkan_surface_pass_begin_acquire_failure);
+	RUN(gfx_vulkan_surface_pass_begin_wait_failure);
+	RUN(gfx_vulkan_surface_pass_begin_acquire_out_of_date_failure);
+	RUN(gfx_vulkan_surface_pass_begin_acquire_exhausted);
+	RUN(gfx_vulkan_surface_pass_begin_acquire_invalid_index);
+	RUN(gfx_vulkan_end_command_failure);
+	RUN(gfx_vulkan_end_submit_failure);
+	RUN(gfx_vulkan_end_finish_missing_target_data);
 	RUN(gfx_vulkan_draw_create_image_view_failure);
 	RUN(gfx_vulkan_draw_create_framebuffer_failure);
-	RUN(gfx_vulkan_draw_begin_command_buffer_failure);
-	RUN(gfx_vulkan_draw_end_command_buffer_failure);
-	RUN(gfx_vulkan_draw_queue_submit_failure);
-	RUN(gfx_vulkan_draw_surface_acquire_failure);
 	RUN(gfx_vulkan_draw_surface_framebuffer_failure);
-	RUN(gfx_vulkan_draw_recreates_swapchain_draw_targets_after_resize);
 	RUN(gfx_vulkan_end_null_frame);
 	RUN(gfx_vulkan_end_inactive_frame);
 	RUN(gfx_vulkan_present_null_data);
-	RUN(gfx_vulkan_present_without_acquired_image);
-	RUN(gfx_vulkan_present_failure);
-	RUN(gfx_vulkan_present_accepts_suboptimal_present);
 	RUN(gfx_vulkan_render_pass_init_rejects_unknown_format);
 	RUN(gfx_vulkan_render_pass_init_alloc_failure);
+	RUN(gfx_vulkan_render_pass_init_create_failure);
 	RUN(gfx_vulkan_render_pass_init_uses_load_load);
+	RUN(gfx_vulkan_render_pass_init_uses_supported_formats);
 	RUN(gfx_vulkan_render_pass_init_uses_unknown_load_as_dont_care);
 	RUN(gfx_vulkan_target_init_rejects_zero_size_direct);
 	RUN(gfx_vulkan_target_init_rejects_unknown_type_direct);
 	RUN(gfx_vulkan_surface_target_init_alloc_failure);
+	RUN(gfx_vulkan_surface_target_init_without_wsi);
+	RUN(gfx_vulkan_surface_target_init_surface_support_failure);
+	RUN(gfx_vulkan_surface_target_init_capabilities_failure);
+	RUN(gfx_vulkan_surface_target_init_usage_failure);
+	RUN(gfx_vulkan_surface_target_init_format_count_failure);
+	RUN(gfx_vulkan_surface_target_init_format_list_failure);
+	RUN(gfx_vulkan_surface_target_init_limits_surface_formats);
+	RUN(gfx_vulkan_surface_target_init_undefined_format);
+	RUN(gfx_vulkan_surface_target_init_prefers_supported_format);
+	RUN(gfx_vulkan_surface_target_init_rejects_unsupported_format);
+	RUN(gfx_vulkan_surface_target_init_clamps_extent_and_image_count);
+	RUN(gfx_vulkan_surface_target_init_uses_current_extent);
+	RUN(gfx_vulkan_surface_target_init_chooses_nonopaque_alpha);
+	RUN(gfx_vulkan_surface_target_init_rejects_missing_alpha);
+	RUN(gfx_vulkan_surface_target_init_create_swapchain_failure);
+	RUN(gfx_vulkan_surface_target_init_swapchain_count_failure);
+	RUN(gfx_vulkan_surface_target_init_limits_swapchain_images);
+	RUN(gfx_vulkan_surface_target_init_swapchain_list_failure);
+	RUN(gfx_vulkan_target_resize_recreates_swapchain);
+	RUN(gfx_vulkan_target_present_requires_acquired_swapchain);
+	RUN(gfx_vulkan_target_present_recreates_on_out_of_date);
+	RUN(gfx_vulkan_target_present_queue_failure);
 	RUN(gfx_vulkan_memory_target_init_alloc_failure);
+	RUN(gfx_vulkan_memory_target_init_create_image_failure);
+	RUN(gfx_vulkan_memory_target_init_memory_type_failure);
+	RUN(gfx_vulkan_memory_target_init_allocate_memory_failure);
+	RUN(gfx_vulkan_memory_target_init_bind_memory_failure);
+	RUN(gfx_vulkan_memory_target_init_row_pitch_failure);
 	RUN(gfx_vulkan_target_resize_null_target_direct);
 	RUN(gfx_vulkan_target_free_null_target_direct);
 	RUN(gfx_vulkan_target_read_null_target_direct);
 	RUN(gfx_vulkan_target_read_requires_bound_target);
-	RUN(gfx_vulkan_target_read_rejects_active_frame_direct);
+	RUN(gfx_vulkan_target_read_noncoherent_memory);
+	RUN(gfx_vulkan_target_read_invalidate_failure);
+	RUN(gfx_vulkan_target_read_map_failure);
 	RUN(gfx_vulkan_framebuffer_init_null_direct);
 	RUN(gfx_vulkan_framebuffer_init_alloc_failure);
 	RUN(gfx_vulkan_framebuffer_init_memory_requires_image);
@@ -6421,8 +5891,13 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_framebuffer_pass_begin_memory_requires_handles_direct);
 	RUN(gfx_vulkan_framebuffer_pass_begin_surface_requires_framebuffer_direct);
 	RUN(gfx_vulkan_framebuffer_pass_begin_unknown_target_type_direct);
+	RUN(gfx_vulkan_framebuffer_pass_begin_rejects_active_frame);
 	RUN(gfx_vulkan_pipeline_init_rejects_invalid_config_direct);
-	RUN(gfx_vulkan_end_requires_target_data_direct);
+	RUN(gfx_vulkan_pipeline_init_alloc_failure_direct);
+	RUN(gfx_vulkan_pipeline_init_create_layout_failure_direct);
+	RUN(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct);
+	RUN(gfx_vulkan_pipeline_init_unsupported_layout_direct);
+	RUN(gfx_vulkan_pipeline_init_create_pipeline_failure_direct);
 
 	t_gfx_vulkan_compiler_free();
 

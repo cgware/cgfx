@@ -575,12 +575,12 @@ static int gfx_opengl_make_current(gfx_opengl_t *opengl, const char *operation)
 		return 0;
 	}
 	if (opengl->surface->ops == NULL || opengl->surface->ops->make_current == NULL) {
-		log_error("cgfx", // LCOV_EXCL_LINE
+		log_error("cgfx",
 			  "gfx_opengl",
 			  NULL,
 			  "failed to make OpenGL context current for %s: surface has no make_current callback",
 			  operation);
-		return 1; // LCOV_EXCL_LINE
+		return 1;
 	}
 	if (opengl->surface->ops->make_current(opengl->surface)) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make OpenGL context current for %s", operation);
