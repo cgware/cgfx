@@ -407,6 +407,10 @@ typedef struct t_gfx_vulkan_target_data_s {
 	int swapchain_acquired;
 } t_gfx_vulkan_target_data_t;
 
+typedef struct t_gfx_vulkan_render_pass_data_s {
+	VkRenderPass render_pass;
+} t_gfx_vulkan_render_pass_data_t;
+
 typedef struct t_gfx_vulkan_data_head_s {
 	void *lib;
 	gfx_target_t *target;
@@ -5927,16 +5931,16 @@ TEST(gfx_vulkan_framebuffer_init_unknown_target_type_direct)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	int target_data	     = 0;
-	int render_pass_data = 0;
-	gfx_target_t target  = {
-		 .gfx	      = &gfx,
-		 .type	      = (gfx_target_type_t)99,
-		 .format      = GFX_FORMAT_RGBA8,
-		 .driver_data = &target_data,
-		 .width	      = 1,
-		 .height      = 1,
-	 };
+	int target_data					 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
+	gfx_target_t target				 = {
+					     .gfx	  = &gfx,
+					     .type	  = (gfx_target_type_t)99,
+					     .format	  = GFX_FORMAT_RGBA8,
+					     .driver_data = &target_data,
+					     .width	  = 1,
+					     .height	  = 1,
+	     };
 	gfx_render_pass_t render_pass = {
 		.gfx	      = &gfx,
 		.color_format = target.format,
@@ -5964,17 +5968,17 @@ TEST(gfx_vulkan_framebuffer_pass_begin_requires_target_data_direct)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	int framebuffer_data = 0;
-	int render_pass_data = 0;
-	gfx_target_t target  = {
-		 .gfx	 = &gfx,
-		 .type	 = GFX_TARGET_MEMORY,
-		 .format = GFX_FORMAT_RGBA8,
-		 .data	 = &(u8[8]){0},
-		 .width	 = 2,
-		 .height = 1,
-		 .stride = 8,
-	 };
+	int framebuffer_data				 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
+	gfx_target_t target				 = {
+					     .gfx    = &gfx,
+					     .type   = GFX_TARGET_MEMORY,
+					     .format = GFX_FORMAT_RGBA8,
+					     .data   = &(u8[8]){0},
+					     .width  = 2,
+					     .height = 1,
+					     .stride = 8,
+	     };
 	gfx_render_pass_t render_pass = {
 		.gfx	      = &gfx,
 		.color_format = target.format,
@@ -6004,16 +6008,16 @@ TEST(gfx_vulkan_framebuffer_pass_begin_surface_requires_target_data_direct)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
-	int framebuffer_data = 0;
-	int render_pass_data = 0;
-	gfx_target_t target  = {
-		 .gfx	  = &gfx,
-		 .type	  = GFX_TARGET_SURFACE,
-		 .format  = GFX_FORMAT_RGBA8,
-		 .surface = &t_gfx_vulkan_surface,
-		 .width	  = 640,
-		 .height  = 480,
-	 };
+	int framebuffer_data				 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
+	gfx_target_t target				 = {
+					     .gfx     = &gfx,
+					     .type    = GFX_TARGET_SURFACE,
+					     .format  = GFX_FORMAT_RGBA8,
+					     .surface = &t_gfx_vulkan_surface,
+					     .width   = 640,
+					     .height  = 480,
+	     };
 	gfx_render_pass_t render_pass = {
 		.gfx	      = &gfx,
 		.color_format = target.format,
@@ -6045,7 +6049,7 @@ TEST(gfx_vulkan_framebuffer_pass_begin_memory_requires_handles_direct)
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	t_gfx_vulkan_target_data_t target_data		 = {.memory = 8, .memory_size = 8};
 	t_gfx_vulkan_framebuffer_data_t framebuffer_data = {.framebuffer = 30};
-	int render_pass_data				 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
 	gfx_target_t target				 = {
 					     .gfx	  = &gfx,
 					     .type	  = GFX_TARGET_MEMORY,
@@ -6094,7 +6098,7 @@ TEST(gfx_vulkan_framebuffer_pass_begin_surface_requires_framebuffer_direct)
 		.swapchain_acquired	  = 1,
 	};
 	t_gfx_vulkan_framebuffer_data_t framebuffer_data = {0};
-	int render_pass_data				 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
 	gfx_target_t target				 = {
 					     .gfx	  = &gfx,
 					     .type	  = GFX_TARGET_SURFACE,
@@ -6133,9 +6137,9 @@ TEST(gfx_vulkan_framebuffer_pass_begin_unknown_target_type_direct)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	int target_data					 = 0;
+	t_gfx_vulkan_target_data_t target_data		 = {0};
 	t_gfx_vulkan_framebuffer_data_t framebuffer_data = {.framebuffer = 30};
-	int render_pass_data				 = 0;
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
 	gfx_target_t target				 = {
 					     .gfx	  = &gfx,
 					     .type	  = (gfx_target_type_t)99,
