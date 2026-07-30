@@ -31,27 +31,27 @@ gfx_target_t *gfx_target_init_memory(gfx_target_t *target, gfx_t *gfx, const gfx
 	return target;
 }
 
-gfx_target_t *gfx_target_init_surface(gfx_target_t *target, gfx_t *gfx, const gfx_surface_target_config_t *config)
+gfx_target_t *gfx_target_init_swapchain(gfx_target_t *target, gfx_swapchain_t *swapchain)
 {
-	if (target == NULL || gfx == NULL || gfx->drv == NULL || config == NULL || config->format == GFX_FORMAT_NONE ||
-	    config->surface == NULL || config->surface->api != gfx->drv->api || config->width == 0 || config->height == 0) {
+	if (target == NULL || swapchain == NULL || swapchain->gfx == NULL || swapchain->gfx->drv == NULL ||
+	    swapchain->format == GFX_FORMAT_NONE || swapchain->surface == NULL || swapchain->width == 0 || swapchain->height == 0) {
 		return NULL;
 	}
-	if (gfx->frame != NULL) {
+	if (swapchain->gfx->frame != NULL) {
 		return NULL;
 	}
 
 	*target = (gfx_target_t){
-		.gfx	 = gfx,
-		.type	 = GFX_TARGET_SURFACE,
-		.format	 = config->format,
-		.surface = config->surface,
-		.width	 = config->width,
-		.height	 = config->height,
+		.gfx	   = swapchain->gfx,
+		.type	   = GFX_TARGET_SWAPCHAIN,
+		.format	   = swapchain->format,
+		.swapchain = swapchain,
+		.width	   = swapchain->width,
+		.height	   = swapchain->height,
 	};
-	if (gfx->drv->target_init != NULL && gfx->drv->target_init(target)) {
-		if (gfx->drv->target_free != NULL) {
-			gfx->drv->target_free(target);
+	if (swapchain->gfx->drv->target_init != NULL && swapchain->gfx->drv->target_init(target)) {
+		if (swapchain->gfx->drv->target_free != NULL) {
+			swapchain->gfx->drv->target_free(target);
 		}
 		*target = (gfx_target_t){0};
 		return NULL;
@@ -69,25 +69,6 @@ void gfx_target_free(gfx_target_t *target)
 		target->gfx->drv->target_free(target);
 	}
 	*target = (gfx_target_t){0};
-}
-
-int gfx_target_resize(gfx_target_t *target, u16 width, u16 height)
-{
-	if (target == NULL || target->gfx == NULL || target->gfx->frame != NULL || width == 0 || height == 0 ||
-	    target->type != GFX_TARGET_SURFACE) {
-		return 1;
-	}
-
-	u16 old_width  = target->width;
-	u16 old_height = target->height;
-	target->width  = width;
-	target->height = height;
-	if (target->gfx->drv != NULL && target->gfx->drv->target_resize != NULL && target->gfx->drv->target_resize(target, width, height)) {
-		target->width  = old_width;
-		target->height = old_height;
-		return 1;
-	}
-	return 0;
 }
 
 int gfx_target_move(gfx_target_t *dst, gfx_target_t *src, gfx_t *gfx)
@@ -112,15 +93,4 @@ int gfx_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *co
 	}
 
 	return target->gfx->drv->target_read(target, config);
-}
-
-int gfx_target_present(gfx_target_t *target)
-{
-	if (target == NULL || target->gfx == NULL || target->gfx->drv == NULL || target->gfx->drv->target_present == NULL ||
-	    target->gfx->frame != NULL || target->type != GFX_TARGET_SURFACE || target->surface == NULL || target->width == 0 ||
-	    target->height == 0) {
-		return 1;
-	}
-
-	return target->gfx->drv->target_present(target);
 }

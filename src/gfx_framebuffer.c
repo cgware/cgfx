@@ -75,8 +75,8 @@ void gfx_framebuffer_free(gfx_framebuffer_t *framebuffer)
 
 int gfx_framebuffer_resize(gfx_framebuffer_t *framebuffer, u16 width, u16 height)
 {
-	if (!gfx_framebuffer_valid(framebuffer) || framebuffer->gfx->frame != NULL || framebuffer->target->type != GFX_TARGET_SURFACE ||
-	    width == 0 || height == 0) {
+	if (!gfx_framebuffer_valid(framebuffer) || framebuffer->gfx->frame != NULL || framebuffer->target->type != GFX_TARGET_SWAPCHAIN ||
+	    framebuffer->target->swapchain == NULL || width == 0 || height == 0) {
 		return 1;
 	}
 
@@ -86,7 +86,29 @@ int gfx_framebuffer_resize(gfx_framebuffer_t *framebuffer, u16 width, u16 height
 	if (gfx->drv->framebuffer_free != NULL) {
 		gfx->drv->framebuffer_free(framebuffer);
 	}
-	if (gfx_target_resize(target, width, height)) {
+	if (gfx_swapchain_resize(target->swapchain, width, height)) {
+		*framebuffer = (gfx_framebuffer_t){
+			.gfx	     = gfx,
+			.target	     = target,
+			.render_pass = render_pass,
+			.width	     = target->width,
+			.height	     = target->height,
+		};
+		if (gfx->drv->framebuffer_init != NULL && gfx->drv->framebuffer_init(framebuffer)) {
+			if (gfx->drv->framebuffer_free != NULL) {
+				gfx->drv->framebuffer_free(framebuffer);
+			}
+			*framebuffer = (gfx_framebuffer_t){0};
+		}
+		return 1;
+	}
+	if (gfx->drv->target_free != NULL) {
+		gfx->drv->target_free(target);
+	}
+	target->format = target->swapchain->format;
+	target->width  = target->swapchain->width;
+	target->height = target->swapchain->height;
+	if (gfx->drv->target_init != NULL && gfx->drv->target_init(target)) {
 		*framebuffer = (gfx_framebuffer_t){0};
 		return 1;
 	}

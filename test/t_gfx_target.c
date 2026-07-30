@@ -5,17 +5,11 @@
 
 static int t_gfx_target_init_calls;
 static int t_gfx_target_free_calls;
-static int t_gfx_target_resize_calls;
 static int t_gfx_target_read_calls;
-static int t_gfx_target_present_calls;
 static int t_gfx_target_init_ret;
-static int t_gfx_target_resize_ret;
 static int t_gfx_target_read_ret;
-static int t_gfx_target_present_ret;
 static gfx_target_t *t_gfx_target;
 static const gfx_memory_readback_config_t *t_gfx_target_read_config;
-static u16 t_gfx_target_width;
-static u16 t_gfx_target_height;
 
 static int t_gfx_target_init(gfx_target_t *target)
 {
@@ -30,15 +24,6 @@ static void t_gfx_target_free(gfx_target_t *target)
 	t_gfx_target = target;
 }
 
-static int t_gfx_target_resize(gfx_target_t *target, u16 width, u16 height)
-{
-	t_gfx_target_resize_calls++;
-	t_gfx_target	    = target;
-	t_gfx_target_width  = width;
-	t_gfx_target_height = height;
-	return t_gfx_target_resize_ret;
-}
-
 static int t_gfx_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
 {
 	t_gfx_target_read_calls++;
@@ -47,38 +32,23 @@ static int t_gfx_target_read(gfx_target_t *target, const gfx_memory_readback_con
 	return t_gfx_target_read_ret;
 }
 
-static int t_gfx_target_present(gfx_target_t *target)
-{
-	t_gfx_target_present_calls++;
-	t_gfx_target = target;
-	return t_gfx_target_present_ret;
-}
-
 static gfx_driver_t t_gfx_target_driver = {
-	.name		= "test-target",
-	.api		= GFX_API_SOFTWARE,
-	.target_init	= t_gfx_target_init,
-	.target_free	= t_gfx_target_free,
-	.target_resize	= t_gfx_target_resize,
-	.target_read	= t_gfx_target_read,
-	.target_present = t_gfx_target_present,
+	.name	     = "test-target",
+	.api	     = GFX_API_SOFTWARE,
+	.target_init = t_gfx_target_init,
+	.target_free = t_gfx_target_free,
+	.target_read = t_gfx_target_read,
 };
 
 static void t_gfx_target_reset(void)
 {
-	t_gfx_target_init_calls	   = 0;
-	t_gfx_target_free_calls	   = 0;
-	t_gfx_target_resize_calls  = 0;
-	t_gfx_target_read_calls	   = 0;
-	t_gfx_target_present_calls = 0;
-	t_gfx_target_init_ret	   = 0;
-	t_gfx_target_resize_ret	   = 0;
-	t_gfx_target_read_ret	   = 0;
-	t_gfx_target_present_ret   = 0;
-	t_gfx_target		   = NULL;
-	t_gfx_target_read_config   = NULL;
-	t_gfx_target_width	   = 0;
-	t_gfx_target_height	   = 0;
+	t_gfx_target_init_calls	 = 0;
+	t_gfx_target_free_calls	 = 0;
+	t_gfx_target_read_calls	 = 0;
+	t_gfx_target_init_ret	 = 0;
+	t_gfx_target_read_ret	 = 0;
+	t_gfx_target		 = NULL;
+	t_gfx_target_read_config = NULL;
 }
 
 TEST(gfx_target_init_memory_rejects_invalid_args)
@@ -127,15 +97,14 @@ TEST(gfx_target_init_memory_rejects_active_frame)
 	gfx_t gfx	    = {.drv = &t_gfx_target_driver, .frame = &frame};
 	gfx_target_t target = {0};
 
-	EXPECT_NULL(gfx_target_init_memory(&target,
-					   &gfx,
-					   &(gfx_memory_target_config_t){
-						   .format = GFX_FORMAT_RGBA8,
-						   .data   = pixels,
-						   .width  = 1,
-						   .height = 1,
-						   .stride = 4,
-					   }));
+	gfx_memory_target_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_NULL(gfx_target_init_memory(&target, &gfx, &memory_target_config));
 
 	END;
 }
@@ -149,16 +118,14 @@ TEST(gfx_target_init_memory_success)
 	gfx_t gfx	    = {.drv = &t_gfx_target_driver};
 	gfx_target_t target = {0};
 
-	EXPECT_PTR(gfx_target_init_memory(&target,
-					  &gfx,
-					  &(gfx_memory_target_config_t){
-						  .format = GFX_FORMAT_RGBA8,
-						  .data	  = pixels,
-						  .width  = 1,
-						  .height = 1,
-						  .stride = 4,
-					  }),
-		   &target);
+	gfx_memory_target_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
 	EXPECT_EQ(t_gfx_target_init_calls, 1);
 	EXPECT_PTR(t_gfx_target, &target);
 	EXPECT_PTR(target.gfx, &gfx);
@@ -179,15 +146,14 @@ TEST(gfx_target_init_memory_driver_failure_clears_target)
 	gfx_t gfx	      = {.drv = &t_gfx_target_driver};
 	gfx_target_t target   = {0};
 
-	EXPECT_NULL(gfx_target_init_memory(&target,
-					   &gfx,
-					   &(gfx_memory_target_config_t){
-						   .format = GFX_FORMAT_RGBA8,
-						   .data   = pixels,
-						   .width  = 1,
-						   .height = 1,
-						   .stride = 4,
-					   }));
+	gfx_memory_target_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_NULL(gfx_target_init_memory(&target, &gfx, &memory_target_config));
 	EXPECT_EQ(t_gfx_target_init_calls, 1);
 	EXPECT_EQ(t_gfx_target_free_calls, 1);
 	EXPECT_NULL(target.gfx);
@@ -195,99 +161,67 @@ TEST(gfx_target_init_memory_driver_failure_clears_target)
 	END;
 }
 
-TEST(gfx_target_init_surface_rejects_invalid_args)
+TEST(gfx_target_init_swapchain_rejects_invalid_args)
 {
 	START;
 
-	gfx_surface_t surface		   = {.api = GFX_API_SOFTWARE};
-	gfx_t gfx			   = {.drv = &t_gfx_target_driver};
-	gfx_target_t target		   = {0};
-	gfx_surface_target_config_t config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &surface,
-		.width	 = 1,
-		.height	 = 1,
-	};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE};
+	gfx_t gfx		  = {.drv = &t_gfx_target_driver};
+	gfx_target_t target	  = {0};
+	gfx_swapchain_t swapchain = {.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 1, .height = 1};
 
-	EXPECT_NULL(gfx_target_init_surface(NULL, &gfx, &config));
-	EXPECT_NULL(gfx_target_init_surface(&target, NULL, &config));
-	EXPECT_NULL(gfx_target_init_surface(&target, &(gfx_t){0}, &config));
-	EXPECT_NULL(gfx_target_init_surface(&target, &gfx, NULL));
-	EXPECT_NULL(gfx_target_init_surface(
-		&target, &gfx, &(gfx_surface_target_config_t){.format = GFX_FORMAT_NONE, .surface = &surface, .width = 1, .height = 1}));
-	EXPECT_NULL(gfx_target_init_surface(
-		&target, &gfx, &(gfx_surface_target_config_t){.format = GFX_FORMAT_RGBA8, .width = 1, .height = 1}));
-	EXPECT_NULL(gfx_target_init_surface(&target,
-					    &gfx,
-					    &(gfx_surface_target_config_t){
-						    .format  = GFX_FORMAT_RGBA8,
-						    .surface = &(gfx_surface_t){.api = GFX_API_OPENGL},
-						    .width   = 1,
-						    .height  = 1,
-					    }));
-	EXPECT_NULL(gfx_target_init_surface(
-		&target, &gfx, &(gfx_surface_target_config_t){.format = GFX_FORMAT_RGBA8, .surface = &surface, .height = 1}));
-	EXPECT_NULL(gfx_target_init_surface(
-		&target, &gfx, &(gfx_surface_target_config_t){.format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 1}));
+	EXPECT_NULL(gfx_target_init_swapchain(NULL, &swapchain));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, NULL));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, &(gfx_swapchain_t){0}));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, &(gfx_swapchain_t){.gfx = &(gfx_t){0}}));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, &(gfx_swapchain_t){.gfx = &gfx, .surface = &surface, .width = 1, .height = 1}));
+	EXPECT_NULL(
+		gfx_target_init_swapchain(&target, &(gfx_swapchain_t){.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .width = 1, .height = 1}));
+	EXPECT_NULL(gfx_target_init_swapchain(
+		&target, &(gfx_swapchain_t){.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .height = 1}));
+	EXPECT_NULL(gfx_target_init_swapchain(
+		&target, &(gfx_swapchain_t){.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 1}));
 
 	END;
 }
 
-TEST(gfx_target_init_surface_rejects_active_frame)
+TEST(gfx_target_init_swapchain_rejects_active_frame)
 {
 	START;
 
-	gfx_surface_t surface = {.api = GFX_API_SOFTWARE};
-	gfx_frame_t frame     = {0};
-	gfx_t gfx	      = {.drv = &t_gfx_target_driver, .frame = &frame};
-	gfx_target_t target   = {0};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE};
+	gfx_frame_t frame	  = {0};
+	gfx_t gfx		  = {.drv = &t_gfx_target_driver, .frame = &frame};
+	gfx_swapchain_t swapchain = {.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 1, .height = 1};
+	gfx_target_t target	  = {0};
 
-	EXPECT_NULL(gfx_target_init_surface(&target,
-					    &gfx,
-					    &(gfx_surface_target_config_t){
-						    .format  = GFX_FORMAT_RGBA8,
-						    .surface = &surface,
-						    .width   = 1,
-						    .height  = 1,
-					    }));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, &swapchain));
 
 	END;
 }
 
-TEST(gfx_target_init_surface_success_and_failure)
+TEST(gfx_target_init_swapchain_success_and_failure)
 {
 	START;
 
 	t_gfx_target_reset();
-	gfx_surface_t surface = {.api = GFX_API_SOFTWARE};
-	gfx_t gfx	      = {.drv = &t_gfx_target_driver};
-	gfx_target_t target   = {0};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE};
+	gfx_t gfx		  = {.drv = &t_gfx_target_driver};
+	gfx_swapchain_t swapchain = {.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 2, .height = 3};
+	gfx_target_t target	  = {0};
 
-	EXPECT_PTR(gfx_target_init_surface(&target,
-					   &gfx,
-					   &(gfx_surface_target_config_t){
-						   .format  = GFX_FORMAT_RGBA8,
-						   .surface = &surface,
-						   .width   = 2,
-						   .height  = 3,
-					   }),
-		   &target);
+	EXPECT_PTR(gfx_target_init_swapchain(&target, &swapchain), &target);
 	EXPECT_EQ(t_gfx_target_init_calls, 1);
-	EXPECT_EQ(target.type, GFX_TARGET_SURFACE);
-	EXPECT_PTR(target.surface, &surface);
+	EXPECT_EQ(target.type, GFX_TARGET_SWAPCHAIN);
+	EXPECT_PTR(target.swapchain, &swapchain);
+	EXPECT_EQ(target.width, 2);
+	EXPECT_EQ(target.height, 3);
 
 	gfx_target_free(&target);
 
 	t_gfx_target_reset();
 	t_gfx_target_init_ret = 1;
-	EXPECT_NULL(gfx_target_init_surface(&target,
-					    &gfx,
-					    &(gfx_surface_target_config_t){
-						    .format  = GFX_FORMAT_RGBA8,
-						    .surface = &surface,
-						    .width   = 2,
-						    .height  = 3,
-					    }));
+	EXPECT_NULL(gfx_target_init_swapchain(&target, &swapchain));
 	EXPECT_EQ(t_gfx_target_free_calls, 1);
 	EXPECT_NULL(target.gfx);
 
@@ -324,46 +258,6 @@ TEST(gfx_target_free_calls_driver_and_clears)
 	EXPECT_EQ(t_gfx_target_free_calls, 1);
 	EXPECT_PTR(t_gfx_target, &target);
 	EXPECT_NULL(target.gfx);
-
-	END;
-}
-
-TEST(gfx_target_resize_rejects_invalid_args)
-{
-	START;
-
-	gfx_t gfx	  = {.drv = &t_gfx_target_driver};
-	gfx_frame_t frame = {0};
-
-	EXPECT_EQ(gfx_target_resize(NULL, 1, 1), 1);
-	EXPECT_EQ(gfx_target_resize(&(gfx_target_t){0}, 1, 1), 1);
-	EXPECT_EQ(gfx_target_resize(&(gfx_target_t){.gfx = &(gfx_t){.frame = &frame}, .type = GFX_TARGET_SURFACE}, 1, 1), 1);
-	EXPECT_EQ(gfx_target_resize(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE}, 0, 1), 1);
-	EXPECT_EQ(gfx_target_resize(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE}, 1, 0), 1);
-	EXPECT_EQ(gfx_target_resize(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_MEMORY}, 1, 1), 1);
-
-	END;
-}
-
-TEST(gfx_target_resize_success_and_failure)
-{
-	START;
-
-	t_gfx_target_reset();
-	gfx_t gfx	    = {.drv = &t_gfx_target_driver};
-	gfx_target_t target = {.gfx = &gfx, .type = GFX_TARGET_SURFACE, .width = 2, .height = 3};
-
-	EXPECT_EQ(gfx_target_resize(&target, 4, 5), 0);
-	EXPECT_EQ(t_gfx_target_resize_calls, 1);
-	EXPECT_EQ(t_gfx_target_width, 4);
-	EXPECT_EQ(t_gfx_target_height, 5);
-	EXPECT_EQ(target.width, 4);
-	EXPECT_EQ(target.height, 5);
-
-	t_gfx_target_resize_ret = 1;
-	EXPECT_EQ(gfx_target_resize(&target, 6, 7), 1);
-	EXPECT_EQ(target.width, 4);
-	EXPECT_EQ(target.height, 5);
 
 	END;
 }
@@ -428,7 +322,7 @@ TEST(gfx_target_read_rejects_invalid_args)
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &(gfx_t){0}}, &config), 1);
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &(gfx_t){.drv = &(gfx_driver_t){0}}}, &config), 1);
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &(gfx_t){.drv = &t_gfx_target_driver, .frame = &frame}}, &config), 1);
-	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE}, &config), 1);
+	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SWAPCHAIN}, &config), 1);
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_MEMORY}, &config), 1);
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_MEMORY, .format = GFX_FORMAT_RGBA8}, &config), 1);
 	EXPECT_EQ(gfx_target_read(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_MEMORY, .format = GFX_FORMAT_RGBA8, .width = 1}, &config),
@@ -461,46 +355,6 @@ TEST(gfx_target_read_calls_driver)
 	END;
 }
 
-TEST(gfx_target_present_rejects_invalid_args)
-{
-	START;
-
-	gfx_surface_t surface = {.api = GFX_API_SOFTWARE};
-	gfx_frame_t frame     = {0};
-	gfx_t gfx	      = {.drv = &t_gfx_target_driver};
-
-	EXPECT_EQ(gfx_target_present(NULL), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){0}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &(gfx_t){0}}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &(gfx_t){.drv = &(gfx_driver_t){0}}}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &(gfx_t){.drv = &t_gfx_target_driver, .frame = &frame}}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_MEMORY}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE, .surface = &surface}), 1);
-	EXPECT_EQ(gfx_target_present(&(gfx_target_t){.gfx = &gfx, .type = GFX_TARGET_SURFACE, .surface = &surface, .width = 1}), 1);
-
-	END;
-}
-
-TEST(gfx_target_present_calls_driver)
-{
-	START;
-
-	t_gfx_target_reset();
-	gfx_surface_t surface = {.api = GFX_API_SOFTWARE};
-	gfx_t gfx	      = {.drv = &t_gfx_target_driver};
-	gfx_target_t target   = {.gfx = &gfx, .type = GFX_TARGET_SURFACE, .surface = &surface, .width = 1, .height = 1};
-
-	EXPECT_EQ(gfx_target_present(&target), 0);
-	EXPECT_EQ(t_gfx_target_present_calls, 1);
-	EXPECT_PTR(t_gfx_target, &target);
-
-	t_gfx_target_present_ret = 1;
-	EXPECT_EQ(gfx_target_present(&target), 1);
-
-	END;
-}
-
 STEST(gfx_target)
 {
 	SSTART;
@@ -508,18 +362,14 @@ STEST(gfx_target)
 	RUN(gfx_target_init_memory_rejects_active_frame);
 	RUN(gfx_target_init_memory_success);
 	RUN(gfx_target_init_memory_driver_failure_clears_target);
-	RUN(gfx_target_init_surface_rejects_invalid_args);
-	RUN(gfx_target_init_surface_rejects_active_frame);
-	RUN(gfx_target_init_surface_success_and_failure);
+	RUN(gfx_target_init_swapchain_rejects_invalid_args);
+	RUN(gfx_target_init_swapchain_rejects_active_frame);
+	RUN(gfx_target_init_swapchain_success_and_failure);
 	RUN(gfx_target_free_ignores_invalid_or_active);
 	RUN(gfx_target_free_calls_driver_and_clears);
-	RUN(gfx_target_resize_rejects_invalid_args);
-	RUN(gfx_target_resize_success_and_failure);
 	RUN(gfx_target_move_rejects_invalid_args);
 	RUN(gfx_target_move_success);
 	RUN(gfx_target_read_rejects_invalid_args);
 	RUN(gfx_target_read_calls_driver);
-	RUN(gfx_target_present_rejects_invalid_args);
-	RUN(gfx_target_present_calls_driver);
 	SEND;
 }

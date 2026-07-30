@@ -31,11 +31,29 @@ static void gfx_none_target_free(gfx_target_t *target)
 	(void)target;
 }
 
-static int gfx_none_target_resize(gfx_target_t *target, u16 width, u16 height)
+static int gfx_none_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
 {
-	(void)target;
+	(void)swapchain;
+	(void)config;
+	return 0;
+}
+
+static void gfx_none_swapchain_free(gfx_swapchain_t *swapchain)
+{
+	(void)swapchain;
+}
+
+static int gfx_none_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
+{
+	(void)swapchain;
 	(void)width;
 	(void)height;
+	return 0;
+}
+
+static int gfx_none_swapchain_present(gfx_swapchain_t *swapchain)
+{
+	(void)swapchain;
 	return 0;
 }
 
@@ -43,12 +61,6 @@ static int gfx_none_target_read(gfx_target_t *target, const gfx_memory_readback_
 {
 	(void)target;
 	(void)config;
-	return 0;
-}
-
-static int gfx_none_target_present(gfx_target_t *target)
-{
-	(void)target;
 	return 0;
 }
 
@@ -145,11 +157,13 @@ static gfx_driver_t gfx_none = {
 	.api			= GFX_API_NONE,
 	.init			= gfx_none_init,
 	.free			= gfx_none_free,
+	.swapchain_init		= gfx_none_swapchain_init,
+	.swapchain_free		= gfx_none_swapchain_free,
+	.swapchain_resize	= gfx_none_swapchain_resize,
+	.swapchain_present	= gfx_none_swapchain_present,
 	.target_init		= gfx_none_target_init,
 	.target_free		= gfx_none_target_free,
-	.target_resize		= gfx_none_target_resize,
 	.target_read		= gfx_none_target_read,
-	.target_present		= gfx_none_target_present,
 	.framebuffer_pass_begin = gfx_none_framebuffer_pass_begin,
 	.buffer_init		= gfx_none_buffer_init,
 	.buffer_free		= gfx_none_buffer_free,

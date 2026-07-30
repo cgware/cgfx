@@ -6,10 +6,13 @@
 static int t_gfx_framebuffer_init_calls;
 static int t_gfx_framebuffer_free_calls;
 static int t_gfx_framebuffer_pass_begin_calls;
-static int t_gfx_framebuffer_target_resize_calls;
+static int t_gfx_framebuffer_swapchain_resize_calls;
+static int t_gfx_framebuffer_target_init_calls;
+static int t_gfx_framebuffer_target_free_calls;
 static int t_gfx_framebuffer_init_ret;
 static int t_gfx_framebuffer_pass_begin_ret;
-static int t_gfx_framebuffer_target_resize_ret;
+static int t_gfx_framebuffer_swapchain_resize_ret;
+static int t_gfx_framebuffer_target_init_ret;
 static gfx_framebuffer_t *t_gfx_framebuffer;
 static gfx_frame_t *t_gfx_framebuffer_frame;
 static gfx_target_t *t_gfx_framebuffer_target;
@@ -40,13 +43,26 @@ static int t_gfx_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_fram
 	return t_gfx_framebuffer_pass_begin_ret;
 }
 
-static int t_gfx_framebuffer_target_resize(gfx_target_t *target, u16 width, u16 height)
+static int t_gfx_framebuffer_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
 {
-	t_gfx_framebuffer_target_resize_calls++;
-	t_gfx_framebuffer_target	= target;
+	t_gfx_framebuffer_swapchain_resize_calls++;
+	(void)swapchain;
 	t_gfx_framebuffer_resize_width	= width;
 	t_gfx_framebuffer_resize_height = height;
-	return t_gfx_framebuffer_target_resize_ret;
+	return t_gfx_framebuffer_swapchain_resize_ret;
+}
+
+static int t_gfx_framebuffer_target_init(gfx_target_t *target)
+{
+	t_gfx_framebuffer_target_init_calls++;
+	t_gfx_framebuffer_target = target;
+	return t_gfx_framebuffer_target_init_ret;
+}
+
+static void t_gfx_framebuffer_target_free(gfx_target_t *target)
+{
+	t_gfx_framebuffer_target_free_calls++;
+	t_gfx_framebuffer_target = target;
 }
 
 static gfx_driver_t t_gfx_framebuffer_driver = {
@@ -55,23 +71,28 @@ static gfx_driver_t t_gfx_framebuffer_driver = {
 	.framebuffer_init	= t_gfx_framebuffer_init,
 	.framebuffer_free	= t_gfx_framebuffer_free,
 	.framebuffer_pass_begin = t_gfx_framebuffer_pass_begin,
-	.target_resize		= t_gfx_framebuffer_target_resize,
+	.swapchain_resize	= t_gfx_framebuffer_swapchain_resize,
+	.target_init		= t_gfx_framebuffer_target_init,
+	.target_free		= t_gfx_framebuffer_target_free,
 };
 
 static void t_gfx_framebuffer_reset(void)
 {
-	t_gfx_framebuffer_init_calls	      = 0;
-	t_gfx_framebuffer_free_calls	      = 0;
-	t_gfx_framebuffer_pass_begin_calls    = 0;
-	t_gfx_framebuffer_target_resize_calls = 0;
-	t_gfx_framebuffer_init_ret	      = 0;
-	t_gfx_framebuffer_pass_begin_ret      = 0;
-	t_gfx_framebuffer_target_resize_ret   = 0;
-	t_gfx_framebuffer		      = NULL;
-	t_gfx_framebuffer_frame		      = NULL;
-	t_gfx_framebuffer_target	      = NULL;
-	t_gfx_framebuffer_resize_width	      = 0;
-	t_gfx_framebuffer_resize_height	      = 0;
+	t_gfx_framebuffer_init_calls		 = 0;
+	t_gfx_framebuffer_free_calls		 = 0;
+	t_gfx_framebuffer_pass_begin_calls	 = 0;
+	t_gfx_framebuffer_swapchain_resize_calls = 0;
+	t_gfx_framebuffer_target_init_calls	 = 0;
+	t_gfx_framebuffer_target_free_calls	 = 0;
+	t_gfx_framebuffer_init_ret		 = 0;
+	t_gfx_framebuffer_pass_begin_ret	 = 0;
+	t_gfx_framebuffer_swapchain_resize_ret	 = 0;
+	t_gfx_framebuffer_target_init_ret	 = 0;
+	t_gfx_framebuffer			 = NULL;
+	t_gfx_framebuffer_frame			 = NULL;
+	t_gfx_framebuffer_target		 = NULL;
+	t_gfx_framebuffer_resize_width		 = 0;
+	t_gfx_framebuffer_resize_height		 = 0;
 }
 
 static gfx_target_t t_gfx_framebuffer_memory_target(gfx_t *gfx)
@@ -87,15 +108,26 @@ static gfx_target_t t_gfx_framebuffer_memory_target(gfx_t *gfx)
 	};
 }
 
-static gfx_target_t t_gfx_framebuffer_surface_target(gfx_t *gfx, gfx_surface_t *surface)
+static gfx_swapchain_t t_gfx_framebuffer_swapchain(gfx_t *gfx, gfx_surface_t *surface)
 {
-	return (gfx_target_t){
+	return (gfx_swapchain_t){
 		.gfx	 = gfx,
-		.type	 = GFX_TARGET_SURFACE,
 		.format	 = GFX_FORMAT_RGBA8,
 		.surface = surface,
 		.width	 = 2,
 		.height	 = 3,
+	};
+}
+
+static gfx_target_t t_gfx_framebuffer_swapchain_target(gfx_t *gfx, gfx_swapchain_t *swapchain)
+{
+	return (gfx_target_t){
+		.gfx	   = gfx,
+		.type	   = GFX_TARGET_SWAPCHAIN,
+		.format	   = GFX_FORMAT_RGBA8,
+		.swapchain = swapchain,
+		.width	   = 2,
+		.height	   = 3,
 	};
 }
 
@@ -246,7 +278,8 @@ TEST(gfx_framebuffer_resize_rejects_invalid_args)
 	gfx_t gfx		      = {.drv = &t_gfx_framebuffer_driver};
 	gfx_frame_t frame	      = {0};
 	gfx_surface_t surface	      = {.api = GFX_API_SOFTWARE};
-	gfx_target_t target	      = t_gfx_framebuffer_surface_target(&gfx, &surface);
+	gfx_swapchain_t swapchain     = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target	      = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
 	gfx_render_pass_t render_pass = t_gfx_framebuffer_render_pass(&gfx);
 	gfx_framebuffer_t framebuffer = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 
@@ -258,7 +291,10 @@ TEST(gfx_framebuffer_resize_rejects_invalid_args)
 	gfx.frame   = NULL;
 	target.type = GFX_TARGET_MEMORY;
 	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 1, 1), 1);
-	target.type = GFX_TARGET_SURFACE;
+	target.type	 = GFX_TARGET_SWAPCHAIN;
+	target.swapchain = NULL;
+	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 1, 1), 1);
+	target.swapchain = &swapchain;
 	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 0, 1), 1);
 	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 1, 0), 1);
 
@@ -272,13 +308,16 @@ TEST(gfx_framebuffer_resize_success)
 	t_gfx_framebuffer_reset();
 	gfx_t gfx		      = {.drv = &t_gfx_framebuffer_driver};
 	gfx_surface_t surface	      = {.api = GFX_API_SOFTWARE};
-	gfx_target_t target	      = t_gfx_framebuffer_surface_target(&gfx, &surface);
+	gfx_swapchain_t swapchain     = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target	      = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
 	gfx_render_pass_t render_pass = t_gfx_framebuffer_render_pass(&gfx);
 	gfx_framebuffer_t framebuffer = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 
 	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 4, 5), 0);
 	EXPECT_EQ(t_gfx_framebuffer_free_calls, 1);
-	EXPECT_EQ(t_gfx_framebuffer_target_resize_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_swapchain_resize_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_target_free_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_target_init_calls, 1);
 	EXPECT_PTR(t_gfx_framebuffer_target, &target);
 	EXPECT_EQ(t_gfx_framebuffer_resize_width, 4);
 	EXPECT_EQ(t_gfx_framebuffer_resize_height, 5);
@@ -293,21 +332,67 @@ TEST(gfx_framebuffer_resize_success)
 	END;
 }
 
-TEST(gfx_framebuffer_resize_target_failure_clears_framebuffer)
+TEST(gfx_framebuffer_resize_swapchain_failure_restores_framebuffer)
 {
 	START;
 
 	t_gfx_framebuffer_reset();
-	t_gfx_framebuffer_target_resize_ret = 1;
-	gfx_t gfx			    = {.drv = &t_gfx_framebuffer_driver};
-	gfx_surface_t surface		    = {.api = GFX_API_SOFTWARE};
-	gfx_target_t target		    = t_gfx_framebuffer_surface_target(&gfx, &surface);
-	gfx_render_pass_t render_pass	    = t_gfx_framebuffer_render_pass(&gfx);
-	gfx_framebuffer_t framebuffer	    = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
+	t_gfx_framebuffer_swapchain_resize_ret = 1;
+	gfx_t gfx			       = {.drv = &t_gfx_framebuffer_driver};
+	gfx_surface_t surface		       = {.api = GFX_API_SOFTWARE};
+	gfx_swapchain_t swapchain	       = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target		       = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
+	gfx_render_pass_t render_pass	       = t_gfx_framebuffer_render_pass(&gfx);
+	gfx_framebuffer_t framebuffer	       = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 
 	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 4, 5), 1);
 	EXPECT_EQ(t_gfx_framebuffer_free_calls, 1);
-	EXPECT_EQ(t_gfx_framebuffer_target_resize_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_swapchain_resize_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_init_calls, 1);
+	EXPECT_PTR(framebuffer.gfx, &gfx);
+
+	END;
+}
+
+TEST(gfx_framebuffer_resize_swapchain_failure_restore_init_failure_clears_framebuffer)
+{
+	START;
+
+	t_gfx_framebuffer_reset();
+	t_gfx_framebuffer_swapchain_resize_ret = 1;
+	t_gfx_framebuffer_init_ret	       = 1;
+	gfx_t gfx			       = {.drv = &t_gfx_framebuffer_driver};
+	gfx_surface_t surface		       = {.api = GFX_API_SOFTWARE};
+	gfx_swapchain_t swapchain	       = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target		       = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
+	gfx_render_pass_t render_pass	       = t_gfx_framebuffer_render_pass(&gfx);
+	gfx_framebuffer_t framebuffer	       = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
+
+	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 4, 5), 1);
+	EXPECT_EQ(t_gfx_framebuffer_free_calls, 2);
+	EXPECT_EQ(t_gfx_framebuffer_init_calls, 1);
+	EXPECT_NULL(framebuffer.gfx);
+
+	END;
+}
+
+TEST(gfx_framebuffer_resize_target_init_failure_clears_framebuffer)
+{
+	START;
+
+	t_gfx_framebuffer_reset();
+	t_gfx_framebuffer_target_init_ret = 1;
+	gfx_t gfx			  = {.drv = &t_gfx_framebuffer_driver};
+	gfx_surface_t surface		  = {.api = GFX_API_SOFTWARE};
+	gfx_swapchain_t swapchain	  = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target		  = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
+	gfx_render_pass_t render_pass	  = t_gfx_framebuffer_render_pass(&gfx);
+	gfx_framebuffer_t framebuffer	  = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
+
+	EXPECT_EQ(gfx_framebuffer_resize(&framebuffer, 4, 5), 1);
+	EXPECT_EQ(t_gfx_framebuffer_free_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_target_free_calls, 1);
+	EXPECT_EQ(t_gfx_framebuffer_target_init_calls, 1);
 	EXPECT_NULL(framebuffer.gfx);
 
 	END;
@@ -321,7 +406,8 @@ TEST(gfx_framebuffer_resize_init_failure_clears_framebuffer)
 	t_gfx_framebuffer_init_ret    = 1;
 	gfx_t gfx		      = {.drv = &t_gfx_framebuffer_driver};
 	gfx_surface_t surface	      = {.api = GFX_API_SOFTWARE};
-	gfx_target_t target	      = t_gfx_framebuffer_surface_target(&gfx, &surface);
+	gfx_swapchain_t swapchain     = t_gfx_framebuffer_swapchain(&gfx, &surface);
+	gfx_target_t target	      = t_gfx_framebuffer_swapchain_target(&gfx, &swapchain);
 	gfx_render_pass_t render_pass = t_gfx_framebuffer_render_pass(&gfx);
 	gfx_framebuffer_t framebuffer = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 
@@ -374,12 +460,10 @@ TEST(gfx_framebuffer_pass_begin_success_defaults_viewport)
 	gfx_framebuffer_t framebuffer = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 	gfx_frame_t frame	      = {0};
 
-	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
-					     &frame,
-					     &(gfx_pass_config_t){
-						     .clear = {0.25f, 0.5f, 0.75f, 1.0f},
-					     }),
-		  0);
+	gfx_pass_config_t pass_config = {
+		.clear = {0.25f, 0.5f, 0.75f, 1.0f},
+	};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config), 0);
 	EXPECT_EQ(t_gfx_framebuffer_pass_begin_calls, 1);
 	EXPECT_PTR(t_gfx_framebuffer, &framebuffer);
 	EXPECT_PTR(t_gfx_framebuffer_frame, &frame);
@@ -406,12 +490,10 @@ TEST(gfx_framebuffer_pass_begin_driver_failure_clears_frame)
 	gfx_framebuffer_t framebuffer	 = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
 	gfx_frame_t frame		 = {0};
 
-	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
-					     &frame,
-					     &(gfx_pass_config_t){
-						     .clear = {0.0f, 0.0f, 0.0f, 1.0f},
-					     }),
-		  1);
+	gfx_pass_config_t pass_config = {
+		.clear = {0.0f, 0.0f, 0.0f, 1.0f},
+	};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config), 1);
 	EXPECT_EQ(t_gfx_framebuffer_pass_begin_calls, 1);
 	EXPECT_NULL(gfx.frame);
 	EXPECT_NULL(frame.gfx);
@@ -430,7 +512,9 @@ STEST(gfx_framebuffer)
 	RUN(gfx_framebuffer_free_calls_driver_and_clears);
 	RUN(gfx_framebuffer_resize_rejects_invalid_args);
 	RUN(gfx_framebuffer_resize_success);
-	RUN(gfx_framebuffer_resize_target_failure_clears_framebuffer);
+	RUN(gfx_framebuffer_resize_swapchain_failure_restores_framebuffer);
+	RUN(gfx_framebuffer_resize_swapchain_failure_restore_init_failure_clears_framebuffer);
+	RUN(gfx_framebuffer_resize_target_init_failure_clears_framebuffer);
 	RUN(gfx_framebuffer_resize_init_failure_clears_framebuffer);
 	RUN(gfx_framebuffer_pass_begin_rejects_invalid_args);
 	RUN(gfx_framebuffer_pass_begin_success_defaults_viewport);

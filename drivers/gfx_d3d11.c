@@ -276,10 +276,13 @@ typedef struct gfx_d3d11_render_pass_s {
 	gfx_store_op_t store;
 } gfx_d3d11_render_pass_t;
 
-typedef struct gfx_d3d11_target_s {
-	IDXGISwapChain *swapchain;
+typedef struct gfx_d3d11_memory_target_s {
 	ID3D11Texture2D *texture;
-} gfx_d3d11_target_t;
+} gfx_d3d11_memory_target_t;
+
+typedef struct gfx_d3d11_swapchain_s {
+	IDXGISwapChain *swapchain;
+} gfx_d3d11_swapchain_t;
 
 typedef struct gfx_d3d11_framebuffer_s {
 	ID3D11RenderTargetView *render_target;
@@ -441,11 +444,18 @@ static int gfx_d3d11_native(gfx_t *gfx, gfx_native_t *native)
 	return 0;
 }
 
+static int swapchain_valid(const gfx_swapchain_t *swapchain)
+{
+	return swapchain != NULL && swapchain->format == GFX_FORMAT_RGBA8 && swapchain->surface != NULL &&
+	       swapchain->surface->api == GFX_API_D3D11 && swapchain->surface->handle != 0 && swapchain->surface->ops != NULL &&
+	       swapchain->surface->ops->present != NULL && swapchain->width != 0 && swapchain->height != 0;
+}
+
 static int surface_target_valid(const gfx_target_t *target)
 {
-	return target != NULL && target->type == GFX_TARGET_SURFACE && target->format == GFX_FORMAT_RGBA8 && target->surface != NULL &&
-	       target->surface->api == GFX_API_D3D11 && target->surface->handle != 0 && target->surface->ops != NULL &&
-	       target->surface->ops->present != NULL && target->width != 0 && target->height != 0;
+	return target != NULL && target->type == GFX_TARGET_SWAPCHAIN && target->swapchain != NULL && swapchain_valid(target->swapchain) &&
+	       target->format == target->swapchain->format && target->width == target->swapchain->width &&
+	       target->height == target->swapchain->height;
 }
 
 static int memory_target_valid(const gfx_target_t *target)
@@ -482,10 +492,10 @@ static int gfx_d3d11_create_render_target_view(gfx_d3d11_t *d3d11, gfx_d3d11_fra
 	return 0;
 }
 
-static int gfx_d3d11_get_surface_buffer(gfx_d3d11_target_t *target, ID3D11Texture2D **buffer)
+static int gfx_d3d11_get_surface_buffer(gfx_d3d11_swapchain_t *swapchain, ID3D11Texture2D **buffer)
 {
-	IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)target->swapchain;
-	if (buffer == NULL || !hresult_ok(swap->GetBuffer(target->swapchain, 0, &IID_ID3D11Texture2D, (void **)buffer)) ||
+	IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)swapchain->swapchain;
+	if (buffer == NULL || !hresult_ok(swap->GetBuffer(swapchain->swapchain, 0, &IID_ID3D11Texture2D, (void **)buffer)) ||
 	    *buffer == NULL) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to get D3D11 swapchain buffer");
 		return 1;
@@ -500,8 +510,8 @@ static int gfx_d3d11_create_memory_target(gfx_d3d11_t *d3d11, gfx_target_t *targ
 		return 1; // LCOV_EXCL_LINE
 	}
 
-	gfx_d3d11_target_t *d3d_target = target->driver_data;
-	ID3D11DeviceVTable *device     = *(ID3D11DeviceVTable **)d3d11->device;
+	gfx_d3d11_memory_target_t *d3d_target = target->driver_data;
+	ID3D11DeviceVTable *device	      = *(ID3D11DeviceVTable **)d3d11->device;
 	if (device->CreateTexture2D == NULL) {
 		return 1;
 	}
@@ -525,14 +535,17 @@ static void gfx_d3d11_target_free(gfx_target_t *target)
 
 	gfx_d3d11_t *d3d11 = target->gfx->data;
 	if (target->driver_data != NULL) {
-		gfx_d3d11_target_t *d3d_target = target->driver_data;
-		if (d3d_target->texture != NULL) {
-			d3d11_release(d3d_target->texture);
+		if (target->type == GFX_TARGET_SWAPCHAIN) {
+			target->driver_data = NULL;
+		} else {
+			gfx_d3d11_memory_target_t *d3d_target = target->driver_data;
+			if (d3d_target->texture != NULL) {
+				d3d11_release(d3d_target->texture);
+			}
+			d3d_target->texture = NULL;
+			alloc_free(&target->gfx->alloc, d3d_target, sizeof(gfx_d3d11_memory_target_t));
+			target->driver_data = NULL;
 		}
-		d3d_target->texture   = NULL;
-		d3d_target->swapchain = NULL;
-		alloc_free(&target->gfx->alloc, d3d_target, sizeof(gfx_d3d11_target_t));
-		target->driver_data = NULL;
 	}
 	if (d3d11->target == target) {
 		d3d11->target = NULL;
@@ -546,17 +559,19 @@ static int gfx_d3d11_target_init(gfx_target_t *target)
 		return 1;
 	}
 
-	gfx_d3d11_t *d3d11	       = target->gfx->data;
-	gfx_d3d11_target_t *d3d_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_d3d11_target_t));
+	if (target->type == GFX_TARGET_SWAPCHAIN) {
+		target->driver_data = target->swapchain->data;
+		return target->driver_data == NULL;
+	}
+
+	gfx_d3d11_t *d3d11		      = target->gfx->data;
+	gfx_d3d11_memory_target_t *d3d_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_d3d11_memory_target_t));
 	if (d3d_target == NULL) {
 		return 1;
 	}
-	*d3d_target	    = (gfx_d3d11_target_t){0};
+	*d3d_target	    = (gfx_d3d11_memory_target_t){0};
 	target->driver_data = d3d_target;
-	if (target->type == GFX_TARGET_SURFACE) {
-		d3d_target->swapchain = (IDXGISwapChain *)(uintptr_t)target->surface->handle;
-	}
-	int ret = target->type == GFX_TARGET_MEMORY ? gfx_d3d11_create_memory_target(d3d11, target) : 0;
+	int ret		    = gfx_d3d11_create_memory_target(d3d11, target);
 	if (ret) {
 		gfx_d3d11_target_free(target);
 		return 1;
@@ -564,23 +579,60 @@ static int gfx_d3d11_target_init(gfx_target_t *target)
 	return 0;
 }
 
-static int gfx_d3d11_target_resize(gfx_target_t *target, u16 width, u16 height)
+static int gfx_d3d11_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || !surface_target_valid(target) ||
-	    target->driver_data == NULL) {
+	(void)config;
+
+	if (swapchain == NULL || swapchain->gfx == NULL || !swapchain_valid(swapchain)) {
 		return 1;
 	}
 
-	gfx_d3d11_target_t *d3d_target = target->driver_data;
+	gfx_d3d11_swapchain_t *d3d_swapchain = alloc_alloc(&swapchain->gfx->alloc, sizeof(gfx_d3d11_swapchain_t));
+	if (d3d_swapchain == NULL) {
+		return 1;
+	}
+	*d3d_swapchain	= (gfx_d3d11_swapchain_t){.swapchain = (IDXGISwapChain *)(uintptr_t)swapchain->surface->handle};
+	swapchain->data = d3d_swapchain;
+	return 0;
+}
 
-	IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)d3d_target->swapchain;
-	if (!hresult_ok(
-		    swap->ResizeBuffers(d3d_target->swapchain, GFX_D3D11_SWAPCHAIN_BUFFER_COUNT, width, height, DXGI_FORMAT_UNKNOWN, 0))) {
+static void gfx_d3d11_swapchain_free(gfx_swapchain_t *swapchain)
+{
+	if (swapchain == NULL || swapchain->gfx == NULL || swapchain->data == NULL) {
+		return;
+	}
+
+	gfx_d3d11_swapchain_t *d3d_swapchain = swapchain->data;
+	d3d_swapchain->swapchain	     = NULL;
+	alloc_free(&swapchain->gfx->alloc, d3d_swapchain, sizeof(gfx_d3d11_swapchain_t));
+	swapchain->data = NULL;
+}
+
+static int gfx_d3d11_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
+{
+	if (!swapchain_valid(swapchain) || swapchain->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_swapchain_t *d3d_swapchain = swapchain->data;
+
+	IDXGISwapChainVTable *swap = *(IDXGISwapChainVTable **)d3d_swapchain->swapchain;
+	if (!hresult_ok(swap->ResizeBuffers(
+		    d3d_swapchain->swapchain, GFX_D3D11_SWAPCHAIN_BUFFER_COUNT, width, height, DXGI_FORMAT_UNKNOWN, 0))) {
 		log_error("cgfx", "gfx_d3d11", NULL, "failed to resize D3D11 swapchain");
 		return 1;
 	}
 
 	return 0;
+}
+
+static int gfx_d3d11_swapchain_present(gfx_swapchain_t *swapchain)
+{
+	if (!swapchain_valid(swapchain)) {
+		return 1;
+	}
+
+	return swapchain->surface->ops->present(swapchain->surface);
 }
 
 static void gfx_d3d11_render_pass_free(gfx_render_pass_t *render_pass)
@@ -619,8 +671,8 @@ static int gfx_d3d11_target_read(gfx_target_t *target, const gfx_memory_readback
 		return 1;
 	}
 
-	gfx_d3d11_t *d3d11	       = target->gfx->data;
-	gfx_d3d11_target_t *d3d_target = target->driver_data;
+	gfx_d3d11_t *d3d11		      = target->gfx->data;
+	gfx_d3d11_memory_target_t *d3d_target = target->driver_data;
 	if (d3d11->target != target || d3d_target == NULL || d3d_target->texture == NULL) {
 		return 1;
 	}
@@ -665,15 +717,6 @@ static int gfx_d3d11_target_read(gfx_target_t *target, const gfx_memory_readback
 	return 0;
 }
 
-static int gfx_d3d11_target_present(gfx_target_t *target)
-{
-	if (!surface_target_valid(target)) {
-		return 1;
-	}
-
-	return target->surface->ops->present(target->surface);
-}
-
 static void gfx_d3d11_framebuffer_free(gfx_framebuffer_t *framebuffer)
 {
 	if (framebuffer == NULL || framebuffer->data == NULL) {
@@ -697,7 +740,6 @@ static int gfx_d3d11_framebuffer_init(gfx_framebuffer_t *framebuffer)
 	}
 
 	gfx_d3d11_t *d3d11			 = framebuffer->gfx->data;
-	gfx_d3d11_target_t *d3d_target		 = framebuffer->target->driver_data;
 	gfx_d3d11_framebuffer_t *d3d_framebuffer = alloc_alloc(&framebuffer->gfx->alloc, sizeof(gfx_d3d11_framebuffer_t));
 	if (d3d_framebuffer == NULL) {
 		return 1;
@@ -706,19 +748,22 @@ static int gfx_d3d11_framebuffer_init(gfx_framebuffer_t *framebuffer)
 	framebuffer->data = d3d_framebuffer;
 
 	switch (framebuffer->target->type) {
-	case GFX_TARGET_MEMORY:
+	case GFX_TARGET_MEMORY: {
+		gfx_d3d11_memory_target_t *d3d_target = framebuffer->target->driver_data;
 		if (d3d_target->texture == NULL || gfx_d3d11_create_render_target_view(d3d11, d3d_framebuffer, d3d_target->texture)) {
 			gfx_d3d11_framebuffer_free(framebuffer);
 			return 1;
 		}
 		break;
-	case GFX_TARGET_SURFACE: {
-		if (d3d_target->swapchain == NULL) {
+	}
+	case GFX_TARGET_SWAPCHAIN: {
+		gfx_d3d11_swapchain_t *d3d_swapchain = framebuffer->target->driver_data;
+		if (d3d_swapchain->swapchain == NULL) {
 			gfx_d3d11_framebuffer_free(framebuffer);
 			return 1;
 		}
 		ID3D11Texture2D *buffer = NULL;
-		if (gfx_d3d11_get_surface_buffer(d3d_target, &buffer) ||
+		if (gfx_d3d11_get_surface_buffer(d3d_swapchain, &buffer) ||
 		    gfx_d3d11_create_render_target_view(d3d11, d3d_framebuffer, buffer)) {
 			if (buffer != NULL) {
 				d3d11_release(buffer);
@@ -746,9 +791,9 @@ static int gfx_d3d11_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_
 
 	gfx_d3d11_t *d3d11			 = frame->gfx->data;
 	d3d11->target				 = framebuffer->target;
-	gfx_d3d11_target_t *d3d_target		 = d3d11->target->driver_data;
+	void *d3d_target			 = d3d11->target->driver_data;
 	gfx_d3d11_framebuffer_t *d3d_framebuffer = framebuffer->data;
-	if ((d3d11->target->type != GFX_TARGET_SURFACE && d3d11->target->type != GFX_TARGET_MEMORY) || d3d_target == NULL ||
+	if ((d3d11->target->type != GFX_TARGET_SWAPCHAIN && d3d11->target->type != GFX_TARGET_MEMORY) || d3d_target == NULL ||
 	    d3d_framebuffer == NULL || d3d_framebuffer->render_target == NULL || d3d11->target->width == 0 || d3d11->target->height == 0) {
 		return 1;
 	}
@@ -1180,11 +1225,13 @@ static gfx_driver_t gfx_d3d11 = {
 	.native			= gfx_d3d11_native,
 	.render_pass_init	= gfx_d3d11_render_pass_init,
 	.render_pass_free	= gfx_d3d11_render_pass_free,
+	.swapchain_init		= gfx_d3d11_swapchain_init,
+	.swapchain_free		= gfx_d3d11_swapchain_free,
+	.swapchain_resize	= gfx_d3d11_swapchain_resize,
+	.swapchain_present	= gfx_d3d11_swapchain_present,
 	.target_init		= gfx_d3d11_target_init,
 	.target_free		= gfx_d3d11_target_free,
-	.target_resize		= gfx_d3d11_target_resize,
 	.target_read		= gfx_d3d11_target_read,
-	.target_present		= gfx_d3d11_target_present,
 	.framebuffer_init	= gfx_d3d11_framebuffer_init,
 	.framebuffer_free	= gfx_d3d11_framebuffer_free,
 	.framebuffer_pass_begin = gfx_d3d11_framebuffer_pass_begin,

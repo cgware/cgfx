@@ -58,20 +58,18 @@ TEST(gfx_render_pass_init_rejects_invalid_args)
 	EXPECT_NULL(gfx_render_pass_init(&render_pass, &(gfx_t){0}, &config));
 	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, NULL));
 	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, &(gfx_render_pass_config_t){.color_format = GFX_FORMAT_NONE}));
-	EXPECT_NULL(gfx_render_pass_init(&render_pass,
-					 &gfx,
-					 &(gfx_render_pass_config_t){
-						 .color_format = GFX_FORMAT_RGBA8,
-						 .load	       = (gfx_load_op_t)99,
-						 .store	       = GFX_STORE_STORE,
-					 }));
-	EXPECT_NULL(gfx_render_pass_init(&render_pass,
-					 &gfx,
-					 &(gfx_render_pass_config_t){
-						 .color_format = GFX_FORMAT_RGBA8,
-						 .load	       = GFX_LOAD_CLEAR,
-						 .store	       = (gfx_store_op_t)99,
-					 }));
+	gfx_render_pass_config_t render_pass_config_load = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = (gfx_load_op_t)99,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config_load));
+	gfx_render_pass_config_t render_pass_config_store = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = (gfx_store_op_t)99,
+	};
+	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config_store));
 
 	END;
 }
@@ -84,13 +82,12 @@ TEST(gfx_render_pass_init_rejects_active_frame)
 	gfx_t gfx		      = {.drv = &t_gfx_render_pass_driver, .frame = &frame};
 	gfx_render_pass_t render_pass = {0};
 
-	EXPECT_NULL(gfx_render_pass_init(&render_pass,
-					 &gfx,
-					 &(gfx_render_pass_config_t){
-						 .color_format = GFX_FORMAT_RGBA8,
-						 .load	       = GFX_LOAD_CLEAR,
-						 .store	       = GFX_STORE_STORE,
-					 }));
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config));
 
 	END;
 }
@@ -131,13 +128,12 @@ TEST(gfx_render_pass_init_driver_failure_clears_render_pass)
 	gfx_t gfx		      = {.drv = &t_gfx_render_pass_driver};
 	gfx_render_pass_t render_pass = {0};
 
-	EXPECT_NULL(gfx_render_pass_init(&render_pass,
-					 &gfx,
-					 &(gfx_render_pass_config_t){
-						 .color_format = GFX_FORMAT_RGBA8,
-						 .load	       = GFX_LOAD_CLEAR,
-						 .store	       = GFX_STORE_STORE,
-					 }));
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_NULL(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config));
 	EXPECT_EQ(t_gfx_render_pass_init_calls, 1);
 	EXPECT_EQ(t_gfx_render_pass_free_calls, 1);
 	EXPECT_NULL(render_pass.gfx);

@@ -389,41 +389,35 @@ TEST(gfx_frame_requires_bound_pipeline_and_buffer)
 	gfx_t gfx     = {0};
 	EXPECT_PTR(gfx_init(&gfx, &t_driver, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target = {0};
-	EXPECT_PTR(gfx_target_init_memory(&target,
-					  &gfx,
-					  &(gfx_memory_target_config_t){
-						  .format = GFX_FORMAT_RGBA8,
-						  .data	  = pixels,
-						  .width  = 2,
-						  .height = 2,
-						  .stride = 8,
-					  }),
-		   &target);
+	gfx_target_t target				= {0};
+	gfx_memory_target_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 2,
+		.stride = 8,
+	};
+	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
 	EXPECT_EQ(t_target_init_calls, 1);
 
-	gfx_render_pass_t render_pass = {0};
-	EXPECT_PTR(gfx_render_pass_init(&render_pass,
-					&gfx,
-					&(gfx_render_pass_config_t){
-						.color_format = GFX_FORMAT_RGBA8,
-						.load	      = GFX_LOAD_CLEAR,
-						.store	      = GFX_STORE_STORE,
-					}),
-		   &render_pass);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
 	EXPECT_EQ(t_render_pass_init_calls, 1);
 
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
 	EXPECT_EQ(t_framebuffer_init_calls, 1);
 
-	gfx_frame_t frame = {0};
-	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
-					     &frame,
-					     &(gfx_pass_config_t){
-						     .clear = {0.0f, 0.0f, 0.0f, 1.0f},
-					     }),
-		  0);
+	gfx_frame_t frame	      = {0};
+	gfx_pass_config_t pass_config = {
+		.clear = {0.0f, 0.0f, 0.0f, 1.0f},
+	};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config), 0);
 	EXPECT_EQ(t_framebuffer_pass_begin_calls, 1);
 	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
 

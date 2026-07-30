@@ -9,12 +9,16 @@ typedef struct gfx_software_buffer_s {
 
 typedef struct gfx_software_s {
 	gfx_target_t target;
-	gfx_surface_t *surface;
+	gfx_swapchain_t *swapchain;
 	u16 viewport_x;
 	u16 viewport_y;
 	u16 viewport_width;
 	u16 viewport_height;
 } gfx_software_t;
+
+typedef struct gfx_software_surface_target_s {
+	gfx_surface_memory_t memory;
+} gfx_software_surface_target_t;
 
 static u8 color_u8(float value)
 {
@@ -38,14 +42,15 @@ static int memory_target_valid(const gfx_target_t *target)
 
 static int surface_target_valid(const gfx_target_t *target)
 {
-	return target != NULL && target->type == GFX_TARGET_SURFACE && target->format == GFX_FORMAT_RGBA8 && target->surface != NULL &&
-	       target->surface->api == GFX_API_SOFTWARE && target->surface->ops != NULL && target->surface->ops->present != NULL &&
-	       target->surface->ops->memory != NULL && target->width != 0 && target->height != 0;
+	return target != NULL && target->type == GFX_TARGET_SWAPCHAIN && target->format == GFX_FORMAT_RGBA8 && target->swapchain != NULL &&
+	       target->swapchain->surface != NULL && target->swapchain->surface->api == GFX_API_SOFTWARE &&
+	       target->swapchain->surface->ops != NULL && target->swapchain->surface->ops->memory != NULL && target->width != 0 &&
+	       target->height != 0;
 }
 
 static int target_valid(const gfx_target_t *target)
 {
-	return target != NULL && (target->type == GFX_TARGET_MEMORY || target->type == GFX_TARGET_SURFACE) && memory_target_valid(target);
+	return target != NULL && (target->type == GFX_TARGET_MEMORY || target->type == GFX_TARGET_SWAPCHAIN) && memory_target_valid(target);
 }
 
 static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
@@ -80,29 +85,38 @@ static int gfx_software_target_set(gfx_t *gfx, const gfx_target_t *target)
 	gfx_software_t *render = gfx->data;
 	switch (target->type) {
 	case GFX_TARGET_NONE: {
-		render->target	= (gfx_target_t){0};
-		render->surface = NULL;
+		render->target	  = (gfx_target_t){0};
+		render->swapchain = NULL;
 		return 0;
 	}
-	case GFX_TARGET_SURFACE: {
+	case GFX_TARGET_SWAPCHAIN: {
 		if (!surface_target_valid(target) || target->driver_data == NULL) {
 			return 1;
 		}
 
-		gfx_target_t *surface_target = target->driver_data;
-		if (!target_valid(surface_target)) {
+		gfx_software_surface_target_t *surface_target = target->driver_data;
+
+		render->target = (gfx_target_t){
+			.gfx	= target->gfx,
+			.type	= GFX_TARGET_MEMORY,
+			.format = surface_target->memory.format,
+			.data	= surface_target->memory.data,
+			.width	= surface_target->memory.width,
+			.height = surface_target->memory.height,
+			.stride = surface_target->memory.stride,
+		};
+		if (!target_valid(&render->target)) {
 			return 1;
 		}
-		render->target	= *surface_target;
-		render->surface = target->surface;
+		render->swapchain = target->swapchain;
 		break;
 	}
 	case GFX_TARGET_MEMORY: {
 		if (!target_valid(target)) {
 			return 1;
 		}
-		render->target	= *target;
-		render->surface = NULL;
+		render->target	  = *target;
+		render->swapchain = NULL;
 		break;
 	}
 	default: {
@@ -129,29 +143,31 @@ static int gfx_software_target_init(gfx_target_t *target)
 		return 1;
 	}
 
-	gfx_target_t *surface_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_target_t));
+	gfx_software_surface_target_t *surface_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_software_surface_target_t));
 	if (surface_target == NULL) {
 		return 1;
 	}
-	*surface_target		    = *target;
 	gfx_surface_memory_t memory = {
-		.format = surface_target->format,
-		.data	= surface_target->data,
-		.width	= surface_target->width,
-		.height = surface_target->height,
-		.stride = surface_target->stride,
+		.format = target->format,
+		.data	= target->data,
+		.width	= target->width,
+		.height = target->height,
+		.stride = target->stride,
 	};
-	if (target->surface->ops->memory(target->surface, &memory)) {
-		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_target_t));
+	if (target->swapchain->surface->ops->memory(target->swapchain->surface, &memory)) {
+		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
 		return 1;
 	}
-	surface_target->format = memory.format;
-	surface_target->data   = memory.data;
-	surface_target->width  = memory.width;
-	surface_target->height = memory.height;
-	surface_target->stride = memory.stride;
-	if (!target_valid(surface_target)) {
-		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_target_t));
+	surface_target->memory = memory;
+	if (!target_valid(&(gfx_target_t){
+		    .type   = GFX_TARGET_MEMORY,
+		    .format = memory.format,
+		    .data   = memory.data,
+		    .width  = memory.width,
+		    .height = memory.height,
+		    .stride = memory.stride,
+	    })) {
+		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
 		return 1;
 	}
 	target->driver_data = surface_target;
@@ -166,41 +182,51 @@ static void gfx_software_target_free(gfx_target_t *target)
 
 	gfx_software_t *render = target->gfx->data;
 	if (target->driver_data != NULL) {
-		alloc_free(&target->gfx->alloc, target->driver_data, sizeof(gfx_target_t));
+		alloc_free(&target->gfx->alloc, target->driver_data, sizeof(gfx_software_surface_target_t));
 		target->driver_data = NULL;
 	}
-	if (render->target.surface == target->surface || render->target.data == target->data) {
-		render->target	= (gfx_target_t){0};
-		render->surface = NULL;
+	if (render->target.swapchain == target->swapchain || render->target.data == target->data) {
+		render->target	  = (gfx_target_t){0};
+		render->swapchain = NULL;
 	}
 }
 
-static int gfx_software_target_resize(gfx_target_t *target, u16 width, u16 height)
+static int gfx_software_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
 {
-	if (!surface_target_valid(target) || target->driver_data == NULL) {
+	(void)config;
+
+	if (swapchain == NULL || swapchain->surface == NULL || swapchain->surface->api != GFX_API_SOFTWARE ||
+	    swapchain->surface->ops == NULL || swapchain->surface->ops->memory == NULL || swapchain->width == 0 || swapchain->height == 0) {
+		return 1;
+	}
+	return 0;
+}
+
+static void gfx_software_swapchain_free(gfx_swapchain_t *swapchain)
+{
+	(void)swapchain;
+}
+
+static int gfx_software_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
+{
+	if (swapchain == NULL || swapchain->surface == NULL || swapchain->surface->ops == NULL || swapchain->surface->ops->memory == NULL ||
+	    width == 0 || height == 0) {
 		return 1;
 	}
 
-	gfx_target_t *surface_target = target->driver_data;
-	*surface_target		     = *target;
-	surface_target->width	     = width;
-	surface_target->height	     = height;
-	gfx_surface_memory_t memory  = {
-		 .format = surface_target->format,
-		 .data	 = surface_target->data,
-		 .width	 = surface_target->width,
-		 .height = surface_target->height,
-		 .stride = surface_target->stride,
-	 };
-	if (target->surface->ops->memory(target->surface, &memory)) {
+	swapchain->width  = width;
+	swapchain->height = height;
+	return 0;
+}
+
+static int gfx_software_swapchain_present(gfx_swapchain_t *swapchain)
+{
+	if (swapchain == NULL || swapchain->surface == NULL || swapchain->surface->ops == NULL ||
+	    swapchain->surface->ops->present == NULL) {
 		return 1;
 	}
-	surface_target->format = memory.format;
-	surface_target->data   = memory.data;
-	surface_target->width  = memory.width;
-	surface_target->height = memory.height;
-	surface_target->stride = memory.stride;
-	return !target_valid(surface_target);
+
+	return swapchain->surface->ops->present(swapchain->surface);
 }
 
 static void gfx_software_clear(gfx_software_t *render, gfx_color_t color)
@@ -240,15 +266,6 @@ static int gfx_software_target_read(gfx_target_t *target, const gfx_memory_readb
 		mem_copy(dst, config->stride, src, (size_t)render->target.width * 4);
 	}
 	return 0;
-}
-
-static int gfx_software_target_present(gfx_target_t *target)
-{
-	if (!surface_target_valid(target)) {
-		return 1;
-	}
-
-	return target->surface->ops->present(target->surface);
 }
 
 static int gfx_software_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
@@ -475,11 +492,13 @@ static gfx_driver_t gfx_software = {
 	.api			= GFX_API_SOFTWARE,
 	.init			= gfx_software_init,
 	.free			= gfx_software_free,
+	.swapchain_init		= gfx_software_swapchain_init,
+	.swapchain_free		= gfx_software_swapchain_free,
+	.swapchain_resize	= gfx_software_swapchain_resize,
+	.swapchain_present	= gfx_software_swapchain_present,
 	.target_init		= gfx_software_target_init,
 	.target_free		= gfx_software_target_free,
-	.target_resize		= gfx_software_target_resize,
 	.target_read		= gfx_software_target_read,
-	.target_present		= gfx_software_target_present,
 	.framebuffer_pass_begin = gfx_software_framebuffer_pass_begin,
 	.buffer_init		= gfx_software_buffer_init,
 	.buffer_free		= gfx_software_buffer_free,

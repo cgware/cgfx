@@ -4,6 +4,7 @@
 #include "driver.h"
 #include "gfx_framebuffer.h"
 #include "gfx_pipeline.h"
+#include "gfx_swapchain.h"
 #include "gfx_target.h"
 
 typedef struct gfx_driver_s {
@@ -18,11 +19,13 @@ typedef struct gfx_driver_s {
 	int (*framebuffer_init)(gfx_framebuffer_t *framebuffer);
 	void (*framebuffer_free)(gfx_framebuffer_t *framebuffer);
 	int (*framebuffer_pass_begin)(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame);
+	int (*swapchain_init)(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config);
+	void (*swapchain_free)(gfx_swapchain_t *swapchain);
+	int (*swapchain_resize)(gfx_swapchain_t *swapchain, u16 width, u16 height);
+	int (*swapchain_present)(gfx_swapchain_t *swapchain);
 	int (*target_init)(gfx_target_t *target);
 	void (*target_free)(gfx_target_t *target);
-	int (*target_resize)(gfx_target_t *target, u16 width, u16 height);
 	int (*target_read)(gfx_target_t *target, const gfx_memory_readback_config_t *config);
-	int (*target_present)(gfx_target_t *target);
 	int (*buffer_init)(gfx_buffer_t *buffer, const gfx_buffer_config_t *config);
 	void (*buffer_free)(gfx_buffer_t *buffer);
 	int (*buffer_set_data)(gfx_buffer_t *buffer, const void *data, size_t size);

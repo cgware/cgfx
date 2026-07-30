@@ -4,16 +4,17 @@
 
 STEST(gfx);
 STEST(gfx_buffer);
-STEST(gfx_shader);
-STEST(gfx_shader_compiler);
+STEST(gfx_framebuffer);
 STEST(gfx_pipeline);
 STEST(gfx_render_pass);
-STEST(gfx_framebuffer);
+STEST(gfx_shader);
+STEST(gfx_shader_compiler);
+STEST(gfx_swapchain);
 STEST(gfx_target);
-STEST(gfx_d3d11);
 STEST(gfx_none);
-STEST(gfx_opengl);
 STEST(gfx_software);
+STEST(gfx_opengl);
+STEST(gfx_d3d11);
 STEST(gfx_vulkan);
 
 TEST(cgfx)
@@ -21,16 +22,17 @@ TEST(cgfx)
 	SSTART;
 	RUN(gfx);
 	RUN(gfx_buffer);
-	RUN(gfx_shader);
-	RUN(gfx_shader_compiler);
+	RUN(gfx_framebuffer);
 	RUN(gfx_pipeline);
 	RUN(gfx_render_pass);
-	RUN(gfx_framebuffer);
+	RUN(gfx_shader);
+	RUN(gfx_shader_compiler);
+	RUN(gfx_swapchain);
 	RUN(gfx_target);
-	RUN(gfx_d3d11);
 	RUN(gfx_none);
-	RUN(gfx_opengl);
 	RUN(gfx_software);
+	RUN(gfx_d3d11);
+	RUN(gfx_opengl);
 	RUN(gfx_vulkan);
 	SEND;
 }
