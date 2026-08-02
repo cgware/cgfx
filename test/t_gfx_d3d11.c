@@ -1761,7 +1761,8 @@ TEST(gfx_d3d11_framebuffer_init_missing_render_target_callback_direct)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_device_vtbl.CreateRenderTargetView = NULL;
-	gfx_render_pass_t render_pass	     = {
+
+	gfx_render_pass_t render_pass = {
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
@@ -2217,7 +2218,8 @@ TEST(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback)
 	};
 	t_gfx_d3d11_memory_target_data_t driver_target	  = {.texture = &t_texture};
 	t_gfx_d3d11_framebuffer_data_t driver_framebuffer = {.render_target = &t_view};
-	gfx_target_t target				  = {
+
+	gfx_target_t target = {
 		.gfx	     = &gfx,
 		.type	     = GFX_TARGET_MEMORY,
 		.driver_data = &driver_target,
@@ -2489,7 +2491,8 @@ static gfx_pipeline_config_t t_gfx_d3d11_direct_pipeline_config(gfx_shader_t *vs
 {
 	t_gfx_d3d11_shader_data_t *vs_data = vs->data;
 	t_gfx_d3d11_shader_data_t *fs_data = fs->data;
-	*vs_data			   = (t_gfx_d3d11_shader_data_t){
+
+	*vs_data = (t_gfx_d3d11_shader_data_t){
 		.code	       = &t_vertex_blob,
 		.stage	       = GFX_SHADER_STAGE_VERTEX,
 		.shader.vertex = &t_vertex_shader,
@@ -2529,7 +2532,8 @@ TEST(gfx_d3d11_pipeline_init_missing_shader_callback_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
-	gfx_pipeline_t pipeline		  = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 
@@ -2553,7 +2557,8 @@ TEST(gfx_d3d11_pipeline_init_alloc_failure_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
-	gfx_pipeline_t pipeline		  = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 	gfx.alloc = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
@@ -2578,7 +2583,8 @@ TEST(gfx_d3d11_pipeline_init_element_alloc_failure_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
-	gfx_pipeline_t pipeline		  = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 	t_gfx_d3d11_alloc_count	  = 0;
@@ -2604,13 +2610,15 @@ TEST(gfx_d3d11_pipeline_init_missing_layout_semantic_direct)
 	t_gfx_d3d11_shader_data_t fs_data = {0};
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
-	const gfx_layout_t layout[]	  = {
+
+	const gfx_layout_t layout[] = {
 		{.index = 0, .semantic = NULL, .count = 2, .type = GFX_VALUE_FLOAT32},
 	};
 	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	config.input_layout	     = layout;
 	config.input_layout_size     = sizeof(layout);
-	gfx_pipeline_t pipeline	     = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 
@@ -2632,13 +2640,15 @@ TEST(gfx_d3d11_pipeline_init_unsupported_input_layout_direct)
 	t_gfx_d3d11_shader_data_t fs_data = {0};
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
-	const gfx_layout_t layout[]	  = {
+
+	const gfx_layout_t layout[] = {
 		{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
 	};
 	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	config.input_layout	     = layout;
 	config.input_layout_size     = sizeof(layout);
-	gfx_pipeline_t pipeline	     = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 
@@ -2664,7 +2674,8 @@ TEST(gfx_d3d11_pipeline_init_create_input_layout_failure_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
-	gfx_pipeline_t pipeline		  = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx = &gfx,
 	};
 
@@ -3530,7 +3541,8 @@ TEST(gfx_d3d11_buffer_bind_binds_index_buffer)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
-	gfx_pipeline_t pipeline			= {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
 	};
@@ -3563,7 +3575,8 @@ TEST(gfx_d3d11_buffer_bind_missing_index_buffer_callback)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
-	gfx_pipeline_t pipeline			= {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
 	};
@@ -3596,7 +3609,8 @@ TEST(gfx_d3d11_buffer_bind_rejects_unknown_type)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
-	gfx_pipeline_t pipeline			= {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
 	};
@@ -3632,7 +3646,8 @@ TEST(gfx_d3d11_buffer_bind_rejects_zero_stride)
 		.stride	      = 0,
 	};
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
-	gfx_pipeline_t pipeline			= {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};
@@ -3666,7 +3681,8 @@ TEST(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback)
 		.stride	      = sizeof(t_d3d11_vertex_2d_t),
 	};
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
-	gfx_pipeline_t pipeline			= {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};

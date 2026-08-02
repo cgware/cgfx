@@ -1935,21 +1935,32 @@ static int gfx_vulkan_target_read(gfx_target_t *target, const gfx_memory_readbac
 	return gfx_vulkan_copy_memory(vulkan, config);
 }
 
-static int gfx_vulkan_surface_target_refresh(gfx_target_t *target)
+static int gfx_vulkan_swapchain_recreate(gfx_swapchain_t *swapchain)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || target->driver_data == NULL) {
+	if (gfx_vulkan_swapchain_init(swapchain, &(gfx_swapchain_config_t){0})) {
+		return 1;
+	}
+	swapchain->generation++;
+	return 0;
+}
+
+static int gfx_vulkan_swapchain_refresh(gfx_swapchain_t *swapchain)
+{
+	if (swapchain == NULL || swapchain->gfx == NULL || swapchain->gfx->data == NULL || swapchain->data == NULL ||
+	    swapchain->surface == NULL) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
-	gfx_vulkan_t *vulkan	      = target->gfx->data;
-	VkSurfaceKHR surface	      = (VkSurfaceKHR)target->swapchain->surface->handle;
+	gfx_vulkan_t *vulkan	      = swapchain->gfx->data;
+	VkSurfaceKHR surface	      = (VkSurfaceKHR)swapchain->surface->handle;
 	VkSurfaceCapabilitiesKHR caps = {0};
 	if (!vk_ok(vulkan->GetPhysicalDeviceSurfaceCapabilitiesKHR(vulkan->physical_device, surface, &caps))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to query Vulkan surface capabilities");
 		return 1;
 	}
 
-	if (caps.currentExtent.width == ~0u || (caps.currentExtent.width == target->width && caps.currentExtent.height == target->height)) {
+	if (caps.currentExtent.width == ~0u ||
+	    (caps.currentExtent.width == swapchain->width && caps.currentExtent.height == swapchain->height)) {
 		return 0;
 	}
 	if (caps.currentExtent.width == 0 || caps.currentExtent.height == 0 || caps.currentExtent.width > 0xffffu ||
@@ -1957,7 +1968,7 @@ static int gfx_vulkan_surface_target_refresh(gfx_target_t *target)
 		return 1;
 	}
 
-	return 1;
+	return gfx_vulkan_swapchain_recreate(swapchain);
 }
 
 static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
@@ -1978,7 +1989,8 @@ static int gfx_vulkan_acquire_swapchain(gfx_vulkan_t *vulkan)
 		VkResult result = vulkan->AcquireNextImageKHR(
 			vulkan->device, swapchain->swapchain, ~0ull, 0, vulkan->fence, &swapchain->swapchain_image_index);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-			if (gfx_vulkan_surface_target_refresh(vulkan->target)) {
+			if (vulkan->target == NULL || vulkan->target->type != GFX_TARGET_SWAPCHAIN ||
+			    gfx_vulkan_swapchain_recreate(vulkan->target->swapchain)) {
 				return 1;
 			}
 			continue;
@@ -2021,7 +2033,7 @@ static int gfx_vulkan_swapchain_present(gfx_swapchain_t *swapchain)
 	VkResult result			 = vulkan->QueuePresentKHR(vulkan->queue, &present);
 	vk_swapchain->swapchain_acquired = 0;
 	if (vk_swapchain_needs_recreate(result)) {
-		return gfx_vulkan_swapchain_init(swapchain, &(gfx_swapchain_config_t){0});
+		return gfx_vulkan_swapchain_recreate(swapchain);
 	}
 	if (!vk_ok(result)) {
 		return 1;
@@ -2060,7 +2072,8 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, const gfx_framebu
 	}
 
 	gfx_vulkan_render_pass_t *vk_render_pass = framebuffer->render_pass->data;
-	VkFramebufferCreateInfo create		 = {
+
+	VkFramebufferCreateInfo create = {
 		.sType		 = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 		.renderPass	 = vk_render_pass->render_pass,
 		.attachmentCount = 1,
@@ -2166,7 +2179,7 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 	}
 	case GFX_TARGET_SWAPCHAIN: {
 		gfx_vulkan_swapchain_t *swapchain = vulkan->target->driver_data;
-		if (gfx_vulkan_surface_target_refresh(vulkan->target) || gfx_vulkan_acquire_swapchain(vulkan)) {
+		if (gfx_vulkan_acquire_swapchain(vulkan)) {
 			return 1;
 		}
 		u32 i = swapchain->swapchain_image_index;
@@ -2214,7 +2227,8 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan, const gfx_re
 	}
 
 	gfx_vulkan_render_pass_t *vk_render_pass = render_pass->data;
-	VkImageSubresourceRange range		 = {
+
+	VkImageSubresourceRange range = {
 		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
 		.levelCount = 1,
 		.layerCount = 1,
@@ -2870,6 +2884,7 @@ static gfx_driver_t gfx_vulkan = {
 	.swapchain_init		= gfx_vulkan_swapchain_init,
 	.swapchain_free		= gfx_vulkan_swapchain_free,
 	.swapchain_resize	= gfx_vulkan_swapchain_resize,
+	.swapchain_refresh	= gfx_vulkan_swapchain_refresh,
 	.swapchain_present	= gfx_vulkan_swapchain_present,
 	.target_init		= gfx_vulkan_target_init,
 	.target_free		= gfx_vulkan_target_free,

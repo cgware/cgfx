@@ -26,6 +26,7 @@ gfx_swapchain_t *gfx_swapchain_init(gfx_swapchain_t *swapchain, gfx_t *gfx, cons
 		*swapchain = (gfx_swapchain_t){0};
 		return NULL;
 	}
+	swapchain->generation = 1;
 	return swapchain;
 }
 
@@ -47,16 +48,19 @@ int gfx_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
 		return 1;
 	}
 
-	u16 old_width	  = swapchain->width;
-	u16 old_height	  = swapchain->height;
-	swapchain->width  = width;
-	swapchain->height = height;
+	u16 old_width		= swapchain->width;
+	u16 old_height		= swapchain->height;
+	gfx_format_t old_format = swapchain->format;
+	swapchain->width	= width;
+	swapchain->height	= height;
 	if (swapchain->gfx->drv != NULL && swapchain->gfx->drv->swapchain_resize != NULL &&
 	    swapchain->gfx->drv->swapchain_resize(swapchain, width, height)) {
 		swapchain->width  = old_width;
 		swapchain->height = old_height;
+		swapchain->format = old_format;
 		return 1;
 	}
+	swapchain->generation++;
 	return 0;
 }
 

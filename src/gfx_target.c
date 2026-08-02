@@ -42,12 +42,13 @@ gfx_target_t *gfx_target_init_swapchain(gfx_target_t *target, gfx_swapchain_t *s
 	}
 
 	*target = (gfx_target_t){
-		.gfx	   = swapchain->gfx,
-		.type	   = GFX_TARGET_SWAPCHAIN,
-		.format	   = swapchain->format,
-		.swapchain = swapchain,
-		.width	   = swapchain->width,
-		.height	   = swapchain->height,
+		.gfx		      = swapchain->gfx,
+		.type		      = GFX_TARGET_SWAPCHAIN,
+		.format		      = swapchain->format,
+		.swapchain	      = swapchain,
+		.width		      = swapchain->width,
+		.height		      = swapchain->height,
+		.swapchain_generation = swapchain->generation,
 	};
 	if (swapchain->gfx->drv->target_init != NULL && swapchain->gfx->drv->target_init(target)) {
 		if (swapchain->gfx->drv->target_free != NULL) {

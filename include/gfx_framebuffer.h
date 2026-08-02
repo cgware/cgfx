@@ -11,6 +11,7 @@ typedef struct gfx_framebuffer_s {
 	void *data;
 	u16 width;
 	u16 height;
+	u32 target_generation;
 } gfx_framebuffer_t;
 
 gfx_framebuffer_t *gfx_framebuffer_init(gfx_framebuffer_t *framebuffer, gfx_target_t *target, const gfx_render_pass_t *render_pass);

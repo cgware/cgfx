@@ -113,7 +113,8 @@ TEST(gfx_buffer_init_null_driver_callback)
 
 	gfx_driver_t drv = t_gfx_buffer_driver;
 	drv.buffer_init	 = NULL;
-	gfx_t gfx	 = {
+
+	gfx_t gfx = {
 		.drv = &drv,
 	};
 	gfx_buffer_t buffer = {0};
@@ -149,7 +150,8 @@ TEST(gfx_buffer_init_returns_driver_failure)
 
 	t_gfx_buffer_reset();
 	t_gfx_buffer_init_ret = 1;
-	gfx_t gfx	      = {
+
+	gfx_t gfx = {
 		.drv = &t_gfx_buffer_driver,
 	};
 	gfx_buffer_t buffer = {0};
@@ -265,7 +267,8 @@ TEST(gfx_buffer_set_data_returns_driver_result)
 
 	t_gfx_buffer_reset();
 	t_gfx_buffer_set_data_ret = 1;
-	gfx_t gfx		  = {
+
+	gfx_t gfx = {
 		.drv = &t_gfx_buffer_driver,
 	};
 	int data	    = 1;

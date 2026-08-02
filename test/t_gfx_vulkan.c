@@ -3423,6 +3423,55 @@ TEST(gfx_vulkan_swapchain_present_flow)
 	END;
 }
 
+TEST(gfx_vulkan_swapchain_present_out_of_date_refreshes_framebuffer)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {0};
+	gfx_target_t target	  = {0};
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain_target(&gfx, &swapchain, &target, 640, 480), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	t_vk_queue_present_ret	 = VK_ERROR_OUT_OF_DATE_KHR;
+	t_vk_swapchain_images[0] = 20;
+	t_vk_swapchain_images[1] = 21;
+	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
+	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 0);
+	EXPECT_EQ(t_vk_create_framebuffer_calls, 2);
+
+	t_vk_queue_present_ret = VK_SUCCESS;
+	frame		       = (gfx_frame_t){0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 2);
+	EXPECT_EQ(t_vk_create_framebuffer_calls, 4);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
+	EXPECT_EQ(t_vk_acquire_next_image_calls, 2);
+	EXPECT_EQ(t_vk_queue_present_calls, 2);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_surface_pass_begin_refresh_capabilities_failure)
 {
 	START;
@@ -3491,7 +3540,7 @@ TEST(gfx_vulkan_surface_pass_begin_refresh_invalid_extent)
 	END;
 }
 
-TEST(gfx_vulkan_surface_pass_begin_refresh_changed_extent)
+TEST(gfx_vulkan_surface_pass_begin_refresh_changed_extent_recreates_framebuffer)
 {
 	START;
 
@@ -3513,7 +3562,17 @@ TEST(gfx_vulkan_surface_pass_begin_refresh_changed_extent)
 	t_vk_surface_capabilities.currentExtent = (VkExtent2D){.width = 320, .height = 240};
 	gfx_frame_t frame			= {0};
 
-	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(target.width, 320);
+	EXPECT_EQ(target.height, 240);
+	EXPECT_EQ(swapchain.width, 320);
+	EXPECT_EQ(swapchain.height, 240);
+	EXPECT_EQ(framebuffer.width, 320);
+	EXPECT_EQ(framebuffer.height, 240);
+	EXPECT_EQ(t_vk_destroy_framebuffer_calls, 2);
+	EXPECT_EQ(t_vk_create_framebuffer_calls, 4);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
 
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
@@ -5101,7 +5160,8 @@ TEST(gfx_vulkan_framebuffer_init_memory_requires_image)
 	t_gfx_vulkan_memory_target_data_t *target_data = target.driver_data;
 	target_data->image			       = 0;
 	gfx_render_pass_t render_pass		       = {0};
-	gfx_render_pass_config_t render_pass_config    = {
+
+	gfx_render_pass_config_t render_pass_config = {
 		.color_format = target.format,
 		.load	      = GFX_LOAD_CLEAR,
 		.store	      = GFX_STORE_STORE,
@@ -5643,7 +5703,8 @@ TEST(gfx_vulkan_pipeline_init_unsupported_layout_direct)
 	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
 	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
 	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
-	const gfx_layout_t layout[]		  = {
+
+	const gfx_layout_t layout[] = {
 		{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
 	};
 	gfx_pipeline_t pipeline = {.gfx = &gfx};
@@ -5786,9 +5847,10 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_memory_target_render_flow);
 	RUN(gfx_vulkan_memory_target_draw_indexed_flow);
 	RUN(gfx_vulkan_swapchain_present_flow);
+	RUN(gfx_vulkan_swapchain_present_out_of_date_refreshes_framebuffer);
 	RUN(gfx_vulkan_surface_pass_begin_refresh_capabilities_failure);
 	RUN(gfx_vulkan_surface_pass_begin_refresh_invalid_extent);
-	RUN(gfx_vulkan_surface_pass_begin_refresh_changed_extent);
+	RUN(gfx_vulkan_surface_pass_begin_refresh_changed_extent_recreates_framebuffer);
 	RUN(gfx_vulkan_surface_pass_begin_reset_fences_failure);
 	RUN(gfx_vulkan_memory_pass_begin_command_failure);
 	RUN(gfx_vulkan_surface_pass_begin_acquire_failure);

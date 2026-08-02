@@ -16,6 +16,7 @@ typedef struct gfx_swapchain_s {
 	gfx_format_t format;
 	u16 width;
 	u16 height;
+	u32 generation;
 	void *data;
 } gfx_swapchain_t;
 

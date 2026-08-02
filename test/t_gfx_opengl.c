@@ -1589,7 +1589,8 @@ TEST(gfx_opengl_shader_free_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	t_gfx_opengl_shader_data_t driver_shader = {.shader = 88};
-	gfx_shader_t shader			 = {
+
+	gfx_shader_t shader = {
 		.gfx  = &gfx,
 		.data = &driver_shader,
 	};
@@ -2043,7 +2044,8 @@ TEST(gfx_opengl_pipeline_free_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
-	gfx_pipeline_t pipeline			     = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};
@@ -2089,7 +2091,8 @@ TEST(gfx_opengl_pipeline_init_alloc_failure_direct)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	unsigned int vs_shader = 1;
 	unsigned int fs_shader = 2;
-	gfx_shader_t vs	       = {
+
+	gfx_shader_t vs = {
 		.data = &vs_shader,
 	};
 	gfx_shader_t fs = {
@@ -2161,7 +2164,8 @@ TEST(gfx_opengl_pipeline_init_unsupported_input_layout_direct)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	unsigned int vs_shader = 1;
 	unsigned int fs_shader = 2;
-	gfx_shader_t vs	       = {
+
+	gfx_shader_t vs = {
 		.data = &vs_shader,
 	};
 	gfx_shader_t fs = {
@@ -2272,7 +2276,8 @@ TEST(gfx_opengl_pipeline_bind_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
-	gfx_pipeline_t pipeline			     = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};
@@ -2351,7 +2356,8 @@ TEST(gfx_opengl_buffer_bind_make_current_failure)
 		.stride		   = sizeof(gfx_vertex_2d_t),
 	};
 	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = T_GL_ARRAY_BUFFER};
-	gfx_pipeline_t pipeline			 = {
+
+	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};

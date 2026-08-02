@@ -22,6 +22,7 @@ typedef struct gfx_driver_s {
 	int (*swapchain_init)(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config);
 	void (*swapchain_free)(gfx_swapchain_t *swapchain);
 	int (*swapchain_resize)(gfx_swapchain_t *swapchain, u16 width, u16 height);
+	int (*swapchain_refresh)(gfx_swapchain_t *swapchain);
 	int (*swapchain_present)(gfx_swapchain_t *swapchain);
 	int (*target_init)(gfx_target_t *target);
 	void (*target_free)(gfx_target_t *target);

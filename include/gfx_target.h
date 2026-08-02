@@ -19,6 +19,7 @@ typedef struct gfx_target_s {
 	gfx_swapchain_t *swapchain;
 	u16 width;
 	u16 height;
+	u32 swapchain_generation;
 	size_t stride;
 } gfx_target_t;
 
