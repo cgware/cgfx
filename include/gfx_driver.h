@@ -36,6 +36,7 @@ typedef struct gfx_driver_s {
 	void (*pipeline_free)(gfx_pipeline_t *pipeline);
 	int (*pipeline_bind)(gfx_frame_t *frame, const gfx_pipeline_t *pipeline);
 	int (*draw)(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex);
+	int (*draw_indexed)(gfx_frame_t *frame, u32 index_count);
 	int (*end)(gfx_frame_t *frame);
 } gfx_driver_t;
 

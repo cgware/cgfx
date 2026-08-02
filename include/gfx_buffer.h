@@ -6,6 +6,7 @@
 typedef enum gfx_buffer_type_s {
 	GFX_BUFFER_UNKNOWN,
 	GFX_BUFFER_VERTEX,
+	GFX_BUFFER_INDEX,
 } gfx_buffer_type_t;
 
 typedef struct gfx_buffer_config_s {
@@ -14,6 +15,7 @@ typedef struct gfx_buffer_config_s {
 
 typedef struct gfx_buffer_s {
 	gfx_t *gfx;
+	gfx_buffer_type_t type;
 	void *data;
 } gfx_buffer_t;
 

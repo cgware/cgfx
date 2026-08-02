@@ -114,8 +114,8 @@ TEST(gfx_buffer_init_null_driver_callback)
 	gfx_driver_t drv = t_gfx_buffer_driver;
 	drv.buffer_init	 = NULL;
 	gfx_t gfx	 = {
-		       .drv = &drv,
-	       };
+		.drv = &drv,
+	};
 	gfx_buffer_t buffer = {0};
 
 	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
@@ -150,8 +150,8 @@ TEST(gfx_buffer_init_returns_driver_failure)
 	t_gfx_buffer_reset();
 	t_gfx_buffer_init_ret = 1;
 	gfx_t gfx	      = {
-			    .drv = &t_gfx_buffer_driver,
-	    };
+		.drv = &t_gfx_buffer_driver,
+	};
 	gfx_buffer_t buffer = {0};
 
 	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
@@ -266,7 +266,7 @@ TEST(gfx_buffer_set_data_returns_driver_result)
 	t_gfx_buffer_reset();
 	t_gfx_buffer_set_data_ret = 1;
 	gfx_t gfx		  = {
-				.drv = &t_gfx_buffer_driver,
+		.drv = &t_gfx_buffer_driver,
 	};
 	int data	    = 1;
 	gfx_buffer_t buffer = {.gfx = &gfx, .data = (void *)0x5678};
@@ -291,6 +291,25 @@ TEST(gfx_buffer_bind_returns_driver_result)
 	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
 	EXPECT_EQ(t_gfx_buffer_bind_calls, 1);
 	EXPECT_NULL(frame.vertex_buffer);
+
+	END;
+}
+
+TEST(gfx_buffer_bind_rejects_unknown_buffer_type_after_driver_bind)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx		= {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_frame_t frame	= {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer	= {.gfx = &gfx, .type = GFX_BUFFER_UNKNOWN, .data = (void *)0x5678};
+	gfx.frame		= &frame;
+
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 1);
+	EXPECT_EQ(t_gfx_buffer_bind_calls, 1);
+	EXPECT_NULL(frame.vertex_buffer);
+	EXPECT_NULL(frame.index_buffer);
 
 	END;
 }
@@ -345,6 +364,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_set_data_calls_driver);
 	RUN(gfx_buffer_set_data_returns_driver_result);
 	RUN(gfx_buffer_bind_rejects_invalid_args);
+	RUN(gfx_buffer_bind_rejects_unknown_buffer_type_after_driver_bind);
 	RUN(gfx_buffer_bind_returns_driver_result);
 
 	SEND;

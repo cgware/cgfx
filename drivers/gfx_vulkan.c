@@ -1,3 +1,4 @@
+#include "gfx_buffer.h"
 #include "gfx_driver.h"
 
 #include "log.h"
@@ -37,6 +38,7 @@ enum {
 	VK_QUEUE_GRAPHICS_BIT					    = 0x00000001,
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT			    = 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT			    = 0x00000004,
+	VK_BUFFER_USAGE_INDEX_BUFFER_BIT			    = 0x0040,
 	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT			    = 0x00000080,
 	VK_IMAGE_USAGE_TRANSFER_DST_BIT				    = 0x00000002,
 	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT			    = 0x00000010,
@@ -648,6 +650,12 @@ typedef struct VkSubresourceLayout_s {
 	VkDeviceSize depthPitch;
 } VkSubresourceLayout;
 
+typedef enum VkIndexType {
+	VK_INDEX_TYPE_UINT16 = 0,
+	VK_INDEX_TYPE_UINT32 = 1,
+	VK_INDEX_TYPE_UINT8  = 1000265000,
+} VkIndexType;
+
 typedef void (*PFN_vkVoidFunction)(void);
 typedef PFN_vkVoidFunction (*PFN_vkGetInstanceProcAddr)(VkInstance, const char *);
 typedef PFN_vkVoidFunction (*PFN_vkGetDeviceProcAddr)(VkDevice, const char *);
@@ -709,9 +717,11 @@ typedef void (*PFN_vkCmdBeginRenderPass)(VkCommandBuffer, const VkRenderPassBegi
 typedef void (*PFN_vkCmdEndRenderPass)(VkCommandBuffer);
 typedef void (*PFN_vkCmdBindPipeline)(VkCommandBuffer, u32, VkPipeline);
 typedef void (*PFN_vkCmdBindVertexBuffers)(VkCommandBuffer, u32, u32, const VkBuffer *, const VkDeviceSize *);
+typedef void (*PFN_vkCmdBindIndexBuffer)(VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType);
 typedef void (*PFN_vkCmdSetViewport)(VkCommandBuffer, u32, u32, const VkViewport *);
 typedef void (*PFN_vkCmdSetScissor)(VkCommandBuffer, u32, u32, const VkRect2D *);
 typedef void (*PFN_vkCmdDraw)(VkCommandBuffer, u32, u32, u32, u32);
+typedef void (*PFN_vkCmdDrawIndexed)(VkCommandBuffer, u32, u32, u32, int32_t, u32);
 typedef VkResult (*PFN_vkQueueSubmit)(VkQueue, u32, const VkSubmitInfo *, VkFence);
 typedef VkResult (*PFN_vkCreateSwapchainKHR)(VkDevice, const VkSwapchainCreateInfoKHR *, const void *, VkSwapchainKHR *);
 typedef void (*PFN_vkDestroySwapchainKHR)(VkDevice, VkSwapchainKHR, const void *);
@@ -807,9 +817,11 @@ typedef struct gfx_vulkan_s {
 	PFN_vkCmdEndRenderPass CmdEndRenderPass;
 	PFN_vkCmdBindPipeline CmdBindPipeline;
 	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
+	PFN_vkCmdBindIndexBuffer CmdBindIndexBuffer;
 	PFN_vkCmdSetViewport CmdSetViewport;
 	PFN_vkCmdSetScissor CmdSetScissor;
 	PFN_vkCmdDraw CmdDraw;
+	PFN_vkCmdDrawIndexed CmdDrawIndexed;
 	PFN_vkQueueSubmit QueueSubmit;
 	PFN_vkCreateSwapchainKHR CreateSwapchainKHR;
 	PFN_vkDestroySwapchainKHR DestroySwapchainKHR;
@@ -851,6 +863,7 @@ typedef struct gfx_vulkan_buffer_s {
 	VkDeviceMemory memory;
 	VkDeviceSize memory_size;
 	int memory_coherent;
+	gfx_buffer_type_t type;
 } gfx_vulkan_buffer_t;
 
 typedef struct gfx_vulkan_shader_s {
@@ -1173,8 +1186,9 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 	    LOAD_VK_DEV(vulkan, DestroyFramebuffer) || LOAD_VK_DEV(vulkan, CreatePipelineLayout) ||
 	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
 	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) || LOAD_VK_DEV(vulkan, CmdEndRenderPass) ||
-	    LOAD_VK_DEV(vulkan, CmdBindPipeline) || LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdSetViewport) ||
-	    LOAD_VK_DEV(vulkan, CmdSetScissor) || LOAD_VK_DEV(vulkan, CmdDraw) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
+	    LOAD_VK_DEV(vulkan, CmdBindPipeline) || LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdBindIndexBuffer) ||
+	    LOAD_VK_DEV(vulkan, CmdSetViewport) || LOAD_VK_DEV(vulkan, CmdSetScissor) || LOAD_VK_DEV(vulkan, CmdDraw) ||
+	    LOAD_VK_DEV(vulkan, CmdDrawIndexed) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
 		return 1;
 	}
 	if (vulkan->swapchain_enabled && (LOAD_VK_DEV(vulkan, CreateSwapchainKHR) || LOAD_VK_DEV(vulkan, DestroySwapchainKHR) ||
@@ -2047,14 +2061,14 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, const gfx_framebu
 
 	gfx_vulkan_render_pass_t *vk_render_pass = framebuffer->render_pass->data;
 	VkFramebufferCreateInfo create		 = {
-			  .sType	   = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-			  .renderPass	   = vk_render_pass->render_pass,
-			  .attachmentCount = 1,
-			  .pAttachments	   = &view,
-			  .width	   = framebuffer->target->width,
-			  .height	   = framebuffer->target->height,
-			  .layers	   = 1,
-	  };
+		.sType		 = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+		.renderPass	 = vk_render_pass->render_pass,
+		.attachmentCount = 1,
+		.pAttachments	 = &view,
+		.width		 = framebuffer->target->width,
+		.height		 = framebuffer->target->height,
+		.layers		 = 1,
+	};
 	return !vk_ok(vulkan->CreateFramebuffer(vulkan->device, &create, NULL, vk_framebuffer));
 }
 
@@ -2201,10 +2215,10 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan, const gfx_re
 
 	gfx_vulkan_render_pass_t *vk_render_pass = render_pass->data;
 	VkImageSubresourceRange range		 = {
-			   .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-			   .levelCount = 1,
-			   .layerCount = 1,
-	   };
+		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+		.levelCount = 1,
+		.layerCount = 1,
+	};
 	VkImageMemoryBarrier to_color = {
 		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.dstAccessMask	     = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -2311,6 +2325,10 @@ static int gfx_vulkan_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 		usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
 		break;
 	}
+	case GFX_BUFFER_INDEX: {
+		usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		break;
+	}
 	default: {
 		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", config->type);
 		return 1;
@@ -2321,7 +2339,9 @@ static int gfx_vulkan_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 	if (vk_buffer == NULL) {
 		return 1;
 	}
-	*vk_buffer   = (gfx_vulkan_buffer_t){0};
+	*vk_buffer = (gfx_vulkan_buffer_t){
+		.type = config->type,
+	};
 	buffer->data = vk_buffer;
 
 	VkBufferCreateInfo create = {
@@ -2407,7 +2427,21 @@ static int gfx_vulkan_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
 
 	VkDeviceSize offset = 0;
-	vulkan->CmdBindVertexBuffers(vulkan->command_buffer, 0, 1, &vk_buffer->buffer, &offset);
+
+	switch (buffer->type) {
+	case GFX_BUFFER_VERTEX: {
+		vulkan->CmdBindVertexBuffers(vulkan->command_buffer, 0, 1, &vk_buffer->buffer, &offset);
+		break;
+	}
+	case GFX_BUFFER_INDEX: {
+		vulkan->CmdBindIndexBuffer(vulkan->command_buffer, vk_buffer->buffer, 0, VK_INDEX_TYPE_UINT32);
+		break;
+	}
+	default: {
+		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", buffer->type);
+		return 1;
+	}
+	}
 
 	return 0;
 }
@@ -2696,6 +2730,41 @@ static int gfx_vulkan_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_verte
 	return 0;
 }
 
+static int gfx_vulkan_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan = frame->gfx->data;
+	if (!vulkan->frame.active) {
+		return 1;
+	}
+
+	VkViewport viewport = {
+		.x	  = frame->pass.viewport.x,
+		.y	  = frame->pass.viewport.y,
+		.width	  = frame->pass.viewport.width,
+		.height	  = frame->pass.viewport.height,
+		.minDepth = 0.0f,
+		.maxDepth = 1.0f,
+	};
+	VkRect2D scissor = {
+		.offset = {.x = frame->pass.viewport.x, .y = frame->pass.viewport.y},
+		.extent =
+			{
+				.width	= frame->pass.viewport.width,
+				.height = frame->pass.viewport.height,
+			},
+	};
+
+	vulkan->CmdSetViewport(vulkan->command_buffer, 0, 1, &viewport);
+	vulkan->CmdSetScissor(vulkan->command_buffer, 0, 1, &scissor);
+	vulkan->CmdDrawIndexed(vulkan->command_buffer, index_count, 1, 0, 0, 0);
+
+	return 0;
+}
+
 static int gfx_vulkan_frame_end_render_pass(gfx_vulkan_t *vulkan)
 {
 	if (!vulkan->frame.active) {
@@ -2818,6 +2887,7 @@ static gfx_driver_t gfx_vulkan = {
 	.pipeline_free		= gfx_vulkan_pipeline_free,
 	.pipeline_bind		= gfx_vulkan_pipeline_bind,
 	.draw			= gfx_vulkan_draw,
+	.draw_indexed		= gfx_vulkan_draw_indexed,
 	.end			= gfx_vulkan_end,
 };
 

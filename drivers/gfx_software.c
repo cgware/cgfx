@@ -324,6 +324,56 @@ static void vertex_to_screen(gfx_vertex_2d_t *out, const gfx_vertex_2d_t *vertex
 		.a = vertex->a,
 	};
 }
+
+static void draw_triangle(gfx_software_t *render, const gfx_vertex_2d_t *src_vertices)
+{
+	gfx_vertex_2d_t vertices[3];
+	for (u32 i = 0; i < 3; i++) {
+		vertex_to_screen(&vertices[i], &src_vertices[i], render);
+	}
+
+	float area = edge(&vertices[0], &vertices[1], vertices[2].x, vertices[2].y);
+	if (area == 0.0f) {
+		return;
+	}
+
+	u16 x0 = render->viewport_x;
+	u16 y0 = render->viewport_y;
+	u32 x1 = (u32)x0 + render->viewport_width;
+	u32 y1 = (u32)y0 + render->viewport_height;
+	if (x1 > render->target.width) {
+		x1 = render->target.width;
+	}
+	if (y1 > render->target.height) {
+		y1 = render->target.height;
+	}
+
+	for (u16 y = y0; y < y1; y++) {
+		for (u16 x = x0; x < x1; x++) {
+			float px = (float)x + 0.5f;
+			float py = (float)y + 0.5f;
+			float w0 = edge(&vertices[1], &vertices[2], px, py);
+			float w1 = edge(&vertices[2], &vertices[0], px, py);
+			float w2 = edge(&vertices[0], &vertices[1], px, py);
+			if (!point_inside(w0, w1, w2, area)) {
+				continue;
+			}
+
+			float inv_area = 1.0f / area;
+			w0 *= inv_area;
+			w1 *= inv_area;
+			w2 *= inv_area;
+			u8 color[4] = {
+				color_u8(vertices[0].r * w0 + vertices[1].r * w1 + vertices[2].r * w2),
+				color_u8(vertices[0].g * w0 + vertices[1].g * w1 + vertices[2].g * w2),
+				color_u8(vertices[0].b * w0 + vertices[1].b * w1 + vertices[2].b * w2),
+				color_u8(vertices[0].a * w0 + vertices[1].a * w1 + vertices[2].a * w2),
+			};
+			draw_pixel(render, x, y, color);
+		}
+	}
+}
+
 static void gfx_software_buffer_free(gfx_buffer_t *buffer)
 {
 	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL) {
@@ -342,10 +392,10 @@ static void gfx_software_buffer_free(gfx_buffer_t *buffer)
 
 static int gfx_software_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
 {
-	if (buffer == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || config == NULL ||
+	    (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX)) {
 		return 1;
 	}
-	(void)config;
 
 	gfx_software_buffer_t *sw_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_software_buffer_t));
 	if (sw_buffer == NULL) {
@@ -359,7 +409,7 @@ static int gfx_software_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_confi
 
 static int gfx_software_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
 {
-	if (buffer == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL || data == NULL || size == 0) {
 		return 1;
 	}
 
@@ -370,7 +420,10 @@ static int gfx_software_buffer_set_data(gfx_buffer_t *buffer, const void *data, 
 		buf_resize(&sw_buffer->buf, size);
 	}
 
-	buf_set(&sw_buffer->buf, 0, size, data);
+	if (buf_set(&sw_buffer->buf, 0, size, data)) {
+		return 1;
+	}
+	sw_buffer->buf.used = size;
 
 	return 0;
 }
@@ -429,52 +482,47 @@ static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_ver
 
 	gfx_software_buffer_t *sw_buffer       = frame->vertex_buffer->data;
 	const gfx_vertex_2d_t *buffer_vertices = sw_buffer->buf.data;
-	gfx_vertex_2d_t vertices[3];
-	for (u32 i = 0; i < 3; i++) {
-		vertex_to_screen(&vertices[i], &buffer_vertices[first_vertex + i], render);
+	if (sw_buffer->buf.used < sizeof(gfx_vertex_2d_t) * ((size_t)first_vertex + 3)) {
+		return 1;
+	}
+	draw_triangle(render, &buffer_vertices[first_vertex]);
+
+	return 0;
+}
+
+static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || frame->vertex_buffer == NULL ||
+	    frame->vertex_buffer->data == NULL || frame->index_buffer == NULL || frame->index_buffer->data == NULL || index_count < 3) {
+		return 1;
 	}
 
-	float area = edge(&vertices[0], &vertices[1], vertices[2].x, vertices[2].y);
-	if (area == 0.0f) {
-		return 0;
+	gfx_software_t *render = frame->gfx->data;
+	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
+		return 1;
 	}
 
-	u16 x0 = render->viewport_x;
-	u16 y0 = render->viewport_y;
-	u32 x1 = (u32)x0 + render->viewport_width;
-	u32 y1 = (u32)y0 + render->viewport_height;
-	if (x1 > render->target.width) {
-		x1 = render->target.width;
-	}
-	if (y1 > render->target.height) {
-		y1 = render->target.height;
+	gfx_software_buffer_t *vertex_buffer = frame->vertex_buffer->data;
+	gfx_software_buffer_t *index_buffer  = frame->index_buffer->data;
+	const gfx_vertex_2d_t *vertices	     = vertex_buffer->buf.data;
+	const u32 *indices		     = index_buffer->buf.data;
+	size_t vertex_count		     = vertex_buffer->buf.used / sizeof(gfx_vertex_2d_t);
+	if (index_buffer->buf.used < sizeof(u32) * (size_t)index_count) {
+		return 1;
 	}
 
-	for (u16 y = y0; y < y1; y++) {
-		for (u16 x = x0; x < x1; x++) {
-			float px = (float)x + 0.5f;
-			float py = (float)y + 0.5f;
-			float w0 = edge(&vertices[1], &vertices[2], px, py);
-			float w1 = edge(&vertices[2], &vertices[0], px, py);
-			float w2 = edge(&vertices[0], &vertices[1], px, py);
-			if (!point_inside(w0, w1, w2, area)) {
-				continue;
-			}
-
-			float inv_area = 1.0f / area;
-			w0 *= inv_area;
-			w1 *= inv_area;
-			w2 *= inv_area;
-			u8 color[4] = {
-				color_u8(vertices[0].r * w0 + vertices[1].r * w1 + vertices[2].r * w2),
-				color_u8(vertices[0].g * w0 + vertices[1].g * w1 + vertices[2].g * w2),
-				color_u8(vertices[0].b * w0 + vertices[1].b * w1 + vertices[2].b * w2),
-				color_u8(vertices[0].a * w0 + vertices[1].a * w1 + vertices[2].a * w2),
-			};
-			draw_pixel(render, x, y, color);
+	for (u32 i = 0; i + 2 < index_count; i += 3) {
+		if (indices[i] >= vertex_count || indices[i + 1] >= vertex_count || indices[i + 2] >= vertex_count) {
+			return 1;
 		}
-	}
 
+		gfx_vertex_2d_t triangle[3] = {
+			vertices[indices[i]],
+			vertices[indices[i + 1]],
+			vertices[indices[i + 2]],
+		};
+		draw_triangle(render, triangle);
+	}
 	return 0;
 }
 
@@ -510,6 +558,7 @@ static gfx_driver_t gfx_software = {
 	.pipeline_free		= gfx_software_pipeline_free,
 	.pipeline_bind		= gfx_software_pipeline_bind,
 	.draw			= gfx_software_draw,
+	.draw_indexed		= gfx_software_draw_indexed,
 	.end			= gfx_software_end,
 };
 

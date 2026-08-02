@@ -42,5 +42,6 @@ int gfx_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 
 	frame->pipeline	     = pipeline;
 	frame->vertex_buffer = NULL;
+	frame->index_buffer  = NULL;
 	return 0;
 }

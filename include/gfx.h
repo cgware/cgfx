@@ -119,6 +119,7 @@ struct gfx_frame_s {
 	gfx_pass_config_t pass;
 	const struct gfx_pipeline_s *pipeline;
 	const struct gfx_buffer_s *vertex_buffer;
+	const struct gfx_buffer_s *index_buffer;
 	int active;
 	void *data;
 };
@@ -129,6 +130,7 @@ void gfx_free(gfx_t *gfx);
 int gfx_native(gfx_t *gfx, gfx_native_t *native);
 int gfx_proc(gfx_t *gfx, strv_t name, void **proc);
 int gfx_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex);
+int gfx_draw_indexed(gfx_frame_t *frame, u32 index_count);
 int gfx_end(gfx_frame_t *frame);
 
 #endif

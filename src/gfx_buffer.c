@@ -8,7 +8,8 @@ gfx_buffer_t *gfx_buffer_init(gfx_buffer_t *buf, gfx_t *gfx, const gfx_buffer_co
 		return NULL;
 	}
 
-	buf->gfx = gfx;
+	buf->gfx  = gfx;
+	buf->type = config != NULL ? config->type : GFX_BUFFER_UNKNOWN;
 	if (gfx->drv->buffer_init(buf, config)) {
 		return NULL;
 	}
@@ -46,6 +47,15 @@ int gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buf)
 		return 1;
 	}
 
-	frame->vertex_buffer = buf;
+	switch (buf->type) {
+	case GFX_BUFFER_VERTEX:
+		frame->vertex_buffer = buf;
+		break;
+	case GFX_BUFFER_INDEX:
+		frame->index_buffer = buf;
+		break;
+	default:
+		return 1;
+	}
 	return 0;
 }

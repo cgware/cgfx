@@ -1,9 +1,11 @@
+#include "gfx_buffer.h"
 #include "gfx_driver.h"
 
 #include "log.h"
 #include "mem.h"
 
 typedef long HRESULT;
+typedef int INT;
 typedef unsigned int UINT;
 typedef unsigned long ULONG;
 typedef void *HMODULE;
@@ -26,6 +28,7 @@ enum {
 	D3D11_USAGE_DEFAULT		      = 0,
 	D3D11_USAGE_STAGING		      = 3,
 	D3D11_BIND_VERTEX_BUFFER	      = 0x00000001,
+	D3D11_BIND_INDEX_BUFFER		      = 0x00000002,
 	D3D11_BIND_RENDER_TARGET	      = 0x00000020,
 	D3D11_CPU_ACCESS_READ		      = 0x00020000,
 	D3D11_INPUT_PER_VERTEX_DATA	      = 0,
@@ -33,7 +36,9 @@ enum {
 	D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
 	DXGI_FORMAT_R32G32B32A32_FLOAT	      = 2,
 	DXGI_FORMAT_R32G32_FLOAT	      = 16,
+	DXGI_FORMAT_R32_UINT		      = 42,
 	DXGI_FORMAT_R8G8B8A8_UNORM	      = 28,
+	DXGI_FORMAT_R8_UINT		      = 62,
 	DXGI_FORMAT_UNKNOWN		      = 0,
 	GFX_D3D11_SWAPCHAIN_BUFFER_COUNT      = 0,
 };
@@ -138,7 +143,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	void (*PSSetShader)(ID3D11DeviceContext *self, ID3D11PixelShader *shader, void *const *class_instances, UINT class_instance_count);
 	void (*unused_10)(void);
 	void (*VSSetShader)(ID3D11DeviceContext *self, ID3D11VertexShader *shader, void *const *class_instances, UINT class_instance_count);
-	void (*unused_12)(void);
+	void (*DrawIndexed)(ID3D11DeviceContext *This, UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation);
 	void (*Draw)(ID3D11DeviceContext *self, UINT vertex_count, UINT start_vertex_location);
 	HRESULT(*Map)
 	(ID3D11DeviceContext *self, void *resource, UINT subresource, UINT map_type, UINT map_flags, D3D11_MAPPED_SUBRESOURCE *mapped);
@@ -147,7 +152,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	void (*IASetInputLayout)(ID3D11DeviceContext *self, ID3D11InputLayout *input_layout);
 	void (*IASetVertexBuffers)(ID3D11DeviceContext *self, UINT start_slot, UINT num_buffers, ID3D11Buffer *const *buffers,
 				   const UINT *strides, const UINT *offsets);
-	void (*unused_19)(void);
+	void (*IASetIndexBuffer)(ID3D11DeviceContext *self, ID3D11Buffer *pIndexBuffer, UINT Format, UINT Offset);
 	void (*unused_20)(void);
 	void (*unused_21)(void);
 	void (*unused_22)(void);
@@ -290,6 +295,7 @@ typedef struct gfx_d3d11_framebuffer_s {
 
 typedef struct gfx_d3d11_buffer_s {
 	ID3D11Buffer *buffer;
+	gfx_buffer_type_t type;
 } gfx_d3d11_buffer_t;
 
 typedef struct gfx_d3d11_shader_s {
@@ -892,6 +898,10 @@ static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t
 		flags |= D3D11_BIND_VERTEX_BUFFER;
 		break;
 	}
+	case GFX_BUFFER_INDEX: {
+		flags |= D3D11_BIND_INDEX_BUFFER;
+		break;
+	}
 	default: {
 		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", config->type);
 		return 1;
@@ -902,7 +912,9 @@ static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t
 	if (d3d_buffer == NULL) {
 		return 1;
 	}
-	*d3d_buffer  = (gfx_d3d11_buffer_t){0};
+	*d3d_buffer = (gfx_d3d11_buffer_t){
+		.type = config->type,
+	};
 	buffer->data = d3d_buffer;
 
 	D3D11_BUFFER_DESC desc = {
@@ -953,15 +965,30 @@ static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 	}
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
-	if (context->IASetVertexBuffers == NULL) {
+	ID3D11Buffer *buffers[1]	   = {d3d_buffer->buffer};
+	UINT strides[1]			   = {d3d_pipeline->stride};
+	UINT offsets[1]			   = {0};
+
+	switch (buffer->type) {
+	case GFX_BUFFER_VERTEX: {
+		if (context->IASetVertexBuffers == NULL) {
+			return 1;
+		}
+		context->IASetVertexBuffers(d3d11->context, 0, 1, buffers, strides, offsets);
+		break;
+	}
+	case GFX_BUFFER_INDEX: {
+		if (context->IASetIndexBuffer == NULL) {
+			return 1;
+		}
+		context->IASetIndexBuffer(d3d11->context, d3d_buffer->buffer, DXGI_FORMAT_R32_UINT, 0);
+		break;
+	}
+	default: {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", buffer->type);
 		return 1;
 	}
-
-	ID3D11Buffer *buffers[1] = {d3d_buffer->buffer};
-	UINT strides[1]		 = {d3d_pipeline->stride};
-	UINT offsets[1]		 = {0};
-
-	context->IASetVertexBuffers(d3d11->context, 0, 1, buffers, strides, offsets);
+	}
 
 	return 0;
 }
@@ -1208,6 +1235,23 @@ static int gfx_d3d11_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex
 	return 0;
 }
 
+static int gfx_d3d11_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11		   = frame->gfx->data;
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->IASetPrimitiveTopology == NULL || context->DrawIndexed == NULL) {
+		return 1;
+	}
+
+	context->IASetPrimitiveTopology(d3d11->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	context->DrawIndexed(d3d11->context, index_count, 0, 0);
+	return 0;
+}
+
 static int gfx_d3d11_end(gfx_frame_t *frame)
 {
 	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
@@ -1245,6 +1289,7 @@ static gfx_driver_t gfx_d3d11 = {
 	.pipeline_free		= gfx_d3d11_pipeline_free,
 	.pipeline_bind		= gfx_d3d11_pipeline_bind,
 	.draw			= gfx_d3d11_draw,
+	.draw_indexed		= gfx_d3d11_draw_indexed,
 	.end			= gfx_d3d11_end,
 };
 

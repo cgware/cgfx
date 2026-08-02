@@ -70,6 +70,17 @@ int gfx_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
 	return frame->gfx->drv->draw(frame, vertex_count, first_vertex);
 }
 
+int gfx_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || frame->gfx->drv == NULL ||
+	    frame->gfx->drv->draw_indexed == NULL || !frame->active || frame->pipeline == NULL || frame->vertex_buffer == NULL ||
+	    frame->index_buffer == NULL || index_count == 0) {
+		return 1;
+	}
+
+	return frame->gfx->drv->draw_indexed(frame, index_count);
+}
+
 int gfx_end(gfx_frame_t *frame)
 {
 	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || frame->gfx->drv == NULL || frame->gfx->drv->end == NULL ||

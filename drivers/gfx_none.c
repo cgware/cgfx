@@ -143,6 +143,17 @@ static int gfx_none_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
 	return 0;
 }
 
+static int gfx_none_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	(void)index_count;
+
+	if (frame == NULL || frame->gfx == NULL) {
+		return 1;
+	}
+
+	return 0;
+}
+
 static int gfx_none_end(gfx_frame_t *frame)
 {
 	if (frame == NULL || frame->gfx == NULL) {
@@ -175,6 +186,7 @@ static gfx_driver_t gfx_none = {
 	.pipeline_free		= gfx_none_pipeline_free,
 	.pipeline_bind		= gfx_none_pipeline_bind,
 	.draw			= gfx_none_draw,
+	.draw_indexed		= gfx_none_draw_indexed,
 	.end			= gfx_none_end,
 };
 

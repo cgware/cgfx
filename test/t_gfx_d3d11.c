@@ -16,10 +16,12 @@ enum {
 	T_D3D11_USAGE_DEFAULT			= 0,
 	T_D3D11_USAGE_STAGING			= 3,
 	T_D3D11_BIND_VERTEX_BUFFER		= 0x00000001,
+	T_D3D11_BIND_INDEX_BUFFER		= 0x00000002,
 	T_D3D11_BIND_RENDER_TARGET		= 0x00000020,
 	T_D3D11_CPU_ACCESS_READ			= 0x00020000,
 	T_D3D11_MAP_READ			= 1,
 	T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
+	T_DXGI_FORMAT_R32_UINT			= 42,
 };
 
 typedef struct GUID_s {
@@ -161,7 +163,7 @@ typedef struct t_d3d11_context_vtbl_s {
 	void (*unused_10)(void);
 	void (*VSSetShader)(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shader, void *const *class_instances,
 			    UINT class_instance_count);
-	void (*unused_12)(void);
+	void (*DrawIndexed)(t_d3d11_context_t *self, UINT index_count, UINT start_index_location, int base_vertex_location);
 	void (*Draw)(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location);
 	HRESULT(*Map)
 	(t_d3d11_context_t *self, void *resource, UINT subresource, UINT map_type, UINT map_flags, D3D11_MAPPED_SUBRESOURCE *mapped);
@@ -170,7 +172,7 @@ typedef struct t_d3d11_context_vtbl_s {
 	void (*IASetInputLayout)(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout);
 	void (*IASetVertexBuffers)(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
 				   const UINT *strides, const UINT *offsets);
-	void (*unused_19)(void);
+	void (*IASetIndexBuffer)(t_d3d11_context_t *self, t_d3d11_buffer_t *index_buffer, UINT format, UINT offset);
 	void (*unused_20)(void);
 	void (*unused_21)(void);
 	void (*unused_22)(void);
@@ -317,6 +319,7 @@ static int t_clear_render_target_view_calls;
 static int t_om_set_render_targets_calls;
 static int t_ia_set_input_layout_calls;
 static int t_ia_set_vertex_buffers_calls;
+static int t_ia_set_index_buffer_calls;
 static int t_ia_set_primitive_topology_calls;
 static int t_vs_set_shader_calls;
 static int t_ps_set_shader_calls;
@@ -325,6 +328,7 @@ static int t_copy_resource_calls;
 static int t_map_calls;
 static int t_unmap_calls;
 static int t_draw_calls;
+static int t_draw_indexed_calls;
 static int t_rs_set_viewports_calls;
 static int t_surface_present_calls;
 static UINT t_create_buffer_bytes;
@@ -350,9 +354,14 @@ static UINT t_vertex_buffer_start_slot;
 static UINT t_vertex_buffer_count;
 static UINT t_vertex_buffer_stride;
 static UINT t_vertex_buffer_offset;
+static UINT t_index_buffer_format;
+static UINT t_index_buffer_offset;
 static UINT t_primitive_topology;
 static UINT t_draw_vertex_count;
 static UINT t_draw_start_vertex;
+static UINT t_draw_index_count;
+static UINT t_draw_start_index;
+static int t_draw_base_vertex;
 static UINT t_viewport_count;
 static t_d3d11_vertex_2d_t t_uploaded_vertices[3];
 static D3D11_VIEWPORT t_viewport;
@@ -648,6 +657,15 @@ static void t_IASetVertexBuffers(t_d3d11_context_t *self, UINT start_slot, UINT 
 	t_vertex_buffer_offset	   = offsets[0];
 }
 
+static void t_IASetIndexBuffer(t_d3d11_context_t *self, t_d3d11_buffer_t *index_buffer, UINT format, UINT offset)
+{
+	(void)self;
+	(void)index_buffer;
+	t_ia_set_index_buffer_calls++;
+	t_index_buffer_format = format;
+	t_index_buffer_offset = offset;
+}
+
 static void t_IASetPrimitiveTopology(t_d3d11_context_t *self, UINT topology)
 {
 	(void)self;
@@ -725,6 +743,15 @@ static void t_Draw(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex
 	t_draw_calls++;
 	t_draw_vertex_count = vertex_count;
 	t_draw_start_vertex = start_vertex_location;
+}
+
+static void t_DrawIndexed(t_d3d11_context_t *self, UINT index_count, UINT start_index_location, int base_vertex_location)
+{
+	(void)self;
+	t_draw_indexed_calls++;
+	t_draw_index_count = index_count;
+	t_draw_start_index = start_index_location;
+	t_draw_base_vertex = base_vertex_location;
 }
 
 static void t_ClearRenderTargetView(t_d3d11_context_t *self, t_d3d11_view_t *view, const float color[4])
@@ -839,11 +866,13 @@ static t_d3d11_context_vtbl_t t_context_vtbl = {
 	.Release		= t_context_release,
 	.PSSetShader		= t_PSSetShader,
 	.VSSetShader		= t_VSSetShader,
+	.DrawIndexed		= t_DrawIndexed,
 	.Draw			= t_Draw,
 	.Map			= t_Map,
 	.Unmap			= t_Unmap,
 	.IASetInputLayout	= t_IASetInputLayout,
 	.IASetVertexBuffers	= t_IASetVertexBuffers,
+	.IASetIndexBuffer	= t_IASetIndexBuffer,
 	.IASetPrimitiveTopology = t_IASetPrimitiveTopology,
 	.OMSetRenderTargets	= t_OMSetRenderTargets,
 	.RSSetViewports		= t_RSSetViewports,
@@ -906,6 +935,7 @@ static void t_gfx_d3d11_reset(void)
 	t_om_set_render_targets_calls	  = 0;
 	t_ia_set_input_layout_calls	  = 0;
 	t_ia_set_vertex_buffers_calls	  = 0;
+	t_ia_set_index_buffer_calls	  = 0;
 	t_ia_set_primitive_topology_calls = 0;
 	t_vs_set_shader_calls		  = 0;
 	t_ps_set_shader_calls		  = 0;
@@ -914,6 +944,7 @@ static void t_gfx_d3d11_reset(void)
 	t_map_calls			  = 0;
 	t_unmap_calls			  = 0;
 	t_draw_calls			  = 0;
+	t_draw_indexed_calls		  = 0;
 	t_rs_set_viewports_calls	  = 0;
 	t_surface_present_calls		  = 0;
 	t_create_buffer_bytes		  = 0;
@@ -941,9 +972,14 @@ static void t_gfx_d3d11_reset(void)
 	t_vertex_buffer_count		  = 0;
 	t_vertex_buffer_stride		  = 0;
 	t_vertex_buffer_offset		  = 0;
+	t_index_buffer_format		  = 0;
+	t_index_buffer_offset		  = 0;
 	t_primitive_topology		  = 0;
 	t_draw_vertex_count		  = 0;
 	t_draw_start_vertex		  = 0;
+	t_draw_index_count		  = 0;
+	t_draw_start_index		  = 0;
+	t_draw_base_vertex		  = 0;
 	t_viewport_count		  = 0;
 	t_uploaded_vertices[0]		  = (t_d3d11_vertex_2d_t){0};
 	t_uploaded_vertices[1]		  = (t_d3d11_vertex_2d_t){0};
@@ -1726,9 +1762,9 @@ TEST(gfx_d3d11_framebuffer_init_missing_render_target_callback_direct)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_device_vtbl.CreateRenderTargetView = NULL;
 	gfx_render_pass_t render_pass	     = {
-		       .gfx  = &gfx,
-		       .data = &render_pass,
-	       };
+		.gfx  = &gfx,
+		.data = &render_pass,
+	};
 	t_gfx_d3d11_memory_target_data_t driver_target = {.texture = &t_texture};
 
 	gfx_target_t target = {
@@ -2141,13 +2177,14 @@ TEST(gfx_d3d11_framebuffer_pass_begin_missing_render_target_callbacks)
 	};
 	t_gfx_d3d11_memory_target_data_t driver_target	  = {.texture = &t_texture};
 	t_gfx_d3d11_framebuffer_data_t driver_framebuffer = {.render_target = &t_view};
-	gfx_target_t target				  = {
-					      .gfx	   = &gfx,
-					      .type	   = GFX_TARGET_MEMORY,
-					      .driver_data = &driver_target,
-					      .width	   = 1,
-					      .height	   = 1,
-	      };
+
+	gfx_target_t target = {
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_MEMORY,
+		.driver_data = &driver_target,
+		.width	     = 1,
+		.height	     = 1,
+	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
 		.target	     = &target,
@@ -2181,12 +2218,12 @@ TEST(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback)
 	t_gfx_d3d11_memory_target_data_t driver_target	  = {.texture = &t_texture};
 	t_gfx_d3d11_framebuffer_data_t driver_framebuffer = {.render_target = &t_view};
 	gfx_target_t target				  = {
-					      .gfx	   = &gfx,
-					      .type	   = GFX_TARGET_MEMORY,
-					      .driver_data = &driver_target,
-					      .width	   = 1,
-					      .height	   = 1,
-	      };
+		.gfx	     = &gfx,
+		.type	     = GFX_TARGET_MEMORY,
+		.driver_data = &driver_target,
+		.width	     = 1,
+		.height	     = 1,
+	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
 		.target	     = &target,
@@ -2453,10 +2490,10 @@ static gfx_pipeline_config_t t_gfx_d3d11_direct_pipeline_config(gfx_shader_t *vs
 	t_gfx_d3d11_shader_data_t *vs_data = vs->data;
 	t_gfx_d3d11_shader_data_t *fs_data = fs->data;
 	*vs_data			   = (t_gfx_d3d11_shader_data_t){
-					  .code		 = &t_vertex_blob,
-					  .stage	 = GFX_SHADER_STAGE_VERTEX,
-					  .shader.vertex = &t_vertex_shader,
-	  };
+		.code	       = &t_vertex_blob,
+		.stage	       = GFX_SHADER_STAGE_VERTEX,
+		.shader.vertex = &t_vertex_shader,
+	};
 	*fs_data = (t_gfx_d3d11_shader_data_t){
 		.code	      = &t_pixel_blob,
 		.stage	      = GFX_SHADER_STAGE_FRAGMENT,
@@ -2493,8 +2530,8 @@ TEST(gfx_d3d11_pipeline_init_missing_shader_callback_direct)
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	gfx_pipeline_t pipeline		  = {
-			  .gfx = &gfx,
-	  };
+		.gfx = &gfx,
+	};
 
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
 
@@ -2517,8 +2554,8 @@ TEST(gfx_d3d11_pipeline_init_alloc_failure_direct)
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	gfx_pipeline_t pipeline		  = {
-			  .gfx = &gfx,
-	  };
+		.gfx = &gfx,
+	};
 	gfx.alloc = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
 
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
@@ -2542,8 +2579,8 @@ TEST(gfx_d3d11_pipeline_init_element_alloc_failure_direct)
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	gfx_pipeline_t pipeline		  = {
-			  .gfx = &gfx,
-	  };
+		.gfx = &gfx,
+	};
 	t_gfx_d3d11_alloc_count	  = 0;
 	t_gfx_d3d11_alloc_fail_at = 2;
 	gfx.alloc		  = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail_n, .realloc = alloc_realloc_std, .free = alloc_free_std};
@@ -2568,14 +2605,14 @@ TEST(gfx_d3d11_pipeline_init_missing_layout_semantic_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	const gfx_layout_t layout[]	  = {
-		      {.index = 0, .semantic = NULL, .count = 2, .type = GFX_VALUE_FLOAT32},
-	      };
+		{.index = 0, .semantic = NULL, .count = 2, .type = GFX_VALUE_FLOAT32},
+	};
 	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	config.input_layout	     = layout;
 	config.input_layout_size     = sizeof(layout);
 	gfx_pipeline_t pipeline	     = {
-		     .gfx = &gfx,
-	     };
+		.gfx = &gfx,
+	};
 
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
 
@@ -2596,14 +2633,14 @@ TEST(gfx_d3d11_pipeline_init_unsupported_input_layout_direct)
 	gfx_shader_t vs			  = {.data = &vs_data};
 	gfx_shader_t fs			  = {.data = &fs_data};
 	const gfx_layout_t layout[]	  = {
-		      {.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
-	      };
+		{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
+	};
 	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	config.input_layout	     = layout;
 	config.input_layout_size     = sizeof(layout);
 	gfx_pipeline_t pipeline	     = {
-		     .gfx = &gfx,
-	     };
+		.gfx = &gfx,
+	};
 
 	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
@@ -2628,8 +2665,8 @@ TEST(gfx_d3d11_pipeline_init_create_input_layout_failure_direct)
 	gfx_shader_t fs			  = {.data = &fs_data};
 	gfx_pipeline_config_t config	  = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
 	gfx_pipeline_t pipeline		  = {
-			  .gfx = &gfx,
-	  };
+		.gfx = &gfx,
+	};
 
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
 
@@ -3353,6 +3390,26 @@ TEST(gfx_d3d11_buffer_set_data_uploads_vertices)
 	proc_free(&proc);
 	END;
 }
+
+TEST(gfx_d3d11_buffer_init_creates_index_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &buffer);
+	EXPECT_EQ(t_create_buffer_calls, 1);
+	EXPECT_EQ(t_create_buffer_bind_flags, T_D3D11_BIND_INDEX_BUFFER);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_pipeline_bind_null_frame)
 {
 	START;
@@ -3465,6 +3522,104 @@ TEST(gfx_d3d11_buffer_bind_binds_vertex_buffer)
 	END;
 }
 
+TEST(gfx_d3d11_buffer_bind_binds_index_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
+	gfx_pipeline_t pipeline			= {
+		.gfx  = &gfx,
+		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_INDEX,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+		.active	  = 1,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(t_ia_set_index_buffer_calls, 1);
+	EXPECT_EQ(t_index_buffer_format, T_DXGI_FORMAT_R32_UINT);
+	EXPECT_EQ(t_index_buffer_offset, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_missing_index_buffer_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
+	gfx_pipeline_t pipeline			= {
+		.gfx  = &gfx,
+		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_INDEX,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+		.active	  = 1,
+	};
+	void (*saved)(t_d3d11_context_t *, t_d3d11_buffer_t *, UINT, UINT) = t_context_vtbl.IASetIndexBuffer;
+	t_context_vtbl.IASetIndexBuffer					   = NULL;
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
+
+	t_context_vtbl.IASetIndexBuffer = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_bind_rejects_unknown_type)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
+	gfx_pipeline_t pipeline			= {
+		.gfx  = &gfx,
+		.data = &(t_gfx_d3d11_pipeline_data_t){.stride = sizeof(t_d3d11_vertex_2d_t)},
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_UNKNOWN,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	  = &gfx,
+		.pipeline = &pipeline,
+		.active	  = 1,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_buffer_bind_rejects_zero_stride)
 {
 	START;
@@ -3478,11 +3633,12 @@ TEST(gfx_d3d11_buffer_bind_rejects_zero_stride)
 	};
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
 	gfx_pipeline_t pipeline			= {
-				.gfx  = &gfx,
-				.data = &driver_pipeline,
+		.gfx  = &gfx,
+		.data = &driver_pipeline,
 	};
 	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
 		.data = &driver_buffer,
 	};
 	gfx_frame_t frame = {
@@ -3511,11 +3667,12 @@ TEST(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback)
 	};
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.buffer = &t_buffer};
 	gfx_pipeline_t pipeline			= {
-				.gfx  = &gfx,
-				.data = &driver_pipeline,
+		.gfx  = &gfx,
+		.data = &driver_pipeline,
 	};
 	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
 		.data = &driver_buffer,
 	};
 	gfx_frame_t frame = {
@@ -3598,6 +3755,60 @@ TEST(gfx_d3d11_draw_calls_context)
 	EXPECT_EQ(t_draw_calls, 1);
 	EXPECT_EQ(t_draw_vertex_count, 3);
 	EXPECT_EQ(t_draw_start_vertex, 2);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_indexed_null_data)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_d3d11_driver();
+	EXPECT_NOT_NULL(drv);
+
+	EXPECT_EQ(drv->draw_indexed(NULL, 3), 1);
+	EXPECT_EQ(drv->draw_indexed(&(gfx_frame_t){.gfx = &(gfx_t){0}}, 3), 1);
+
+	END;
+}
+
+TEST(gfx_d3d11_draw_indexed_missing_callback)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	void (*saved)(t_d3d11_context_t *, UINT, UINT, int) = t_context_vtbl.DrawIndexed;
+	t_context_vtbl.DrawIndexed			    = NULL;
+	gfx_frame_t frame				    = {.gfx = &gfx, .active = 1};
+
+	EXPECT_EQ(gfx.drv->draw_indexed(&frame, 3), 1);
+
+	t_context_vtbl.DrawIndexed = saved;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_draw_indexed_calls_context)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_frame_t frame = {.gfx = &gfx, .active = 1};
+
+	EXPECT_EQ(gfx.drv->draw_indexed(&frame, 5), 0);
+	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
+	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	EXPECT_EQ(t_draw_indexed_calls, 1);
+	EXPECT_EQ(t_draw_index_count, 5);
+	EXPECT_EQ(t_draw_start_index, 0);
+	EXPECT_EQ(t_draw_base_vertex, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3767,15 +3978,22 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout);
 	RUN(gfx_d3d11_buffer_set_data_missing_update_callback);
 	RUN(gfx_d3d11_buffer_set_data_uploads_vertices);
+	RUN(gfx_d3d11_buffer_init_creates_index_buffer);
 	RUN(gfx_d3d11_pipeline_bind_null_frame);
 	RUN(gfx_d3d11_buffer_bind_null_frame);
 	RUN(gfx_d3d11_pipeline_bind_binds_shaders);
 	RUN(gfx_d3d11_buffer_bind_binds_vertex_buffer);
+	RUN(gfx_d3d11_buffer_bind_binds_index_buffer);
+	RUN(gfx_d3d11_buffer_bind_missing_index_buffer_callback);
+	RUN(gfx_d3d11_buffer_bind_rejects_unknown_type);
 	RUN(gfx_d3d11_buffer_bind_rejects_zero_stride);
 	RUN(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback);
 	RUN(gfx_d3d11_pipeline_bind_missing_shader_callback);
 	RUN(gfx_d3d11_draw_missing_draw_callback);
 	RUN(gfx_d3d11_draw_calls_context);
+	RUN(gfx_d3d11_draw_indexed_null_data);
+	RUN(gfx_d3d11_draw_indexed_missing_callback);
+	RUN(gfx_d3d11_draw_indexed_calls_context);
 	RUN(gfx_d3d11_present_null_data);
 	RUN(gfx_d3d11_free_null_data);
 	RUN(gfx_d3d11_free_releases_context);

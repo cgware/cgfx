@@ -1,3 +1,4 @@
+#include "gfx_buffer.h"
 #include "gfx_driver.h"
 
 #include "log.h"
@@ -11,6 +12,7 @@ enum {
 	GL_VERSION		    = 0x1F02,
 	GL_SHADING_LANGUAGE_VERSION = 0x8B8C,
 	GL_UNSIGNED_BYTE	    = 0x1401,
+	GL_UNSIGNED_INT		    = 0x1405,
 	GL_NEAREST		    = 0x2600,
 	GL_CLAMP_TO_EDGE	    = 0x812F,
 	GL_TEXTURE_MAG_FILTER	    = 0x2800,
@@ -26,6 +28,7 @@ enum {
 	GL_FLOAT		    = 0x1406,
 	GL_FALSE		    = 0,
 	GL_ARRAY_BUFFER		    = 0x8892,
+	GL_ELEMENT_ARRAY_BUFFER	    = 0x8893,
 	GL_DYNAMIC_DRAW		    = 0x88E8,
 	GL_VERTEX_SHADER	    = 0x8B31,
 	GL_FRAGMENT_SHADER	    = 0x8B30,
@@ -86,6 +89,7 @@ typedef struct gfx_opengl_s {
 	void (*DisableVertexAttribArray)(unsigned int);
 	void (*VertexAttribPointer)(unsigned int, int, unsigned int, unsigned char, int, const void *);
 	void (*DrawArrays)(unsigned int, int, int);
+	void (*DrawElements)(unsigned int, int, unsigned int, const void *);
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_render_pass_s {
@@ -104,6 +108,7 @@ typedef struct gfx_opengl_framebuffer_s {
 
 typedef struct gfx_opengl_buffer_s {
 	unsigned int buffer;
+	unsigned int target;
 } gfx_opengl_buffer_t;
 
 typedef struct gfx_opengl_shader_s {
@@ -220,7 +225,7 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	    LOAD_GL(gfx, opengl, surface, BindBuffer) || LOAD_GL(gfx, opengl, surface, BufferData) ||
 	    LOAD_GL(gfx, opengl, surface, UseProgram) || LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) ||
 	    LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, VertexAttribPointer) ||
-	    LOAD_GL(gfx, opengl, surface, DrawArrays)) {
+	    LOAD_GL(gfx, opengl, surface, DrawArrays) || LOAD_GL(gfx, opengl, surface, DrawElements)) {
 		return 1;
 	}
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetShaderInfoLog);
@@ -792,6 +797,22 @@ static int gfx_opengl_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 	*gl_buffer   = (gfx_opengl_buffer_t){0};
 	buffer->data = gl_buffer;
 
+	switch (config->type) {
+	case GFX_BUFFER_VERTEX: {
+		gl_buffer->target = GL_ARRAY_BUFFER;
+		break;
+	}
+	case GFX_BUFFER_INDEX: {
+		gl_buffer->target = GL_ELEMENT_ARRAY_BUFFER;
+		break;
+	}
+	default: {
+		log_error("cgfx", "gfx_opengl", NULL, "unsupported buffer type: %d", config->type);
+		gfx_opengl_buffer_free(buffer);
+		return 1;
+	}
+	}
+
 	opengl->GenBuffers(1, &gl_buffer->buffer);
 	if (gl_buffer->buffer == 0) {
 		gfx_opengl_buffer_free(buffer);
@@ -815,9 +836,9 @@ static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 
 	gfx_opengl_buffer_t *gl_buffer = buffer->data;
 
-	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
-	opengl->BufferData(GL_ARRAY_BUFFER, size, data, GL_DYNAMIC_DRAW);
-	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
+	opengl->BindBuffer(gl_buffer->target, gl_buffer->buffer);
+	opengl->BufferData(gl_buffer->target, size, data, GL_DYNAMIC_DRAW);
+	opengl->BindBuffer(gl_buffer->target, 0);
 
 	return 0;
 }
@@ -837,7 +858,7 @@ static int gfx_opengl_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 	gfx_opengl_buffer_t *gl_buffer	   = buffer->data;
 	gfx_opengl_pipeline_t *gl_pipeline = frame->pipeline->data;
 
-	opengl->BindBuffer(GL_ARRAY_BUFFER, gl_buffer->buffer);
+	opengl->BindBuffer(gl_buffer->target, gl_buffer->buffer);
 	size_t offset = 0;
 	for (size_t i = 0; i < gl_pipeline->input_layout_size / sizeof(gfx_layout_t); i++) {
 		opengl->EnableVertexAttribArray(gl_pipeline->input_layout[i].index);
@@ -1052,6 +1073,7 @@ static void gfx_opengl_pipeline_end(gfx_frame_t *frame)
 		opengl->DisableVertexAttribArray(gl_pipeline->input_layout[i].index);
 	}
 
+	opengl->BindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 	opengl->BindBuffer(GL_ARRAY_BUFFER, 0);
 	opengl->UseProgram(0);
 }
@@ -1064,6 +1086,17 @@ static int gfx_opengl_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_verte
 
 	gfx_opengl_t *opengl = frame->gfx->data;
 	opengl->DrawArrays(GL_TRIANGLES, (int)first_vertex, (int)vertex_count);
+	return 0;
+}
+
+static int gfx_opengl_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = frame->gfx->data;
+	opengl->DrawElements(GL_TRIANGLES, (int)index_count, GL_UNSIGNED_INT, NULL);
 	return 0;
 }
 
@@ -1110,6 +1143,7 @@ static gfx_driver_t gfx_opengl = {
 	.pipeline_free		= gfx_opengl_pipeline_free,
 	.pipeline_bind		= gfx_opengl_pipeline_bind,
 	.draw			= gfx_opengl_draw,
+	.draw_indexed		= gfx_opengl_draw_indexed,
 	.end			= gfx_opengl_end,
 };
 

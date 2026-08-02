@@ -12,6 +12,7 @@ static int t_framebuffer_pass_begin_calls;
 static int t_pipeline_bind_calls;
 static int t_buffer_bind_calls;
 static int t_draw_calls;
+static int t_draw_indexed_calls;
 static int t_end_calls;
 static int t_proc_calls;
 static int t_native_calls;
@@ -136,6 +137,14 @@ static int t_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
 	return 0;
 }
 
+static int t_draw_indexed(gfx_frame_t *frame, u32 index_count)
+{
+	(void)frame;
+	(void)index_count;
+	t_draw_indexed_calls++;
+	return 0;
+}
+
 static int t_gfx_drv_end(gfx_frame_t *frame)
 {
 	(void)frame;
@@ -181,6 +190,7 @@ static gfx_driver_t t_driver = {
 	.pipeline_free		= t_pipeline_free,
 	.pipeline_bind		= t_pipeline_bind,
 	.draw			= t_draw,
+	.draw_indexed		= t_draw_indexed,
 	.end			= t_gfx_drv_end,
 };
 
@@ -197,6 +207,7 @@ static void t_reset(void)
 	t_pipeline_bind_calls	       = 0;
 	t_buffer_bind_calls	       = 0;
 	t_draw_calls		       = 0;
+	t_draw_indexed_calls	       = 0;
 	t_end_calls		       = 0;
 	t_proc_calls		       = 0;
 	t_native_calls		       = 0;
@@ -450,6 +461,65 @@ TEST(gfx_frame_requires_bound_pipeline_and_buffer)
 	END;
 }
 
+TEST(gfx_draw_indexed_requires_bound_vertex_and_index_buffers)
+{
+	START;
+
+	t_reset();
+	u8 pixels[16] = {0};
+	gfx_t gfx     = {0};
+	EXPECT_PTR(gfx_init(&gfx, &t_driver, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+
+	gfx_target_t target				= {0};
+	gfx_memory_target_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 2,
+		.stride = 8,
+	};
+	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_PTR(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("shader")}), &shader);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
+		   &pipeline);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+
+	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 1);
+	gfx_buffer_t vertex_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &vertex_buffer), 0);
+	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 1);
+	gfx_buffer_t index_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &index_buffer), 0);
+	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 0);
+	EXPECT_EQ(t_draw_indexed_calls, 1);
+
+	EXPECT_EQ(gfx_end(&frame), 0);
+	gfx_buffer_free(&index_buffer);
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_target_free(&target);
+	gfx_free(&gfx);
+	END;
+}
+
 STEST(gfx)
 {
 	SSTART;
@@ -465,5 +535,6 @@ STEST(gfx)
 	RUN(gfx_driver_find_returns_null_for_unknown_driver);
 	RUN(gfx_driver_next_and_list_enumerate_registered_drivers);
 	RUN(gfx_frame_requires_bound_pipeline_and_buffer);
+	RUN(gfx_draw_indexed_requires_bound_vertex_and_index_buffers);
 	SEND;
 }
