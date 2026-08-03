@@ -1,5 +1,3 @@
-#include "gfx_swapchain.h"
-
 #include "gfx_driver.h"
 
 gfx_swapchain_t *gfx_swapchain_init(gfx_swapchain_t *swapchain, gfx_t *gfx, const gfx_swapchain_config_t *config)

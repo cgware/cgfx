@@ -5,11 +5,19 @@
 
 #include <stddef.h>
 
-// ------
-// Common
-// ------
+/**
+ * @defgroup vulkan Vulkan
+ * @ingroup graphics
+ */
+
+/**
+ * @defgroup vulkan_common Common
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u32 VkFlags;
+
 typedef u32 VkBool32;
 
 typedef enum VkStructureType_e {
@@ -56,9 +64,12 @@ typedef enum VkResult_e {
 
 typedef void (*PFN_vkVoidFunction)(void);
 
-// ------------------
-// Common::Allocation
-// ------------------
+/**
+ * @}
+ * @defgroup vulkan_allocation Allocation
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef enum VkSystemAllocationScope_e {
 	VK_SYSTEM_ALLOCATION_SCOPE_MAX_ENUM = 0x7FFFFFFF
@@ -90,15 +101,14 @@ typedef struct VkAllocationCallbacks_s {
 	PFN_vkInternalFreeNotification pfnInternalFree;
 } VkAllocationCallbacks;
 
-// --------
-// Instance
-// --------
+/**
+ * @}
+ * @defgroup vulkan_instance Instance
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkInstance;
-
-// ----------------
-// Instance::Create
-// ----------------
 
 #define VK_MAKE_API_VERSION(variant, major, minor, patch)                                                                                  \
 	((((u32)(variant)) << 29U) | (((u32)(major)) << 22U) | (((u32)(minor)) << 12U) | ((u32)(patch)))
@@ -128,42 +138,52 @@ typedef struct VkInstanceCreateInfo_s {
 	const char *const *ppEnabledExtensionNames;
 } VkInstanceCreateInfo;
 
+/**
+ * @brief Create a new Vulkan instance
+ * @param[out] pInstance must be freed using PFN_vkDestroyInstance()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateInstance.html
+ */
 typedef VkResult (*PFN_vkCreateInstance)(const VkInstanceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 					 VkInstance *pInstance);
 
-// -----------------
-// Instance::Destroy
-// -----------------
-
+/**
+ * @brief Destroy an instance of Vulkan
+ * @param[in] instance created by PFN_vkCreateInstance()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyInstance.html
+ */
 typedef void (*PFN_vkDestroyInstance)(VkInstance instance, const VkAllocationCallbacks *pAllocator);
 
-// ------------------
-// Instance::ProcAddr
-// ------------------
-
+/**
+ * @brief Return a function pointer for a command
+ * @param[in] instance created by PFN_vkCreateInstance()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetInstanceProcAddr.html
+ */
 typedef PFN_vkVoidFunction (*PFN_vkGetInstanceProcAddr)(VkInstance instance, const char *pName);
 
-// -------
-// Surface
-// -------
+/**
+ * @}
+ * @defgroup vulkan_surface Surface
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkSurfaceKHR;
 
-// --------------
-// PhysicalDevice
-// --------------
+/**
+ * @}
+ * @defgroup vulkan_physicaldevice PhysicalDevice
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkPhysicalDevice;
 
-// -------------------------
-// PhysicalDevice::Enumerate
-// -------------------------
-
+/**
+ * @brief Enumerates the physical devices accessible to a Vulkan instance
+ * @param[out] pPhysicalDevices
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkEnumeratePhysicalDevices.html
+ */
 typedef VkResult (*PFN_vkEnumeratePhysicalDevices)(VkInstance instance, u32 *pPhysicalDeviceCount, VkPhysicalDevice *pPhysicalDevices);
-
-// -------------------------------------
-// PhysicalDevice::QueueFamilyProperties
-// -------------------------------------
 
 typedef enum VkQueueFlagBits_e {
 	VK_QUEUE_GRAPHICS_BIT	    = 0x00000001,
@@ -184,12 +204,13 @@ typedef struct VkQueueFamilyProperties_s {
 	VkExtent3D minImageTransferGranularity;
 } VkQueueFamilyProperties;
 
+/**
+ * @brief Reports properties of the queues of the specified physical device
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceQueueFamilyProperties.html
+ */
 typedef void (*PFN_vkGetPhysicalDeviceQueueFamilyProperties)(VkPhysicalDevice physicalDevice, u32 *pQueueFamilyPropertyCount,
 							     VkQueueFamilyProperties *pQueueFamilyProperties);
-
-// --------------------------------
-// PhysicalDevice::MemoryProperties
-// --------------------------------
 
 #define VK_MAX_MEMORY_TYPES 32U
 #define VK_MAX_MEMORY_HEAPS 16U
@@ -222,12 +243,13 @@ typedef struct VkPhysicalDeviceMemoryProperties_s {
 	VkMemoryHeap memoryHeaps[VK_MAX_MEMORY_HEAPS];
 } VkPhysicalDeviceMemoryProperties;
 
+/**
+ * @brief Reports memory information for the specified physical device
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceMemoryProperties.html
+ */
 typedef void (*PFN_vkGetPhysicalDeviceMemoryProperties)(VkPhysicalDevice physicalDevice,
 							VkPhysicalDeviceMemoryProperties *pMemoryProperties);
-
-// --------------------------------
-// PhysicalDevice::FormatProperties
-// --------------------------------
 
 typedef enum VkFormatFeatureFlagBits_e {
 	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT = 0x00000080,
@@ -253,19 +275,21 @@ typedef enum VkFormat_e {
 	VK_FORMAT_MAX_ENUM	      = 0x7FFFFFFF
 } VkFormat;
 
+/**
+ * @brief Lists physical device’s format capabilities
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceFormatProperties.html
+ */
 typedef void (*PFN_vkGetPhysicalDeviceFormatProperties)(VkPhysicalDevice physicalDevice, VkFormat format,
 							VkFormatProperties *pFormatProperties);
 
-// ------------------------------
-// PhysicalDevice::SurfaceSupport
-// ------------------------------
-
+/**
+ * @brief Query if presentation is supported
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceSupportKHR.html
+ */
 typedef VkResult (*PFN_vkGetPhysicalDeviceSurfaceSupportKHR)(VkPhysicalDevice physicalDevice, u32 queueFamilyIndex, VkSurfaceKHR surface,
 							     VkBool32 *pSupported);
-
-// -----------------------------------
-// PhysicalDevice::SurfaceCapabilities
-// -----------------------------------
 
 typedef struct VkExtent2D_s {
 	u32 width;
@@ -303,12 +327,13 @@ typedef struct VkSurfaceCapabilitiesKHR_s {
 	VkImageUsageFlags supportedUsageFlags;
 } VkSurfaceCapabilitiesKHR;
 
+/**
+ * @brief Query surface capabilities
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceCapabilitiesKHR.html
+ */
 typedef VkResult (*PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
 								  VkSurfaceCapabilitiesKHR *pSurfaceCapabilities);
-
-// ------------------------------
-// PhysicalDevice::SurfaceFormats
-// ------------------------------
 
 typedef enum VkColorSpaceKHR_e {
 	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR = 0,
@@ -320,18 +345,22 @@ typedef struct VkSurfaceFormatKHR_s {
 	VkColorSpaceKHR colorSpace;
 } VkSurfaceFormatKHR;
 
+/**
+ * @brief Query color formats supported by surface
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfaceFormatsKHR.html
+ */
 typedef VkResult (*PFN_vkGetPhysicalDeviceSurfaceFormatsKHR)(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
 							     u32 *pSurfaceFormatCount, VkSurfaceFormatKHR *pSurfaceFormats);
 
-// ------
-// Device
-// ------
+/**
+ * @}
+ * @defgroup vulkan_device Device
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkDevice;
-
-// --------------
-// Device::Create
-// --------------
 
 typedef VkFlags VkDeviceCreateFlags;
 
@@ -419,36 +448,43 @@ typedef struct VkDeviceCreateInfo_s {
 	const VkPhysicalDeviceFeatures *pEnabledFeatures;
 } VkDeviceCreateInfo;
 
+/**
+ * @brief Create a new device instance
+ * @param[out] pDevice must be freed using PFN_vkDestroyDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDevice.html
+ */
 typedef VkResult (*PFN_vkCreateDevice)(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
 				       const VkAllocationCallbacks *pAllocator, VkDevice *pDevice);
 
-// ---------------
-// Device::Destroy
-// ---------------
-
+/**
+ * @brief Destroy a logical device
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyDevice.html
+ */
 typedef void (*PFN_vkDestroyDevice)(VkDevice device, const VkAllocationCallbacks *pAllocator);
 
-// ----------------
-// Device::ProcAddr
-// ----------------
-
+/**
+ * @brief Return a function pointer for a command
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetDeviceProcAddr.html
+ */
 typedef PFN_vkVoidFunction (*PFN_vkGetDeviceProcAddr)(VkDevice device, const char *pName);
 
-// ----------------
-// Device::WaitIdle
-// ----------------
-
+/**
+ * @brief Wait for a device to become idle
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDeviceWaitIdle.html
+ */
 typedef VkResult (*PFN_vkDeviceWaitIdle)(VkDevice device);
 
-// -----------
-// CommandPool
-// -----------
+/**
+ * @}
+ * @defgroup vulkan_commandpool CommandPool
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkCommandPool;
-
-// -------------------
-// CommandPool::Create
-// -------------------
 
 typedef enum VkCommandPoolCreateFlagBits_e {
 	VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT = 0x00000002,
@@ -463,24 +499,31 @@ typedef struct VkCommandPoolCreateInfo_s {
 	u32 queueFamilyIndex;
 } VkCommandPoolCreateInfo;
 
+/**
+ * @brief Create a new command pool object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pCommandPool must be freed using PFN_vkDestroyCommandPool()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateCommandPool.html
+ */
 typedef VkResult (*PFN_vkCreateCommandPool)(VkDevice device, const VkCommandPoolCreateInfo *pCreateInfo,
 					    const VkAllocationCallbacks *pAllocator, VkCommandPool *pCommandPool);
 
-// --------------------
-// CommandPool::Destroy
-// --------------------
-
+/**
+ * @brief Destroy a command pool object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] commandPool created by PFN_vkCreateCommandPool()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyCommandPool.html
+ */
 typedef void (*PFN_vkDestroyCommandPool)(VkDevice device, VkCommandPool commandPool, const VkAllocationCallbacks *pAllocator);
 
-// -----
-// Fence
-// -----
+/**
+ * @}
+ * @defgroup vulkan_fence Fence
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkFence;
-
-// -------------
-// Fence::Create
-// -------------
 
 typedef enum VkFenceCreateFlagBits_e {
 	VK_FENCE_CREATE_SIGNALED_BIT	   = 0x00000001,
@@ -494,36 +537,47 @@ typedef struct VkFenceCreateInfo_s {
 	VkFenceCreateFlags flags;
 } VkFenceCreateInfo;
 
+/**
+ * @brief Create a new fence object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pFence must be freed using PFN_vkDestroyFence()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateFence.html
+ */
 typedef VkResult (*PFN_vkCreateFence)(VkDevice device, const VkFenceCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 				      VkFence *pFence);
 
-// --------------
-// Fence::Destroy
-// --------------
-
+/**
+ * @brief Destroy a fence object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] fence created by PFN_vkCreateFence()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyFence.html
+ */
 typedef void (*PFN_vkDestroyFence)(VkDevice device, VkFence fence, const VkAllocationCallbacks *pAllocator);
 
-// ------------
-// Fence::Reset
-// ------------
-
+/**
+ * @brief Resets one or more fence objects
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pFences created by PFN_vkCreateFence()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkResetFences.html
+ */
 typedef VkResult (*PFN_vkResetFences)(VkDevice device, u32 fenceCount, const VkFence *pFences);
 
-// -----------
-// Fence::Wait
-// -----------
-
+/**
+ * @brief Wait for one or more fences to become signaled
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pFences created by PFN_vkCreateFence()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkWaitForFences.html
+ */
 typedef VkResult (*PFN_vkWaitForFences)(VkDevice device, u32 fenceCount, const VkFence *pFences, VkBool32 waitAll, u64 timeout);
 
-// -----
-// Image
-// -----
+/**
+ * @}
+ * @defgroup vulkan_image Image
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkImage;
-
-// -------------
-// Image::Create
-// -------------
 
 typedef VkFlags VkImageCreateFlags;
 
@@ -573,18 +627,22 @@ typedef struct VkImageCreateInfo_s {
 	VkImageLayout initialLayout;
 } VkImageCreateInfo;
 
+/**
+ * @brief Create a new image object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pImage must be freed using PFN_vkDestroyImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateImage.html
+ */
 typedef VkResult (*PFN_vkCreateImage)(VkDevice device, const VkImageCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 				      VkImage *pImage);
 
-// --------------
-// Image::Destroy
-// --------------
-
+/**
+ * @brief Destroy an image object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] image created by PFN_vkCreateImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImage.html
+ */
 typedef void (*PFN_vkDestroyImage)(VkDevice device, VkImage image, const VkAllocationCallbacks *pAllocator);
-
-// -------------------------
-// Image::MemoryRequirements
-// -------------------------
 
 typedef struct VkMemoryRequirements_s {
 	VkDeviceSize size;
@@ -592,11 +650,13 @@ typedef struct VkMemoryRequirements_s {
 	u32 memoryTypeBits;
 } VkMemoryRequirements;
 
+/**
+ * @brief Returns the memory requirements for specified Vulkan object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] image created by PFN_vkCreateImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetImageMemoryRequirements.html
+ */
 typedef void (*PFN_vkGetImageMemoryRequirements)(VkDevice device, VkImage image, VkMemoryRequirements *pMemoryRequirements);
-
-// ------------------------
-// Image::SubresourceLayout
-// ------------------------
 
 typedef enum VkImageAspectFlagBits_e {
 	VK_IMAGE_ASPECT_COLOR_BIT	   = 0x00000001,
@@ -618,18 +678,23 @@ typedef struct VkSubresourceLayout_s {
 	VkDeviceSize depthPitch;
 } VkSubresourceLayout;
 
+/**
+ * @brief Retrieve information about an image subresource
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] image created by PFN_vkCreateImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetImageSubresourceLayout.html
+ */
 typedef void (*PFN_vkGetImageSubresourceLayout)(VkDevice device, VkImage image, const VkImageSubresource *pSubresource,
 						VkSubresourceLayout *pLayout);
 
-// ------
-// Buffer
-// ------
+/**
+ * @}
+ * @defgroup vulkan_buffer Buffer
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkBuffer;
-
-// --------------
-// Buffer::Create
-// --------------
 
 typedef VkFlags VkBufferCreateFlags;
 
@@ -651,30 +716,39 @@ typedef struct VkBufferCreateInfo_s {
 	const u32 *pQueueFamilyIndices;
 } VkBufferCreateInfo;
 
+/**
+ * @brief Create a new buffer object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pBuffer must be freed using PFN_vkDestroyBuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateBuffer.html
+ */
 typedef VkResult (*PFN_vkCreateBuffer)(VkDevice device, const VkBufferCreateInfo *pCreateInfo, const VkAllocationCallbacks *pAllocator,
 				       VkBuffer *pBuffer);
 
-// ---------------
-// Buffer::Destroy
-// ---------------
-
+/**
+ * @brief Destroy a buffer object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] buffer created by PFN_vkCreateBuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyBuffer.html
+ */
 typedef void (*PFN_vkDestroyBuffer)(VkDevice device, VkBuffer buffer, const VkAllocationCallbacks *pAllocator);
 
-// --------------------------
-// Buffer::MemoryRequirements
-// --------------------------
-
+/**
+ * @brief Returns the memory requirements for specified Vulkan object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] buffer created by PFN_vkCreateBuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetBufferMemoryRequirements.html
+ */
 typedef void (*PFN_vkGetBufferMemoryRequirements)(VkDevice device, VkBuffer buffer, VkMemoryRequirements *pMemoryRequirements);
 
-// ------------
-// DeviceMemory
-// ------------
+/**
+ * @}
+ * @defgroup vulkan_devicememory DeviceMemory
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkDeviceMemory;
-
-// ----------------------
-// DeviceMemory::Allocate
-// ----------------------
 
 typedef struct VkMemoryAllocateInfo_s {
 	VkStructureType sType;
@@ -683,33 +757,41 @@ typedef struct VkMemoryAllocateInfo_s {
 	u32 memoryTypeIndex;
 } VkMemoryAllocateInfo;
 
+/**
+ * @brief Allocate device memory
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pMemory must be freed using PFN_vkFreeMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateMemory.html
+ */
 typedef VkResult (*PFN_vkAllocateMemory)(VkDevice device, const VkMemoryAllocateInfo *pAllocateInfo,
 					 const VkAllocationCallbacks *pAllocator, VkDeviceMemory *pMemory);
 
-// ------------------
-// DeviceMemory::Free
-// ------------------
-
+/**
+ * @brief Free device memory
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] memory created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkFreeMemory.html
+ */
 typedef void (*PFN_vkFreeMemory)(VkDevice device, VkDeviceMemory memory, const VkAllocationCallbacks *pAllocator);
-
-// -----------------
-// DeviceMemory::Map
-// -----------------
 
 typedef VkFlags VkMemoryMapFlags;
 
+/**
+ * @brief Map a memory object into application address space
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] memory created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkMapMemory.html
+ */
 typedef VkResult (*PFN_vkMapMemory)(VkDevice device, VkDeviceMemory memory, VkDeviceSize offset, VkDeviceSize size, VkMemoryMapFlags flags,
 				    void **ppData);
 
-// -------------------
-// DeviceMemory::Unmap
-// -------------------
-
+/**
+ * @brief Unmap a previously mapped memory object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] memory created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkUnmapMemory.html
+ */
 typedef void (*PFN_vkUnmapMemory)(VkDevice device, VkDeviceMemory memory);
-
-// -------------------
-// DeviceMemory::Flush
-// -------------------
 
 typedef struct VkMappedMemoryRange_s {
 	VkStructureType sType;
@@ -719,35 +801,48 @@ typedef struct VkMappedMemoryRange_s {
 	VkDeviceSize size;
 } VkMappedMemoryRange;
 
+/**
+ * @brief Flush mapped memory ranges
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pMemoryRanges created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkFlushMappedMemoryRanges.html
+ */
 typedef VkResult (*PFN_vkFlushMappedMemoryRanges)(VkDevice device, u32 memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges);
 
-// ------------------------
-// DeviceMemory::Invalidate
-// ------------------------
-
+/**
+ * @brief Invalidate ranges of mapped memory objects
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pMemoryRanges created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkInvalidateMappedMemoryRanges.html
+ */
 typedef VkResult (*PFN_vkInvalidateMappedMemoryRanges)(VkDevice device, u32 memoryRangeCount, const VkMappedMemoryRange *pMemoryRanges);
 
-// -----------------
-// ImageMemory::Bind
-// -----------------
-
+/**
+ * @brief Bind device memory to an image object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] image created by PFN_vkCreateImage()
+ * @param[in] memory created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkBindImageMemory.html
+ */
 typedef VkResult (*PFN_vkBindImageMemory)(VkDevice device, VkImage image, VkDeviceMemory memory, VkDeviceSize memoryOffset);
 
-// ------------------
-// BufferMemory::Bind
-// ------------------
-
+/**
+ * @brief Bind device memory to a buffer object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] buffer created by PFN_vkCreateBuffer()
+ * @param[in] memory created by PFN_vkAllocateMemory()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkBindBufferMemory.html
+ */
 typedef VkResult (*PFN_vkBindBufferMemory)(VkDevice device, VkBuffer buffer, VkDeviceMemory memory, VkDeviceSize memoryOffset);
 
-// ---------
-// ImageView
-// ---------
+/**
+ * @}
+ * @defgroup vulkan_imageview ImageView
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkImageView;
-
-// -----------------
-// ImageView::Create
-// -----------------
 
 typedef VkFlags VkImageViewCreateFlags;
 
@@ -786,24 +881,31 @@ typedef struct VkImageViewCreateInfo_s {
 	VkImageSubresourceRange subresourceRange;
 } VkImageViewCreateInfo;
 
+/**
+ * @brief Create an image view from an existing image
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pView must be freed using PFN_vkDestroyImageView()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateImageView.html
+ */
 typedef VkResult (*PFN_vkCreateImageView)(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
 					  const VkAllocationCallbacks *pAllocator, VkImageView *pView);
 
-// ------------------
-// ImageView::Destroy
-// ------------------
-
+/**
+ * @brief Destroy an image view object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] imageView created by PFN_vkCreateImageView()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyImageView.html
+ */
 typedef void (*PFN_vkDestroyImageView)(VkDevice device, VkImageView imageView, const VkAllocationCallbacks *pAllocator);
 
-// ------------
-// ShaderModule
-// ------------
+/**
+ * @}
+ * @defgroup vulkan_shadermodule ShaderModule
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkShaderModule;
-
-// --------------------
-// ShaderModule::Create
-// --------------------
 
 typedef VkFlags VkShaderModuleCreateFlags;
 
@@ -815,24 +917,31 @@ typedef struct VkShaderModuleCreateInfo_s {
 	const u32 *pCode;
 } VkShaderModuleCreateInfo;
 
+/**
+ * @brief Creates a new shader module object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pShaderModule must be freed using PFN_vkDestroyShaderModule()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateShaderModule.html
+ */
 typedef VkResult (*PFN_vkCreateShaderModule)(VkDevice device, const VkShaderModuleCreateInfo *pCreateInfo,
 					     const VkAllocationCallbacks *pAllocator, VkShaderModule *pShaderModule);
 
-// ---------------------
-// ShaderModule::Destroy
-// ---------------------
-
+/**
+ * @brief Destroy a shader module
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] shaderModule created by PFN_vkCreateShaderModule()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyShaderModule.html
+ */
 typedef void (*PFN_vkDestroyShaderModule)(VkDevice device, VkShaderModule shaderModule, const VkAllocationCallbacks *pAllocator);
 
-// ----------
-// RenderPass
-// ----------
+/**
+ * @}
+ * @defgroup vulkan_renderpass RenderPass
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkRenderPass;
-
-// ------------------
-// RenderPass::Create
-// ------------------
 
 typedef VkFlags VkRenderPassCreateFlags;
 
@@ -927,24 +1036,31 @@ typedef struct VkRenderPassCreateInfo_s {
 	const VkSubpassDependency *pDependencies;
 } VkRenderPassCreateInfo;
 
+/**
+ * @brief Create a new render pass object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pRenderPass must be freed using PFN_vkDestroyRenderPass()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateRenderPass.html
+ */
 typedef VkResult (*PFN_vkCreateRenderPass)(VkDevice device, const VkRenderPassCreateInfo *pCreateInfo,
 					   const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass);
 
-// -------------------
-// RenderPass::Destroy
-// -------------------
-
+/**
+ * @brief Destroy a render pass object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] renderPass created by PFN_vkCreateRenderPass()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyRenderPass.html
+ */
 typedef void (*PFN_vkDestroyRenderPass)(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks *pAllocator);
 
-// -----------
-// Framebuffer
-// -----------
+/**
+ * @}
+ * @defgroup vulkan_framebuffer Framebuffer
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkFramebuffer;
-
-// -------------------
-// Framebuffer::Create
-// -------------------
 
 typedef VkFlags VkFramebufferCreateFlags;
 
@@ -960,24 +1076,31 @@ typedef struct VkFramebufferCreateInfo_s {
 	u32 layers;
 } VkFramebufferCreateInfo;
 
+/**
+ * @brief Create a new framebuffer object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pFramebuffer must be freed using PFN_vkDestroyFramebuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateFramebuffer.html
+ */
 typedef VkResult (*PFN_vkCreateFramebuffer)(VkDevice device, const VkFramebufferCreateInfo *pCreateInfo,
 					    const VkAllocationCallbacks *pAllocator, VkFramebuffer *pFramebuffer);
 
-// --------------------
-// Framebuffer::Destroy
-// --------------------
-
+/**
+ * @brief Destroy a framebuffer object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] framebuffer created by PFN_vkCreateFramebuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyFramebuffer.html
+ */
 typedef void (*PFN_vkDestroyFramebuffer)(VkDevice device, VkFramebuffer framebuffer, const VkAllocationCallbacks *pAllocator);
 
-// --------------
-// PipelineLayout
-// --------------
+/**
+ * @}
+ * @defgroup vulkan_pipelinelayout PipelineLayout
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkPipelineLayout;
-
-// ----------------------
-// PipelineLayout::Create
-// ----------------------
 
 typedef VkFlags VkPipelineLayoutCreateFlags;
 
@@ -1001,25 +1124,32 @@ typedef struct VkPipelineLayoutCreateInfo_s {
 	const VkPushConstantRange *pPushConstantRanges;
 } VkPipelineLayoutCreateInfo;
 
+/**
+ * @brief Creates a new pipeline layout object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pPipelineLayout must be freed using PFN_vkDestroyPipelineLayout()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineLayout.html
+ */
 typedef VkResult (*PFN_vkCreatePipelineLayout)(VkDevice device, const VkPipelineLayoutCreateInfo *pCreateInfo,
 					       const VkAllocationCallbacks *pAllocator, VkPipelineLayout *pPipelineLayout);
 
-// -----------------------
-// PipelineLayout::Destroy
-// -----------------------
-
+/**
+ * @brief Destroy a pipeline layout object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pipelineLayout created by PFN_vkCreatePipelineLayout()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyPipelineLayout.html
+ */
 typedef void (*PFN_vkDestroyPipelineLayout)(VkDevice device, VkPipelineLayout pipelineLayout, const VkAllocationCallbacks *pAllocator);
 
-// --------
-// Pipeline
-// --------
+/**
+ * @}
+ * @defgroup vulkan_pipeline Pipeline
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkPipeline;
 typedef u64 VkPipelineCache;
-
-// ----------------
-// Pipeline::Create
-// ----------------
 
 typedef VkFlags VkPipelineCreateFlags;
 
@@ -1310,25 +1440,32 @@ typedef struct VkGraphicsPipelineCreateInfo_s {
 	s32 basePipelineIndex;
 } VkGraphicsPipelineCreateInfo;
 
+/**
+ * @brief Create graphics pipelines
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pPipelines must be freed using PFN_vkDestroyPipeline()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateGraphicsPipelines.html
+ */
 typedef VkResult (*PFN_vkCreateGraphicsPipelines)(VkDevice device, VkPipelineCache pipelineCache, u32 createInfoCount,
 						  const VkGraphicsPipelineCreateInfo *pCreateInfos, const VkAllocationCallbacks *pAllocator,
 						  VkPipeline *pPipelines);
 
-// -----------------
-// Pipeline::Destroy
-// -----------------
-
+/**
+ * @brief Destroy a pipeline object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pipeline created by PFN_vkCreateGraphicsPipelines()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyPipeline.html
+ */
 typedef void (*PFN_vkDestroyPipeline)(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks *pAllocator);
 
-// -------------
-// CommandBuffer
-// -------------
+/**
+ * @}
+ * @defgroup vulkan_commandbuffer CommandBuffer
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkCommandBuffer;
-
-// ---------------------
-// CommandBuffer::Create
-// ---------------------
 
 typedef enum VkCommandBufferLevel_e {
 	VK_COMMAND_BUFFER_LEVEL_PRIMARY	 = 0,
@@ -1343,19 +1480,23 @@ typedef struct VkCommandBufferAllocateInfo_s {
 	u32 commandBufferCount;
 } VkCommandBufferAllocateInfo;
 
+/**
+ * @brief Allocate command buffers from an existing command pool
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pCommandBuffers must be freed using PFN_vkFreeCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateCommandBuffers.html
+ */
 typedef VkResult (*PFN_vkAllocateCommandBuffers)(VkDevice device, const VkCommandBufferAllocateInfo *pAllocateInfo,
 						 VkCommandBuffer *pCommandBuffers);
 
-// ----------------------
-// CommandBuffer::Destroy
-// ----------------------
-
+/**
+ * @brief Free command buffers
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] pCommandBuffers created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkFreeCommandBuffers.html
+ */
 typedef void (*PFN_vkFreeCommandBuffers)(VkDevice device, VkCommandPool commandPool, u32 commandBufferCount,
 					 const VkCommandBuffer *pCommandBuffers);
-
-// --------------------
-// CommandBuffer::Begin
-// --------------------
 
 typedef enum VkCommandBufferUsageFlagBits_e {
 	VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001,
@@ -1385,25 +1526,28 @@ typedef struct VkCommandBufferBeginInfo_s {
 	const VkCommandBufferInheritanceInfo *pInheritanceInfo;
 } VkCommandBufferBeginInfo;
 
+/**
+ * @brief Start recording a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkBeginCommandBuffer.html
+ */
 typedef VkResult (*PFN_vkBeginCommandBuffer)(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo *pBeginInfo);
 
-// ------------------
-// CommandBuffer::End
-// ------------------
-
+/**
+ * @brief Finish recording a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkEndCommandBuffer.html
+ */
 typedef VkResult (*PFN_vkEndCommandBuffer)(VkCommandBuffer commandBuffer);
-
-// --------------------
-// CommandBuffer::Reset
-// --------------------
 
 typedef VkFlags VkCommandBufferResetFlags;
 
+/**
+ * @brief Reset a command buffer to the initial state
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkResetCommandBuffer.html
+ */
 typedef VkResult (*PFN_vkResetCommandBuffer)(VkCommandBuffer commandBuffer, VkCommandBufferResetFlags flags);
-
-// ------------------------------
-// CommandBuffer::PipelineBarrier
-// ------------------------------
 
 #define VK_QUEUE_FAMILY_IGNORED (~0U)
 
@@ -1439,15 +1583,16 @@ typedef struct VkImageMemoryBarrier_s {
 	VkImageSubresourceRange subresourceRange;
 } VkImageMemoryBarrier;
 
+/**
+ * @brief Insert a memory dependency
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdPipelineBarrier.html
+ */
 typedef void (*PFN_vkCmdPipelineBarrier)(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
 					 VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags, u32 memoryBarrierCount,
 					 const VkMemoryBarrier *pMemoryBarriers, u32 bufferMemoryBarrierCount,
 					 const VkBufferMemoryBarrier *pBufferMemoryBarriers, u32 imageMemoryBarrierCount,
 					 const VkImageMemoryBarrier *pImageMemoryBarriers);
-
-// ------------------------------
-// CommandBuffer::ClearColorImage
-// ------------------------------
 
 typedef union VkClearColorValue_u {
 	float float32[4];
@@ -1455,12 +1600,14 @@ typedef union VkClearColorValue_u {
 	u32 uint32[4];
 } VkClearColorValue;
 
+/**
+ * @brief Clear regions of a color image
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @param[in] image created by PFN_vkCreateImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdClearColorImage.html
+ */
 typedef void (*PFN_vkCmdClearColorImage)(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
 					 const VkClearColorValue *pColor, u32 rangeCount, const VkImageSubresourceRange *pRanges);
-
-// ------------------------------
-// CommandBuffer::BeginRenderPass
-// ------------------------------
 
 typedef struct VkClearDepthStencilValue_s {
 	float depth;
@@ -1487,79 +1634,95 @@ typedef enum VkSubpassContents_e {
 	VK_SUBPASS_CONTENTS_MAX_ENUM = 0x7FFFFFFF
 } VkSubpassContents;
 
+/**
+ * @brief Begin a new render pass
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBeginRenderPass.html
+ */
 typedef void (*PFN_vkCmdBeginRenderPass)(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo *pRenderPassBegin,
 					 VkSubpassContents contents);
 
-// ----------------------------
-// CommandBuffer::EndRenderPass
-// ----------------------------
-
+/**
+ * @brief End the current render pass
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdEndRenderPass.html
+ */
 typedef void (*PFN_vkCmdEndRenderPass)(VkCommandBuffer commandBuffer);
 
-// ---------------------------
-// CommandBuffer::BindPipeline
-// ---------------------------
-
+/**
+ * @brief Bind a pipeline object to a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBindPipeline.html
+ */
 typedef void (*PFN_vkCmdBindPipeline)(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipeline pipeline);
 
-// --------------------------------
-// CommandBuffer::BindVertexBuffers
-// --------------------------------
-
+/**
+ * @brief Bind vertex buffers to a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBindVertexBuffers.html
+ */
 typedef void (*PFN_vkCmdBindVertexBuffers)(VkCommandBuffer commandBuffer, u32 firstBinding, u32 bindingCount, const VkBuffer *pBuffers,
 					   const VkDeviceSize *pOffsets);
-
-// ------------------------------
-// CommandBuffer::BindIndexBuffer
-// ------------------------------
 
 typedef enum VkIndexType_e {
 	VK_INDEX_TYPE_UINT32   = 1,
 	VK_INDEX_TYPE_MAX_ENUM = 0x7FFFFFFF
 } VkIndexType;
 
+/**
+ * @brief Bind an index buffer to a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @param[in] buffer created by PFN_vkCreateBuffer()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBindIndexBuffer.html
+ */
 typedef void (*PFN_vkCmdBindIndexBuffer)(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType);
 
-// --------------------------
-// CommandBuffer::SetViewport
-// --------------------------
-
+/**
+ * @brief Set the viewport dynamically for a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdSetViewport.html
+ */
 typedef void (*PFN_vkCmdSetViewport)(VkCommandBuffer commandBuffer, u32 firstViewport, u32 viewportCount, const VkViewport *pViewports);
 
-// -------------------------
-// CommandBuffer::SetScissor
-// -------------------------
-
+/**
+ * @brief Set scissor rectangles dynamically for a command buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdSetScissor.html
+ */
 typedef void (*PFN_vkCmdSetScissor)(VkCommandBuffer commandBuffer, u32 firstScissor, u32 scissorCount, const VkRect2D *pScissors);
 
-// -------------------
-// CommandBuffer::Draw
-// -------------------
-
+/**
+ * @brief Draw primitives
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDraw.html
+ */
 typedef void (*PFN_vkCmdDraw)(VkCommandBuffer commandBuffer, u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance);
 
-// --------------------------
-// CommandBuffer::DrawIndexed
-// --------------------------
-
+/**
+ * @brief Draw primitives with indexed vertices
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdDrawIndexed.html
+ */
 typedef void (*PFN_vkCmdDrawIndexed)(VkCommandBuffer commandBuffer, u32 indexCount, u32 instanceCount, u32 firstIndex, s32 vertexOffset,
 				     u32 firstInstance);
 
-// ---------
-// Semaphore
-// ---------
+/**
+ * @}
+ * @defgroup vulkan_semaphore Semaphore
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkSemaphore;
 
-// ---------
-// Swapchain
-// ---------
+/**
+ * @}
+ * @defgroup vulkan_swapchain Swapchain
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkSwapchainKHR;
-
-// -----------------
-// Swapchain::Create
-// -----------------
 
 typedef VkFlags VkSwapchainCreateFlagsKHR;
 
@@ -1589,44 +1752,57 @@ typedef struct VkSwapchainCreateInfoKHR_s {
 	VkSwapchainKHR oldSwapchain;
 } VkSwapchainCreateInfoKHR;
 
+/**
+ * @brief Create a swapchain
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pSwapchain must be freed using PFN_vkDestroySwapchainKHR()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateSwapchainKHR.html
+ */
 typedef VkResult (*PFN_vkCreateSwapchainKHR)(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
 					     const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain);
 
-// ------------------
-// Swapchain::Destroy
-// ------------------
-
+/**
+ * @brief Destroy a swapchain object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] swapchain created by PFN_vkCreateSwapchainKHR()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroySwapchainKHR.html
+ */
 typedef void (*PFN_vkDestroySwapchainKHR)(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks *pAllocator);
 
-// ----------------
-// Swapchain::Image
-// ----------------
-
+/**
+ * @brief Obtain the array of presentable images associated with a swapchain
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] swapchain created by PFN_vkCreateSwapchainKHR()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetSwapchainImagesKHR.html
+ */
 typedef VkResult (*PFN_vkGetSwapchainImagesKHR)(VkDevice device, VkSwapchainKHR swapchain, u32 *pSwapchainImageCount,
 						VkImage *pSwapchainImages);
 
-// --------------------
-// Swapchain::NextImage
-// --------------------
-
+/**
+ * @brief Retrieve the index of the next available presentable image
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] swapchain created by PFN_vkCreateSwapchainKHR()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkAcquireNextImageKHR.html
+ */
 typedef VkResult (*PFN_vkAcquireNextImageKHR)(VkDevice device, VkSwapchainKHR swapchain, u64 timeout, VkSemaphore semaphore, VkFence fence,
 					      u32 *pImageIndex);
 
-// -----
-// Queue
-// -----
+/**
+ * @}
+ * @defgroup vulkan_queue Queue
+ * @ingroup vulkan
+ * @{
+ */
 
 typedef u64 VkQueue;
 
-// -------------
-// Queue::Create
-// -------------
-
+/**
+ * @brief Get a queue handle from a device
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pQueue
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetDeviceQueue.html
+ */
 typedef void (*PFN_vkGetDeviceQueue)(VkDevice device, u32 queueFamilyIndex, u32 queueIndex, VkQueue *pQueue);
-
-// -------------
-// Queue::Submit
-// -------------
 
 typedef struct VkSubmitInfo_s {
 	VkStructureType sType;
@@ -1640,11 +1816,12 @@ typedef struct VkSubmitInfo_s {
 	const VkSemaphore *pSignalSemaphores;
 } VkSubmitInfo;
 
+/**
+ * @brief Submits a sequence of semaphores or command buffers to a queue
+ * @param[in] queue created by PFN_vkGetDeviceQueue()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkQueueSubmit.html
+ */
 typedef VkResult (*PFN_vkQueueSubmit)(VkQueue queue, u32 submitCount, const VkSubmitInfo *pSubmits, VkFence fence);
-
-// --------------
-// Queue::Present
-// --------------
 
 typedef struct VkPresentInfoKHR_s {
 	VkStructureType sType;
@@ -1657,6 +1834,15 @@ typedef struct VkPresentInfoKHR_s {
 	VkResult *pResults;
 } VkPresentInfoKHR;
 
+/**
+ * @brief Queue an image for presentation
+ * @param[in] queue created by PFN_vkGetDeviceQueue()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkQueuePresentKHR.html
+ */
 typedef VkResult (*PFN_vkQueuePresentKHR)(VkQueue queue, const VkPresentInfoKHR *pPresentInfo);
+
+/**
+ * @}
+ */
 
 #endif

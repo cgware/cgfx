@@ -1,15 +1,10 @@
 #include "gfx_driver.h"
 
 #include "log.h"
+#include "opengl.h"
 #include "test.h"
 
 typedef void (*t_gfx_opengl_symbol_t)(void);
-
-enum {
-	T_GL_ARRAY_BUFFER = 0x8892,
-	T_GL_TRIANGLES	  = 0x0004,
-	T_GL_UNSIGNED_INT = 0x1405,
-};
 
 static int t_gl_clear_color_calls;
 static int t_gl_clear_calls;
@@ -2312,7 +2307,7 @@ TEST(gfx_opengl_buffer_bind_sets_attributes)
 		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
 		.stride		   = sizeof(gfx_vertex_2d_t),
 	};
-	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = T_GL_ARRAY_BUFFER};
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = GL_ARRAY_BUFFER};
 
 	gfx_pipeline_t pipeline = {
 		.gfx	     = &gfx,
@@ -2355,7 +2350,7 @@ TEST(gfx_opengl_buffer_bind_make_current_failure)
 		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
 		.stride		   = sizeof(gfx_vertex_2d_t),
 	};
-	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = T_GL_ARRAY_BUFFER};
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = GL_ARRAY_BUFFER};
 
 	gfx_pipeline_t pipeline = {
 		.gfx  = &gfx,
@@ -2413,9 +2408,9 @@ TEST(gfx_opengl_draw_indexed_calls_gl)
 
 	EXPECT_EQ(gfx.drv->draw_indexed(&frame, 3), 0);
 	EXPECT_EQ(t_gl_draw_elements_calls, 1);
-	EXPECT_EQ(t_gl_draw_mode, T_GL_TRIANGLES);
+	EXPECT_EQ(t_gl_draw_mode, GL_TRIANGLES);
 	EXPECT_EQ(t_gl_draw_count, 3);
-	EXPECT_EQ(t_gl_draw_type, T_GL_UNSIGNED_INT);
+	EXPECT_EQ(t_gl_draw_type, GL_UNSIGNED_INT);
 	EXPECT_NULL(t_gl_draw_indices);
 
 	gfx_free(&gfx);

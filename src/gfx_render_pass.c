@@ -1,5 +1,3 @@
-#include "gfx_render_pass.h"
-
 #include "gfx_driver.h"
 
 static int gfx_render_pass_config_valid(const gfx_render_pass_config_t *config)

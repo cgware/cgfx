@@ -1,7 +1,6 @@
 #ifndef GFX_TARGET_H
 #define GFX_TARGET_H
 
-#include "gfx.h"
 #include "gfx_swapchain.h"
 
 typedef enum gfx_target_type_e {

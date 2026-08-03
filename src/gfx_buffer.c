@@ -1,5 +1,3 @@
-#include "gfx_buffer.h"
-
 #include "gfx_driver.h"
 
 gfx_buffer_t *gfx_buffer_init(gfx_buffer_t *buf, gfx_t *gfx, const gfx_buffer_config_t *config)

@@ -1,42 +1,7 @@
-#include "gfx_buffer.h"
 #include "gfx_driver.h"
 
 #include "log.h"
-
-enum {
-	GL_TRUE			    = 1,
-	GL_TEXTURE_2D		    = 0x0DE1,
-	GL_RGBA			    = 0x1908,
-	GL_VENDOR		    = 0x1F00,
-	GL_RENDERER		    = 0x1F01,
-	GL_VERSION		    = 0x1F02,
-	GL_SHADING_LANGUAGE_VERSION = 0x8B8C,
-	GL_UNSIGNED_BYTE	    = 0x1401,
-	GL_UNSIGNED_INT		    = 0x1405,
-	GL_NEAREST		    = 0x2600,
-	GL_CLAMP_TO_EDGE	    = 0x812F,
-	GL_TEXTURE_MAG_FILTER	    = 0x2800,
-	GL_TEXTURE_MIN_FILTER	    = 0x2801,
-	GL_TEXTURE_WRAP_S	    = 0x2802,
-	GL_TEXTURE_WRAP_T	    = 0x2803,
-	GL_RGBA8		    = 0x8058,
-	GL_COLOR_ATTACHMENT0	    = 0x8CE0,
-	GL_FRAMEBUFFER		    = 0x8D40,
-	GL_FRAMEBUFFER_COMPLETE	    = 0x8CD5,
-	GL_COLOR_BUFFER_BIT	    = 0x00004000,
-	GL_TRIANGLES		    = 0x0004,
-	GL_FLOAT		    = 0x1406,
-	GL_FALSE		    = 0,
-	GL_ARRAY_BUFFER		    = 0x8892,
-	GL_ELEMENT_ARRAY_BUFFER	    = 0x8893,
-	GL_DYNAMIC_DRAW		    = 0x88E8,
-	GL_VERTEX_SHADER	    = 0x8B31,
-	GL_FRAGMENT_SHADER	    = 0x8B30,
-	GL_COMPILE_STATUS	    = 0x8B81,
-	GL_LINK_STATUS		    = 0x8B82,
-	GL_INFO_LOG_LENGTH	    = 0x8B84,
-	GL_NO_ERROR		    = 0,
-};
+#include "opengl.h"
 
 typedef struct gfx_opengl_vertex_2d_s {
 	float x;
@@ -52,44 +17,44 @@ typedef struct gfx_opengl_s {
 	const gfx_target_t *target;
 	const gfx_framebuffer_t *framebuffer;
 	gfx_surface_t *surface;
-	void (*ClearColor)(float, float, float, float);
-	void (*Clear)(unsigned int);
-	void (*GenFramebuffers)(int, unsigned int *);
-	void (*DeleteFramebuffers)(int, const unsigned int *);
-	void (*BindFramebuffer)(unsigned int, unsigned int);
-	unsigned int (*CheckFramebufferStatus)(unsigned int);
-	void (*FramebufferTexture2D)(unsigned int, unsigned int, unsigned int, unsigned int, int);
-	void (*GenTextures)(int, unsigned int *);
-	void (*DeleteTextures)(int, const unsigned int *);
-	void (*BindTexture)(unsigned int, unsigned int);
-	void (*TexParameteri)(unsigned int, unsigned int, int);
-	void (*TexImage2D)(unsigned int, int, int, int, int, int, unsigned int, unsigned int, const void *);
-	void (*Viewport)(int, int, int, int);
-	void (*ReadPixels)(int, int, int, int, unsigned int, unsigned int, void *);
-	unsigned int (*GetError)(void);
-	const unsigned char *(*GetString)(unsigned int);
-	unsigned int (*CreateShader)(unsigned int);
-	void (*ShaderSource)(unsigned int, int, const char **, const int *);
-	void (*CompileShader)(unsigned int);
-	void (*GetShaderiv)(unsigned int, unsigned int, int *);
-	void (*GetShaderInfoLog)(unsigned int, int, int *, char *);
-	void (*DeleteShader)(unsigned int);
-	unsigned int (*CreateProgram)(void);
-	void (*AttachShader)(unsigned int, unsigned int);
-	void (*LinkProgram)(unsigned int);
-	void (*GetProgramiv)(unsigned int, unsigned int, int *);
-	void (*GetProgramInfoLog)(unsigned int, int, int *, char *);
-	void (*DeleteProgram)(unsigned int);
-	void (*GenBuffers)(int, unsigned int *);
-	void (*DeleteBuffers)(int, const unsigned int *);
-	void (*BindBuffer)(unsigned int, unsigned int);
-	void (*BufferData)(unsigned int, size_t, const void *, unsigned int);
-	void (*UseProgram)(unsigned int);
-	void (*EnableVertexAttribArray)(unsigned int);
-	void (*DisableVertexAttribArray)(unsigned int);
-	void (*VertexAttribPointer)(unsigned int, int, unsigned int, unsigned char, int, const void *);
-	void (*DrawArrays)(unsigned int, int, int);
-	void (*DrawElements)(unsigned int, int, unsigned int, const void *);
+	PFN_glClearColor ClearColor;
+	PFN_glClear Clear;
+	PFN_glGenFramebuffers GenFramebuffers;
+	PFN_glDeleteFramebuffers DeleteFramebuffers;
+	PFN_glBindFramebuffer BindFramebuffer;
+	PFN_glCheckFramebufferStatus CheckFramebufferStatus;
+	PFN_glFramebufferTexture2D FramebufferTexture2D;
+	PFN_glGenTextures GenTextures;
+	PFN_glDeleteTextures DeleteTextures;
+	PFN_glBindTexture BindTexture;
+	PFN_glTexParameteri TexParameteri;
+	PFN_glTexImage2D TexImage2D;
+	PFN_glViewport Viewport;
+	PFN_glReadPixels ReadPixels;
+	PFN_glGetError GetError;
+	PFN_glGetString GetString;
+	PFN_glCreateShader CreateShader;
+	PFN_glShaderSource ShaderSource;
+	PFN_glCompileShader CompileShader;
+	PFN_glGetShaderiv GetShaderiv;
+	PFN_glGetShaderInfoLog GetShaderInfoLog;
+	PFN_glDeleteShader DeleteShader;
+	PFN_glCreateProgram CreateProgram;
+	PFN_glAttachShader AttachShader;
+	PFN_glLinkProgram LinkProgram;
+	PFN_glGetProgramiv GetProgramiv;
+	PFN_glGetProgramInfoLog GetProgramInfoLog;
+	PFN_glDeleteProgram DeleteProgram;
+	PFN_glGenBuffers GenBuffers;
+	PFN_glDeleteBuffers DeleteBuffers;
+	PFN_glBindBuffer BindBuffer;
+	PFN_glBufferData BufferData;
+	PFN_glUseProgram UseProgram;
+	PFN_glEnableVertexAttribArray EnableVertexAttribArray;
+	PFN_glDisableVertexAttribArray DisableVertexAttribArray;
+	PFN_glVertexAttribPointer VertexAttribPointer;
+	PFN_glDrawArrays DrawArrays;
+	PFN_glDrawElements DrawElements;
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_render_pass_s {

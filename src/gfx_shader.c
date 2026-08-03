@@ -1,6 +1,5 @@
-#include "gfx_shader.h"
-
 #include "gfx_driver.h"
+
 #include "log.h"
 
 gfx_shader_t *gfx_shader_init(gfx_shader_t *shader, gfx_t *gfx, const gfx_shader_config_t *config)

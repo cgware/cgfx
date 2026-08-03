@@ -1,5 +1,3 @@
-#include "gfx_target.h"
-
 #include "gfx_driver.h"
 
 gfx_target_t *gfx_target_init_memory(gfx_target_t *target, gfx_t *gfx, const gfx_memory_target_config_t *config)

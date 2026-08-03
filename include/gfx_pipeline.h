@@ -1,8 +1,6 @@
 #ifndef GFX_PIPELINE_H
 #define GFX_PIPELINE_H
 
-#include "gfx.h"
-#include "gfx_buffer.h"
 #include "gfx_render_pass.h"
 #include "gfx_shader.h"
 

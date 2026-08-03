@@ -1,5 +1,3 @@
-#include "gfx.h"
-
 #include "gfx_driver.h"
 
 gfx_t *gfx_init(gfx_t *gfx, const struct gfx_driver_s *drv, const gfx_config_t *config, proc_t *proc, alloc_t alloc)

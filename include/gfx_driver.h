@@ -2,10 +2,13 @@
 #define GFX_DRIVER_H
 
 #include "driver.h"
+#include "gfx_buffer.h"
 #include "gfx_framebuffer.h"
 #include "gfx_pipeline.h"
-#include "gfx_swapchain.h"
-#include "gfx_target.h"
+
+/**
+ * @defgroup graphics Graphics
+ */
 
 typedef struct gfx_driver_s {
 	const char *name;
