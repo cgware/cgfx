@@ -2377,6 +2377,39 @@ TEST(gfx_d3d11_pipeline_init_element_alloc_failure_direct)
 	END;
 }
 
+TEST(gfx_d3d11_pipeline_init_rejects_too_many_layout_elements_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+
+	const gfx_layout_t layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = ((size_t)U32_MAX + (size_t)1) * sizeof(gfx_layout_t);
+
+	gfx_pipeline_t pipeline = {
+		.gfx = &gfx,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_pipeline_init_missing_layout_semantic_direct)
 {
 	START;
@@ -2401,6 +2434,39 @@ TEST(gfx_d3d11_pipeline_init_missing_layout_semantic_direct)
 	};
 
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_init_rejects_large_layout_stride_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_shader_data_t vs_data = {0};
+	t_gfx_d3d11_shader_data_t fs_data = {0};
+	gfx_shader_t vs			  = {.data = &vs_data};
+	gfx_shader_t fs			  = {.data = &fs_data};
+
+	const gfx_layout_t layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = U32_MAX, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_config_t config = t_gfx_d3d11_direct_pipeline_config(&vs, &fs);
+	config.input_layout	     = layout;
+	config.input_layout_size     = sizeof(layout);
+
+	gfx_pipeline_t pipeline = {
+		.gfx = &gfx,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3731,7 +3797,9 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_missing_shader_callback_direct);
 	RUN(gfx_d3d11_pipeline_init_alloc_failure_direct);
 	RUN(gfx_d3d11_pipeline_init_element_alloc_failure_direct);
+	RUN(gfx_d3d11_pipeline_init_rejects_too_many_layout_elements_direct);
 	RUN(gfx_d3d11_pipeline_init_missing_layout_semantic_direct);
+	RUN(gfx_d3d11_pipeline_init_rejects_large_layout_stride_direct);
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout_direct);
 	RUN(gfx_d3d11_pipeline_init_create_input_layout_failure_direct);
 	RUN(gfx_d3d11_clear_null_data);

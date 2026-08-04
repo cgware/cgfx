@@ -990,7 +990,13 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 			return 1;
 		}
 
-		gl_pipeline->stride += size * config->input_layout[i].count;
+		size *= config->input_layout[i].count;
+		if (size > (size_t)S32_MAX || gl_pipeline->stride > S32_MAX - (int)size) {
+			log_error("cgfx", "gfx_opengl", NULL, "input layout stride is too large");
+			gfx_opengl_pipeline_free(pipeline);
+			return 1;
+		}
+		gl_pipeline->stride += (int)size;
 	}
 
 	opengl->LinkProgram(gl_pipeline->program);

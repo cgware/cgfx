@@ -5453,6 +5453,42 @@ TEST(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct)
 	END;
 }
 
+TEST(gfx_vulkan_pipeline_init_rejects_too_many_layout_elements_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+
+	const gfx_layout_t layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+
+	gfx_pipeline_config_t pipeline_config = {
+		.render_pass	   = &render_pass,
+		.vs		   = vs,
+		.fs		   = fs,
+		.input_layout	   = layout,
+		.input_layout_size = ((size_t)U32_MAX + (size_t)1) * sizeof(gfx_layout_t),
+	};
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &pipeline_config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_pipeline_init_unsupported_layout_direct)
 {
 	START;
@@ -5480,6 +5516,42 @@ TEST(gfx_vulkan_pipeline_init_unsupported_layout_direct)
 		.input_layout	   = layout,
 		.input_layout_size = sizeof(layout),
 	};
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &pipeline_config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_pipeline_init_rejects_large_layout_stride_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+
+	const gfx_layout_t layout[] = {
+		{.index = 0, .semantic = "POSITION", .count = U32_MAX, .type = GFX_VALUE_FLOAT32},
+	};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+
+	gfx_pipeline_config_t pipeline_config = {
+		.render_pass	   = &render_pass,
+		.vs		   = vs,
+		.fs		   = fs,
+		.input_layout	   = layout,
+		.input_layout_size = sizeof(layout),
+	};
+	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &pipeline_config), 1);
 	log_set_quiet(0, 0);
 	EXPECT_NULL(pipeline.data);
@@ -5692,7 +5764,9 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_pipeline_init_alloc_failure_direct);
 	RUN(gfx_vulkan_pipeline_init_create_layout_failure_direct);
 	RUN(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct);
+	RUN(gfx_vulkan_pipeline_init_rejects_too_many_layout_elements_direct);
 	RUN(gfx_vulkan_pipeline_init_unsupported_layout_direct);
+	RUN(gfx_vulkan_pipeline_init_rejects_large_layout_stride_direct);
 	RUN(gfx_vulkan_pipeline_init_create_pipeline_failure_direct);
 
 	t_gfx_vulkan_compiler_free();

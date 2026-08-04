@@ -1856,6 +1856,12 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	};
 
 	size_t layout_cnt = config->input_layout_size / sizeof(gfx_layout_t);
+	if (layout_cnt > U32_MAX) {
+		log_error("cgfx", "gfx_vulkan", NULL, "too many input layout elements: %zu", layout_cnt);
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
+	}
+	u32 attribute_count = (u32)layout_cnt;
 
 	VkVertexInputAttributeDescription *attributes =
 		alloc_alloc(&pipeline->gfx->alloc, layout_cnt * sizeof(VkVertexInputAttributeDescription));
@@ -1864,10 +1870,18 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		return 1;
 	}
 
-	size_t offset = 0;
+	u32 offset = 0;
 	for (size_t i = 0; i < layout_cnt; i++) {
 		attributes[i].location = config->input_layout[i].index;
 		attributes[i].binding  = 0;
+
+		size_t size = sizeof(float) * config->input_layout[i].count;
+		if (size > U32_MAX || offset > U32_MAX - (u32)size) {
+			log_error("cgfx", "gfx_vulkan", NULL, "input layout stride is too large");
+			alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));
+			gfx_vulkan_pipeline_free(pipeline);
+			return 1;
+		}
 
 		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
 			attributes[i].format = VK_FORMAT_R32G32_SFLOAT;
@@ -1886,8 +1900,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		}
 
 		attributes[i].offset = offset;
-
-		offset += sizeof(float) * config->input_layout[i].count;
+		offset += (u32)size;
 	}
 
 	VkVertexInputBindingDescription binding = {
@@ -1900,7 +1913,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.sType				 = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 		.vertexBindingDescriptionCount	 = 1,
 		.pVertexBindingDescriptions	 = &binding,
-		.vertexAttributeDescriptionCount = layout_cnt,
+		.vertexAttributeDescriptionCount = attribute_count,
 		.pVertexAttributeDescriptions	 = attributes,
 	};
 	VkPipelineInputAssemblyStateCreateInfo assembly = {
@@ -1937,7 +1950,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.attachmentCount = 1,
 		.pAttachments	 = &blend_attachment,
 	};
-	u32 dynamic_states[2]			 = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+	VkDynamicState dynamic_states[2]	 = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 	VkPipelineDynamicStateCreateInfo dynamic = {
 		.sType		   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
 		.dynamicStateCount = 2,

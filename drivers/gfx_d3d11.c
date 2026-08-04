@@ -889,6 +889,12 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	pipeline->data = d3d_pipeline;
 
 	size_t layout_cnt = config->input_layout_size / sizeof(gfx_layout_t);
+	if (layout_cnt > U32_MAX) {
+		log_error("cgfx", "gfx_d3d11", NULL, "too many input layout elements: %zu", layout_cnt);
+		gfx_d3d11_pipeline_free(pipeline);
+		return 1;
+	}
+	UINT element_count = (UINT)layout_cnt;
 
 	D3D11_INPUT_ELEMENT_DESC *elements = alloc_alloc(&pipeline->gfx->alloc, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
 	if (elements == NULL) {
@@ -896,7 +902,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 		return 1;
 	}
 
-	size_t offset = 0;
+	UINT offset = 0;
 	for (size_t i = 0; i < layout_cnt; i++) {
 		if (config->input_layout[i].semantic == NULL) {
 			alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
@@ -911,6 +917,14 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 			.AlignedByteOffset = offset,
 			.InputSlotClass	   = D3D11_INPUT_PER_VERTEX_DATA,
 		};
+
+		size_t size = sizeof(float) * config->input_layout[i].count;
+		if (size > U32_MAX || offset > U32_MAX - (UINT)size) {
+			log_error("cgfx", "gfx_d3d11", NULL, "input layout stride is too large");
+			alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
+			gfx_d3d11_pipeline_free(pipeline);
+			return 1;
+		}
 
 		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
 			elements[i].Format = DXGI_FORMAT_R32G32_FLOAT;
@@ -928,7 +942,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 			return 1;
 		}
 
-		offset += sizeof(float) * config->input_layout[i].count;
+		offset += (UINT)size;
 	}
 
 	d3d_pipeline->stride = offset;
@@ -937,7 +951,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	gfx_d3d11_shader_t *fs = config->fs.data;
 
 	HRESULT hr = device->CreateInputLayout(
-		d3d11->device, elements, layout_cnt, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
+		d3d11->device, elements, element_count, d3d11_blob_data(vs->code), d3d11_blob_size(vs->code), &d3d_pipeline->input_layout);
 	alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));
 	if (!hresult_ok(hr) || d3d_pipeline->input_layout == NULL) {
 		gfx_d3d11_pipeline_free(pipeline);
