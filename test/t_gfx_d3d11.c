@@ -1,90 +1,14 @@
 #include "gfx_driver.h"
 
+#include "d3d11.h"
 #include "log.h"
 #include "test.h"
 
-typedef long HRESULT;
-typedef unsigned int UINT;
-typedef unsigned long ULONG;
-typedef void *HMODULE;
-typedef int D3D_FEATURE_LEVEL;
-
 enum {
-	S_OK					= 0,
-	T_D3D_DRIVER_TYPE_HARDWARE		= 1,
-	T_D3D11_SDK_VERSION			= 7,
-	T_D3D11_USAGE_DEFAULT			= 0,
-	T_D3D11_USAGE_STAGING			= 3,
-	T_D3D11_BIND_VERTEX_BUFFER		= 0x00000001,
-	T_D3D11_BIND_INDEX_BUFFER		= 0x00000002,
-	T_D3D11_BIND_RENDER_TARGET		= 0x00000020,
-	T_D3D11_CPU_ACCESS_READ			= 0x00020000,
-	T_D3D11_MAP_READ			= 1,
-	T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
-	T_DXGI_FORMAT_R32_UINT			= 42,
+	S_OK = 0,
 };
 
-typedef struct GUID_s {
-	u32 Data1;
-	u16 Data2;
-	u16 Data3;
-	u8 Data4[8];
-} GUID;
-
-typedef const GUID *REFIID;
 typedef void (*t_gfx_d3d11_symbol_t)(void);
-
-typedef struct D3D11_VIEWPORT_s {
-	float TopLeftX;
-	float TopLeftY;
-	float Width;
-	float Height;
-	float MinDepth;
-	float MaxDepth;
-} D3D11_VIEWPORT;
-
-typedef struct D3D11_BUFFER_DESC_s {
-	UINT ByteWidth;
-	UINT Usage;
-	UINT BindFlags;
-	UINT CPUAccessFlags;
-	UINT MiscFlags;
-	UINT StructureByteStride;
-} D3D11_BUFFER_DESC;
-
-typedef struct DXGI_SAMPLE_DESC_s {
-	UINT Count;
-	UINT Quality;
-} DXGI_SAMPLE_DESC;
-
-typedef struct D3D11_TEXTURE2D_DESC_s {
-	UINT Width;
-	UINT Height;
-	UINT MipLevels;
-	UINT ArraySize;
-	UINT Format;
-	DXGI_SAMPLE_DESC SampleDesc;
-	UINT Usage;
-	UINT BindFlags;
-	UINT CPUAccessFlags;
-	UINT MiscFlags;
-} D3D11_TEXTURE2D_DESC;
-
-typedef struct D3D11_MAPPED_SUBRESOURCE_s {
-	void *pData;
-	UINT RowPitch;
-	UINT DepthPitch;
-} D3D11_MAPPED_SUBRESOURCE;
-
-typedef struct D3D11_INPUT_ELEMENT_DESC_s {
-	const char *SemanticName;
-	UINT SemanticIndex;
-	UINT Format;
-	UINT InputSlot;
-	UINT AlignedByteOffset;
-	UINT InputSlotClass;
-	UINT InstanceDataStepRate;
-} D3D11_INPUT_ELEMENT_DESC;
 
 typedef struct t_d3d11_vertex_2d_s {
 	float x;
@@ -109,191 +33,46 @@ typedef struct t_dxgi_swapchain_s t_dxgi_swapchain_t;
 static gfx_shader_compiler_t t_gfx_d3d11_compiler;
 static int t_gfx_d3d11_compiler_initialized;
 
-typedef struct t_d3d_blob_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d_blob_t *self);
-	void *(*GetBufferPointer)(t_d3d_blob_t *self);
-	size_t (*GetBufferSize)(t_d3d_blob_t *self);
-} t_d3d_blob_vtbl_t;
-
-typedef struct t_d3d11_buffer_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_buffer_t *self);
-} t_d3d11_buffer_vtbl_t;
-
-typedef struct t_d3d11_device_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_device_t *self);
-	HRESULT (*CreateBuffer)(t_d3d11_device_t *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, t_d3d11_buffer_t **buffer);
-	HRESULT (*CreateTexture1D)(void);
-	HRESULT(*CreateTexture2D)
-	(t_d3d11_device_t *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data, t_d3d11_texture_t **texture);
-	HRESULT (*CreateTexture3D)(void);
-	HRESULT (*CreateShaderResourceView)(void);
-	HRESULT (*CreateUnorderedAccessView)(void);
-	HRESULT (*CreateRenderTargetView)(t_d3d11_device_t *self, void *resource, const void *desc, t_d3d11_view_t **view);
-	HRESULT (*CreateDepthStencilView)(void);
-	HRESULT(*CreateInputLayout)
-	(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count, const void *shader_bytecode,
-	 size_t bytecode_length, t_d3d11_input_layout_t **input_layout);
-	HRESULT(*CreateVertexShader)
-	(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
-	 t_d3d11_vertex_shader_t **shader);
-	HRESULT (*CreateGeometryShader)(void);
-	HRESULT (*CreateGeometryShaderWithStreamOutput)(void);
-	HRESULT(*CreatePixelShader)
-	(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage, t_d3d11_pixel_shader_t **shader);
-} t_d3d11_device_vtbl_t;
-
-typedef struct t_d3d11_context_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_context_t *self);
-	void (*GetDevice)(void);
-	void (*GetPrivateData)(void);
-	void (*SetPrivateData)(void);
-	void (*SetPrivateDataInterface)(void);
-	void (*unused_07)(void);
-	void (*unused_08)(void);
-	void (*PSSetShader)(t_d3d11_context_t *self, t_d3d11_pixel_shader_t *shader, void *const *class_instances,
-			    UINT class_instance_count);
-	void (*unused_10)(void);
-	void (*VSSetShader)(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shader, void *const *class_instances,
-			    UINT class_instance_count);
-	void (*DrawIndexed)(t_d3d11_context_t *self, UINT index_count, UINT start_index_location, int base_vertex_location);
-	void (*Draw)(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location);
-	HRESULT(*Map)
-	(t_d3d11_context_t *self, void *resource, UINT subresource, UINT map_type, UINT map_flags, D3D11_MAPPED_SUBRESOURCE *mapped);
-	void (*Unmap)(t_d3d11_context_t *self, void *resource, UINT subresource);
-	void (*unused_16)(void);
-	void (*IASetInputLayout)(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout);
-	void (*IASetVertexBuffers)(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
-				   const UINT *strides, const UINT *offsets);
-	void (*IASetIndexBuffer)(t_d3d11_context_t *self, t_d3d11_buffer_t *index_buffer, UINT format, UINT offset);
-	void (*unused_20)(void);
-	void (*unused_21)(void);
-	void (*unused_22)(void);
-	void (*unused_23)(void);
-	void (*IASetPrimitiveTopology)(t_d3d11_context_t *self, UINT topology);
-	void (*unused_25)(void);
-	void (*unused_26)(void);
-	void (*unused_27)(void);
-	void (*unused_28)(void);
-	void (*unused_29)(void);
-	void (*unused_30)(void);
-	void (*unused_31)(void);
-	void (*unused_32)(void);
-	void (*OMSetRenderTargets)(t_d3d11_context_t *self, UINT num_views, t_d3d11_view_t *const *views, void *depth_stencil_view);
-	void (*unused_34)(void);
-	void (*unused_35)(void);
-	void (*unused_36)(void);
-	void (*unused_37)(void);
-	void (*unused_38)(void);
-	void (*unused_39)(void);
-	void (*unused_40)(void);
-	void (*unused_41)(void);
-	void (*unused_42)(void);
-	void (*unused_43)(void);
-	void (*RSSetViewports)(t_d3d11_context_t *self, UINT num_viewports, const D3D11_VIEWPORT *viewports);
-	void (*unused_45)(void);
-	void (*unused_46)(void);
-	void (*CopyResource)(t_d3d11_context_t *self, void *dst, void *src);
-	void (*UpdateSubresource)(t_d3d11_context_t *self, t_d3d11_buffer_t *resource, UINT subresource, const void *box, const void *data,
-				  UINT row_pitch, UINT depth_pitch);
-	void (*unused_49)(void);
-	void (*ClearRenderTargetView)(t_d3d11_context_t *self, t_d3d11_view_t *view, const float color[4]);
-} t_d3d11_context_vtbl_t;
-
-typedef struct t_d3d11_input_layout_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_input_layout_t *self);
-} t_d3d11_input_layout_vtbl_t;
-
-typedef struct t_d3d11_pixel_shader_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_pixel_shader_t *self);
-} t_d3d11_pixel_shader_vtbl_t;
-
-typedef struct t_d3d11_view_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_view_t *self);
-} t_d3d11_view_vtbl_t;
-
-typedef struct t_d3d11_texture_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_texture_t *self);
-} t_d3d11_texture_vtbl_t;
-
-typedef struct t_d3d11_vertex_shader_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(t_d3d11_vertex_shader_t *self);
-} t_d3d11_vertex_shader_vtbl_t;
-
-typedef struct t_dxgi_swapchain_vtbl_s {
-	HRESULT (*QueryInterface)(void);
-	ULONG (*AddRef)(void);
-	ULONG (*Release)(void);
-	HRESULT (*SetPrivateData)(void);
-	HRESULT (*SetPrivateDataInterface)(void);
-	HRESULT (*GetPrivateData)(void);
-	HRESULT (*GetParent)(void);
-	HRESULT (*GetDevice)(void);
-	HRESULT (*Present)(t_dxgi_swapchain_t *self, UINT sync_interval, UINT flags);
-	HRESULT (*GetBuffer)(t_dxgi_swapchain_t *self, UINT buffer, REFIID riid, void **surface);
-	HRESULT (*SetFullscreenState)(void);
-	HRESULT (*GetFullscreenState)(void);
-	HRESULT (*GetDesc)(void);
-	HRESULT (*ResizeBuffers)(t_dxgi_swapchain_t *self, UINT buffer_count, UINT width, UINT height, UINT format, UINT flags);
-} t_dxgi_swapchain_vtbl_t;
-
 struct t_d3d_blob_s {
-	t_d3d_blob_vtbl_t *vtbl;
+	ID3DBlobVTable *vtbl;
 	const void *data;
 	size_t size;
 };
 
 struct t_d3d11_buffer_s {
-	t_d3d11_buffer_vtbl_t *vtbl;
+	ID3D11BufferVTable *vtbl;
 };
 
 struct t_d3d11_device_s {
-	t_d3d11_device_vtbl_t *vtbl;
+	ID3D11DeviceVTable *vtbl;
 };
 
 struct t_d3d11_context_s {
-	t_d3d11_context_vtbl_t *vtbl;
+	ID3D11DeviceContextVTable *vtbl;
 };
 
 struct t_d3d11_input_layout_s {
-	t_d3d11_input_layout_vtbl_t *vtbl;
+	ID3D11InputLayoutVTable *vtbl;
 };
 
 struct t_d3d11_pixel_shader_s {
-	t_d3d11_pixel_shader_vtbl_t *vtbl;
+	ID3D11PixelShaderVTable *vtbl;
 };
 
 struct t_d3d11_view_s {
-	t_d3d11_view_vtbl_t *vtbl;
+	ID3D11RenderTargetViewVTable *vtbl;
 };
 
 struct t_d3d11_texture_s {
-	t_d3d11_texture_vtbl_t *vtbl;
+	ID3D11Texture2DVTable *vtbl;
 };
 
 struct t_d3d11_vertex_shader_s {
-	t_d3d11_vertex_shader_vtbl_t *vtbl;
+	ID3D11VertexShaderVTable *vtbl;
 };
 
 struct t_dxgi_swapchain_s {
-	t_dxgi_swapchain_vtbl_t *vtbl;
+	IDXGISwapChainVTable *vtbl;
 };
 
 static int t_create_device_calls;
@@ -480,102 +259,103 @@ static void *t_gfx_d3d11_symbol(t_gfx_d3d11_symbol_t fn)
 	return symbol.ptr;
 }
 
-static ULONG t_device_release(t_d3d11_device_t *self)
+static ULONG t_device_release(ID3D11Device *self)
 {
 	(void)self;
 	t_release_device_calls++;
 	return 0;
 }
 
-static ULONG t_context_release(t_d3d11_context_t *self)
+static ULONG t_context_release(ID3D11DeviceContext *self)
 {
 	(void)self;
 	t_release_context_calls++;
 	return 0;
 }
 
-static ULONG t_view_release(t_d3d11_view_t *self)
+static ULONG t_view_release(ID3D11RenderTargetView *self)
 {
 	(void)self;
 	t_release_view_calls++;
 	return 0;
 }
 
-static ULONG t_texture_release(t_d3d11_texture_t *self)
+static ULONG t_texture_release(ID3D11Texture2D *self)
 {
 	(void)self;
 	t_release_texture_calls++;
 	return 0;
 }
 
-static ULONG t_buffer_release(t_d3d11_buffer_t *self)
+static ULONG t_buffer_release(ID3D11Buffer *self)
 {
 	(void)self;
 	t_release_buffer_calls++;
 	return 0;
 }
 
-static ULONG t_input_layout_release(t_d3d11_input_layout_t *self)
+static ULONG t_input_layout_release(ID3D11InputLayout *self)
 {
 	(void)self;
 	t_release_input_layout_calls++;
 	return 0;
 }
 
-static ULONG t_pixel_shader_release(t_d3d11_pixel_shader_t *self)
+static ULONG t_pixel_shader_release(ID3D11PixelShader *self)
 {
 	(void)self;
 	t_release_pixel_shader_calls++;
 	return 0;
 }
 
-static ULONG t_vertex_shader_release(t_d3d11_vertex_shader_t *self)
+static ULONG t_vertex_shader_release(ID3D11VertexShader *self)
 {
 	(void)self;
 	t_release_vertex_shader_calls++;
 	return 0;
 }
 
-static ULONG t_blob_release(t_d3d_blob_t *self)
+static ULONG t_blob_release(ID3DBlob *self)
 {
 	(void)self;
 	t_release_blob_calls++;
 	return 0;
 }
 
-static void *t_blob_GetBufferPointer(t_d3d_blob_t *self)
+static void *t_blob_GetBufferPointer(ID3DBlob *self)
 {
-	return (void *)self->data;
+	t_d3d_blob_t *blob = (t_d3d_blob_t *)self;
+	return (void *)blob->data;
 }
 
-static size_t t_blob_GetBufferSize(t_d3d_blob_t *self)
+static size_t t_blob_GetBufferSize(ID3DBlob *self)
 {
-	return self->size;
+	t_d3d_blob_t *blob = (t_d3d_blob_t *)self;
+	return blob->size;
 }
 
-static HRESULT t_CreateBuffer(t_d3d11_device_t *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, t_d3d11_buffer_t **buffer)
+static HRESULT t_CreateBuffer(ID3D11Device *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, ID3D11Buffer **buffer)
 {
 	(void)self;
 	(void)initial_data;
 	t_create_buffer_calls++;
 	t_create_buffer_bytes	   = desc->ByteWidth;
 	t_create_buffer_bind_flags = desc->BindFlags;
-	*buffer			   = &t_buffer;
+	*buffer			   = (ID3D11Buffer *)&t_buffer;
 	return t_create_buffer_ret;
 }
 
-static HRESULT t_CreateRenderTargetView(t_d3d11_device_t *self, void *resource, const void *desc, t_d3d11_view_t **view)
+static HRESULT t_CreateRenderTargetView(ID3D11Device *self, void *resource, const void *desc, ID3D11RenderTargetView **view)
 {
 	(void)self;
 	(void)resource;
 	(void)desc;
 	t_create_render_target_view_calls++;
-	*view = &t_view;
+	*view = (ID3D11RenderTargetView *)&t_view;
 	return t_create_render_target_view_ret;
 }
 
-static HRESULT t_CreateTexture2D(t_d3d11_device_t *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data,
-				 t_d3d11_texture_t **texture)
+static HRESULT t_CreateTexture2D(ID3D11Device *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data, ID3D11Texture2D **texture)
 {
 	(void)self;
 	(void)initial_data;
@@ -585,12 +365,12 @@ static HRESULT t_CreateTexture2D(t_d3d11_device_t *self, const D3D11_TEXTURE2D_D
 	t_create_texture_usage		  = desc->Usage;
 	t_create_texture_bind_flags	  = desc->BindFlags;
 	t_create_texture_cpu_access_flags = desc->CPUAccessFlags;
-	*texture			  = &t_texture;
+	*texture			  = (ID3D11Texture2D *)&t_texture;
 	return t_create_texture_2d_ret;
 }
 
-static HRESULT t_CreateInputLayout(t_d3d11_device_t *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count,
-				   const void *shader_bytecode, size_t bytecode_length, t_d3d11_input_layout_t **input_layout)
+static HRESULT t_CreateInputLayout(ID3D11Device *self, const D3D11_INPUT_ELEMENT_DESC *elements, UINT element_count,
+				   const void *shader_bytecode, size_t bytecode_length, ID3D11InputLayout **input_layout)
 {
 	(void)self;
 	(void)shader_bytecode;
@@ -601,35 +381,35 @@ static HRESULT t_CreateInputLayout(t_d3d11_device_t *self, const D3D11_INPUT_ELE
 		t_input_semantic_name[i]  = elements[i].SemanticName;
 		t_input_semantic_index[i] = elements[i].SemanticIndex;
 	}
-	*input_layout = &t_input_layout;
+	*input_layout = (ID3D11InputLayout *)&t_input_layout;
 	return t_create_input_layout_ret;
 }
 
-static HRESULT t_CreateVertexShader(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
-				    t_d3d11_vertex_shader_t **shader)
+static HRESULT t_CreateVertexShader(ID3D11Device *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				    ID3D11VertexShader **shader)
 {
 	(void)self;
 	(void)shader_bytecode;
 	(void)bytecode_length;
 	(void)class_linkage;
 	t_create_vertex_shader_calls++;
-	*shader = &t_vertex_shader;
+	*shader = (ID3D11VertexShader *)&t_vertex_shader;
 	return t_create_vertex_shader_ret;
 }
 
-static HRESULT t_CreatePixelShader(t_d3d11_device_t *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
-				   t_d3d11_pixel_shader_t **shader)
+static HRESULT t_CreatePixelShader(ID3D11Device *self, const void *shader_bytecode, size_t bytecode_length, void *class_linkage,
+				   ID3D11PixelShader **shader)
 {
 	(void)self;
 	(void)shader_bytecode;
 	(void)bytecode_length;
 	(void)class_linkage;
 	t_create_pixel_shader_calls++;
-	*shader = &t_pixel_shader;
+	*shader = (ID3D11PixelShader *)&t_pixel_shader;
 	return t_create_pixel_shader_ret;
 }
 
-static void t_OMSetRenderTargets(t_d3d11_context_t *self, UINT num_views, t_d3d11_view_t *const *views, void *depth_stencil_view)
+static void t_OMSetRenderTargets(ID3D11DeviceContext *self, UINT num_views, ID3D11RenderTargetView *const *views, void *depth_stencil_view)
 {
 	(void)self;
 	(void)views;
@@ -638,14 +418,14 @@ static void t_OMSetRenderTargets(t_d3d11_context_t *self, UINT num_views, t_d3d1
 	t_render_target_count = num_views;
 }
 
-static void t_IASetInputLayout(t_d3d11_context_t *self, t_d3d11_input_layout_t *input_layout)
+static void t_IASetInputLayout(ID3D11DeviceContext *self, ID3D11InputLayout *input_layout)
 {
 	(void)self;
 	(void)input_layout;
 	t_ia_set_input_layout_calls++;
 }
 
-static void t_IASetVertexBuffers(t_d3d11_context_t *self, UINT start_slot, UINT num_buffers, t_d3d11_buffer_t *const *buffers,
+static void t_IASetVertexBuffers(ID3D11DeviceContext *self, UINT start_slot, UINT num_buffers, ID3D11Buffer *const *buffers,
 				 const UINT *strides, const UINT *offsets)
 {
 	(void)self;
@@ -657,7 +437,7 @@ static void t_IASetVertexBuffers(t_d3d11_context_t *self, UINT start_slot, UINT 
 	t_vertex_buffer_offset	   = offsets[0];
 }
 
-static void t_IASetIndexBuffer(t_d3d11_context_t *self, t_d3d11_buffer_t *index_buffer, UINT format, UINT offset)
+static void t_IASetIndexBuffer(ID3D11DeviceContext *self, ID3D11Buffer *index_buffer, UINT format, UINT offset)
 {
 	(void)self;
 	(void)index_buffer;
@@ -666,14 +446,14 @@ static void t_IASetIndexBuffer(t_d3d11_context_t *self, t_d3d11_buffer_t *index_
 	t_index_buffer_offset = offset;
 }
 
-static void t_IASetPrimitiveTopology(t_d3d11_context_t *self, UINT topology)
+static void t_IASetPrimitiveTopology(ID3D11DeviceContext *self, D3D11_PRIMITIVE_TOPOLOGY topology)
 {
 	(void)self;
 	t_ia_set_primitive_topology_calls++;
 	t_primitive_topology = topology;
 }
 
-static void t_VSSetShader(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shader, void *const *class_instances, UINT class_instance_count)
+static void t_VSSetShader(ID3D11DeviceContext *self, ID3D11VertexShader *shader, void *const *class_instances, UINT class_instance_count)
 {
 	(void)self;
 	(void)shader;
@@ -682,7 +462,7 @@ static void t_VSSetShader(t_d3d11_context_t *self, t_d3d11_vertex_shader_t *shad
 	t_vs_set_shader_calls++;
 }
 
-static void t_PSSetShader(t_d3d11_context_t *self, t_d3d11_pixel_shader_t *shader, void *const *class_instances, UINT class_instance_count)
+static void t_PSSetShader(ID3D11DeviceContext *self, ID3D11PixelShader *shader, void *const *class_instances, UINT class_instance_count)
 {
 	(void)self;
 	(void)shader;
@@ -691,7 +471,7 @@ static void t_PSSetShader(t_d3d11_context_t *self, t_d3d11_pixel_shader_t *shade
 	t_ps_set_shader_calls++;
 }
 
-static void t_UpdateSubresource(t_d3d11_context_t *self, t_d3d11_buffer_t *resource, UINT subresource, const void *box, const void *data,
+static void t_UpdateSubresource(ID3D11DeviceContext *self, ID3D11Buffer *resource, UINT subresource, const void *box, const void *data,
 				UINT row_pitch, UINT depth_pitch)
 {
 	(void)self;
@@ -707,7 +487,7 @@ static void t_UpdateSubresource(t_d3d11_context_t *self, t_d3d11_buffer_t *resou
 	t_uploaded_vertices[2]		    = vertices[2];
 }
 
-static void t_CopyResource(t_d3d11_context_t *self, void *dst, void *src)
+static void t_CopyResource(ID3D11DeviceContext *self, void *dst, void *src)
 {
 	(void)self;
 	t_copy_resource_calls++;
@@ -715,7 +495,7 @@ static void t_CopyResource(t_d3d11_context_t *self, void *dst, void *src)
 	t_copy_resource_src_is_texture = src == &t_texture;
 }
 
-static HRESULT t_Map(t_d3d11_context_t *self, void *resource, UINT subresource, UINT map_type, UINT map_flags,
+static HRESULT t_Map(ID3D11DeviceContext *self, void *resource, UINT subresource, D3D11_MAP map_type, UINT map_flags,
 		     D3D11_MAPPED_SUBRESOURCE *mapped)
 {
 	(void)self;
@@ -729,7 +509,7 @@ static HRESULT t_Map(t_d3d11_context_t *self, void *resource, UINT subresource, 
 	return t_map_ret;
 }
 
-static void t_Unmap(t_d3d11_context_t *self, void *resource, UINT subresource)
+static void t_Unmap(ID3D11DeviceContext *self, void *resource, UINT subresource)
 {
 	(void)self;
 	(void)resource;
@@ -737,7 +517,7 @@ static void t_Unmap(t_d3d11_context_t *self, void *resource, UINT subresource)
 	t_unmap_calls++;
 }
 
-static void t_Draw(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex_location)
+static void t_Draw(ID3D11DeviceContext *self, UINT vertex_count, UINT start_vertex_location)
 {
 	(void)self;
 	t_draw_calls++;
@@ -745,7 +525,7 @@ static void t_Draw(t_d3d11_context_t *self, UINT vertex_count, UINT start_vertex
 	t_draw_start_vertex = start_vertex_location;
 }
 
-static void t_DrawIndexed(t_d3d11_context_t *self, UINT index_count, UINT start_index_location, int base_vertex_location)
+static void t_DrawIndexed(ID3D11DeviceContext *self, UINT index_count, UINT start_index_location, INT base_vertex_location)
 {
 	(void)self;
 	t_draw_indexed_calls++;
@@ -754,7 +534,7 @@ static void t_DrawIndexed(t_d3d11_context_t *self, UINT index_count, UINT start_
 	t_draw_base_vertex = base_vertex_location;
 }
 
-static void t_ClearRenderTargetView(t_d3d11_context_t *self, t_d3d11_view_t *view, const float color[4])
+static void t_ClearRenderTargetView(ID3D11DeviceContext *self, ID3D11RenderTargetView *view, const float color[4])
 {
 	(void)self;
 	(void)view;
@@ -765,7 +545,7 @@ static void t_ClearRenderTargetView(t_d3d11_context_t *self, t_d3d11_view_t *vie
 	t_clear_color[3] = color[3];
 }
 
-static void t_RSSetViewports(t_d3d11_context_t *self, UINT num_viewports, const D3D11_VIEWPORT *viewports)
+static void t_RSSetViewports(ID3D11DeviceContext *self, UINT num_viewports, const D3D11_VIEWPORT *viewports)
 {
 	(void)self;
 	t_rs_set_viewports_calls++;
@@ -773,7 +553,7 @@ static void t_RSSetViewports(t_d3d11_context_t *self, UINT num_viewports, const 
 	t_viewport	 = *viewports;
 }
 
-static HRESULT t_GetBuffer(t_dxgi_swapchain_t *self, UINT buffer, REFIID riid, void **surface)
+static HRESULT t_GetBuffer(IDXGISwapChain *self, UINT buffer, REFIID riid, void **surface)
 {
 	(void)self;
 	(void)buffer;
@@ -783,7 +563,7 @@ static HRESULT t_GetBuffer(t_dxgi_swapchain_t *self, UINT buffer, REFIID riid, v
 	return t_get_buffer_ret;
 }
 
-static HRESULT t_ResizeBuffers(t_dxgi_swapchain_t *self, UINT buffer_count, UINT width, UINT height, UINT format, UINT flags)
+static HRESULT t_ResizeBuffers(IDXGISwapChain *self, UINT buffer_count, UINT width, UINT height, DXGI_FORMAT format, UINT flags)
 {
 	(void)self;
 	(void)buffer_count;
@@ -802,9 +582,9 @@ static int t_surface_present(gfx_surface_t *surface)
 	return 0;
 }
 
-static HRESULT t_D3D11CreateDevice(void *adapter, UINT driver_type, HMODULE software, UINT flags, const D3D_FEATURE_LEVEL *feature_levels,
-				   UINT feature_level_count, UINT sdk_version, t_d3d11_device_t **device, D3D_FEATURE_LEVEL *feature_level,
-				   t_d3d11_context_t **context)
+static HRESULT t_D3D11CreateDevice(void *adapter, D3D_DRIVER_TYPE driver_type, HMODULE software, UINT flags,
+				   const D3D_FEATURE_LEVEL *feature_levels, UINT feature_level_count, UINT sdk_version,
+				   ID3D11Device **device, D3D_FEATURE_LEVEL *feature_level, ID3D11DeviceContext **context)
 {
 	(void)adapter;
 	(void)software;
@@ -815,14 +595,13 @@ static HRESULT t_D3D11CreateDevice(void *adapter, UINT driver_type, HMODULE soft
 	t_create_device_calls++;
 	t_create_driver_type = driver_type;
 	t_create_sdk_version = sdk_version;
-	*device		     = &t_device;
-	*context	     = &t_context;
+	*device		     = (ID3D11Device *)&t_device;
+	*context	     = (ID3D11DeviceContext *)&t_context;
 	return t_create_device_ret;
 }
 
 static HRESULT t_D3DCompile(const void *src_data, size_t src_data_size, const char *source_name, const void *defines, void *include,
-			    const char *entrypoint, const char *target, UINT flags1, UINT flags2, t_d3d_blob_t **code,
-			    t_d3d_blob_t **error_msgs)
+			    const char *entrypoint, const char *target, UINT flags1, UINT flags2, ID3DBlob **code, ID3DBlob **error_msgs)
 {
 	(void)src_data;
 	(void)src_data_size;
@@ -834,25 +613,25 @@ static HRESULT t_D3DCompile(const void *src_data, size_t src_data_size, const ch
 	(void)flags2;
 	t_d3d_compile_calls++;
 	if (target[0] == 'v') {
-		*code = &t_vertex_blob;
+		*code = (ID3DBlob *)&t_vertex_blob;
 	} else {
-		*code = &t_pixel_blob;
+		*code = (ID3DBlob *)&t_pixel_blob;
 	}
-	*error_msgs = t_d3d_compile_error_msgs ? &t_pixel_blob : NULL;
+	*error_msgs = t_d3d_compile_error_msgs ? (ID3DBlob *)&t_pixel_blob : NULL;
 	return t_d3d_compile_ret;
 }
 
-static t_d3d_blob_vtbl_t t_blob_vtbl = {
+static ID3DBlobVTable t_blob_vtbl = {
 	.Release	  = t_blob_release,
 	.GetBufferPointer = t_blob_GetBufferPointer,
 	.GetBufferSize	  = t_blob_GetBufferSize,
 };
 
-static t_d3d11_buffer_vtbl_t t_buffer_vtbl = {
+static ID3D11BufferVTable t_buffer_vtbl = {
 	.Release = t_buffer_release,
 };
 
-static t_d3d11_device_vtbl_t t_device_vtbl = {
+static ID3D11DeviceVTable t_device_vtbl = {
 	.Release		= t_device_release,
 	.CreateBuffer		= t_CreateBuffer,
 	.CreateTexture2D	= t_CreateTexture2D,
@@ -862,7 +641,7 @@ static t_d3d11_device_vtbl_t t_device_vtbl = {
 	.CreatePixelShader	= t_CreatePixelShader,
 };
 
-static t_d3d11_context_vtbl_t t_context_vtbl = {
+static ID3D11DeviceContextVTable t_context_vtbl = {
 	.Release		= t_context_release,
 	.PSSetShader		= t_PSSetShader,
 	.VSSetShader		= t_VSSetShader,
@@ -881,27 +660,27 @@ static t_d3d11_context_vtbl_t t_context_vtbl = {
 	.ClearRenderTargetView	= t_ClearRenderTargetView,
 };
 
-static t_d3d11_input_layout_vtbl_t t_input_layout_vtbl = {
+static ID3D11InputLayoutVTable t_input_layout_vtbl = {
 	.Release = t_input_layout_release,
 };
 
-static t_d3d11_pixel_shader_vtbl_t t_pixel_shader_vtbl = {
+static ID3D11PixelShaderVTable t_pixel_shader_vtbl = {
 	.Release = t_pixel_shader_release,
 };
 
-static t_d3d11_view_vtbl_t t_view_vtbl = {
+static ID3D11RenderTargetViewVTable t_view_vtbl = {
 	.Release = t_view_release,
 };
 
-static t_d3d11_texture_vtbl_t t_texture_vtbl = {
+static ID3D11Texture2DVTable t_texture_vtbl = {
 	.Release = t_texture_release,
 };
 
-static t_d3d11_vertex_shader_vtbl_t t_vertex_shader_vtbl = {
+static ID3D11VertexShaderVTable t_vertex_shader_vtbl = {
 	.Release = t_vertex_shader_release,
 };
 
-static t_dxgi_swapchain_vtbl_t t_swapchain_vtbl = {
+static IDXGISwapChainVTable t_swapchain_vtbl = {
 	.GetBuffer     = t_GetBuffer,
 	.ResizeBuffers = t_ResizeBuffers,
 };
@@ -1300,7 +1079,7 @@ TEST(gfx_d3d11_init_uses_hardware_driver)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 
-	EXPECT_EQ(t_create_driver_type, T_D3D_DRIVER_TYPE_HARDWARE);
+	EXPECT_EQ(t_create_driver_type, D3D_DRIVER_TYPE_HARDWARE);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1315,7 +1094,7 @@ TEST(gfx_d3d11_init_uses_sdk_version)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 
-	EXPECT_EQ(t_create_sdk_version, T_D3D11_SDK_VERSION);
+	EXPECT_EQ(t_create_sdk_version, D3D11_SDK_VERSION);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -1462,8 +1241,8 @@ TEST(gfx_d3d11_memory_target_init_creates_texture)
 	EXPECT_EQ(t_create_texture_2d_calls, 1);
 	EXPECT_EQ(t_create_texture_width, 2);
 	EXPECT_EQ(t_create_texture_height, 1);
-	EXPECT_EQ(t_create_texture_usage, T_D3D11_USAGE_DEFAULT);
-	EXPECT_EQ(t_create_texture_bind_flags, T_D3D11_BIND_RENDER_TARGET);
+	EXPECT_EQ(t_create_texture_usage, D3D11_USAGE_DEFAULT);
+	EXPECT_EQ(t_create_texture_bind_flags, D3D11_BIND_RENDER_TARGET);
 
 	gfx_target_free(&target);
 	EXPECT_EQ(t_release_texture_calls, 1);
@@ -1479,11 +1258,10 @@ TEST(gfx_d3d11_memory_target_init_missing_create_texture_callback)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	HRESULT(*saved)
-	(t_d3d11_device_t *, const D3D11_TEXTURE2D_DESC *, const void *, t_d3d11_texture_t **) = t_device_vtbl.CreateTexture2D;
-	t_device_vtbl.CreateTexture2D							       = NULL;
-	u8 pixels[4]									       = {0};
-	gfx_target_t target								       = {0};
+	PFN_CreateTexture2D saved     = t_device_vtbl.CreateTexture2D;
+	t_device_vtbl.CreateTexture2D = NULL;
+	u8 pixels[4]		      = {0};
+	gfx_target_t target	      = {0};
 
 	gfx_memory_target_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
@@ -2192,9 +1970,9 @@ TEST(gfx_d3d11_framebuffer_pass_begin_missing_render_target_callbacks)
 		.render_pass = &render_pass,
 		.data	     = &driver_framebuffer,
 	};
-	gfx_frame_t frame							  = {.gfx = &gfx};
-	void (*saved)(t_d3d11_context_t *, UINT, t_d3d11_view_t *const *, void *) = t_context_vtbl.OMSetRenderTargets;
-	t_context_vtbl.OMSetRenderTargets					  = NULL;
+	gfx_frame_t frame		  = {.gfx = &gfx};
+	PFN_OMSetRenderTargets saved	  = t_context_vtbl.OMSetRenderTargets;
+	t_context_vtbl.OMSetRenderTargets = NULL;
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
 
@@ -2232,9 +2010,9 @@ TEST(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback)
 		.render_pass = &render_pass,
 		.data	     = &driver_framebuffer,
 	};
-	gfx_frame_t frame						     = {.gfx = &gfx};
-	void (*saved)(t_d3d11_context_t *, t_d3d11_view_t *, const float[4]) = t_context_vtbl.ClearRenderTargetView;
-	t_context_vtbl.ClearRenderTargetView				     = NULL;
+	gfx_frame_t frame		     = {.gfx = &gfx};
+	PFN_ClearRenderTargetView saved	     = t_context_vtbl.ClearRenderTargetView;
+	t_context_vtbl.ClearRenderTargetView = NULL;
 
 	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
 
@@ -2280,7 +2058,7 @@ TEST(gfx_d3d11_target_read_copies_memory)
 	EXPECT_EQ(t_copy_resource_dst_is_texture, 1);
 	EXPECT_EQ(t_copy_resource_src_is_texture, 1);
 	EXPECT_EQ(t_map_calls, 1);
-	EXPECT_EQ(t_map_type, T_D3D11_MAP_READ);
+	EXPECT_EQ(t_map_type, D3D11_MAP_READ);
 	EXPECT_EQ(t_unmap_calls, 1);
 	EXPECT_EQ(read_pixels[0], 1);
 	EXPECT_EQ(read_pixels[1], 2);
@@ -2340,11 +2118,11 @@ TEST(gfx_d3d11_target_read_missing_callbacks)
 		.height = 1,
 		.stride = 4,
 	};
-	t_gfx_d3d11_memory_target_data_t driver_target	   = {.texture = &t_texture};
-	target.driver_data				   = &driver_target;
-	void (*saved)(t_d3d11_context_t *, void *, void *) = t_context_vtbl.CopyResource;
-	t_context_vtbl.CopyResource			   = NULL;
-	((t_gfx_d3d11_data_t *)gfx.data)->target	   = &target;
+	t_gfx_d3d11_memory_target_data_t driver_target = {.texture = &t_texture};
+	target.driver_data			       = &driver_target;
+	PFN_CopyResource saved			       = t_context_vtbl.CopyResource;
+	t_context_vtbl.CopyResource		       = NULL;
+	((t_gfx_d3d11_data_t *)gfx.data)->target       = &target;
 
 	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
 
@@ -3360,8 +3138,7 @@ TEST(gfx_d3d11_buffer_set_data_missing_update_callback)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
-	void (*saved)(t_d3d11_context_t *, t_d3d11_buffer_t *, UINT, const void *, const void *, UINT, UINT) =
-		t_context_vtbl.UpdateSubresource;
+	PFN_UpdateSubresource saved	 = t_context_vtbl.UpdateSubresource;
 	t_context_vtbl.UpdateSubresource = NULL;
 	gfx_vertex_2d_t vertices[3]	 = {0};
 
@@ -3413,7 +3190,7 @@ TEST(gfx_d3d11_buffer_init_creates_index_buffer)
 
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &buffer);
 	EXPECT_EQ(t_create_buffer_calls, 1);
-	EXPECT_EQ(t_create_buffer_bind_flags, T_D3D11_BIND_INDEX_BUFFER);
+	EXPECT_EQ(t_create_buffer_bind_flags, D3D11_BIND_INDEX_BUFFER);
 
 	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
@@ -3559,7 +3336,7 @@ TEST(gfx_d3d11_buffer_bind_binds_index_buffer)
 
 	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 0);
 	EXPECT_EQ(t_ia_set_index_buffer_calls, 1);
-	EXPECT_EQ(t_index_buffer_format, T_DXGI_FORMAT_R32_UINT);
+	EXPECT_EQ(t_index_buffer_format, DXGI_FORMAT_R32_UINT);
 	EXPECT_EQ(t_index_buffer_offset, 0);
 
 	gfx_free(&gfx);
@@ -3590,8 +3367,8 @@ TEST(gfx_d3d11_buffer_bind_missing_index_buffer_callback)
 		.pipeline = &pipeline,
 		.active	  = 1,
 	};
-	void (*saved)(t_d3d11_context_t *, t_d3d11_buffer_t *, UINT, UINT) = t_context_vtbl.IASetIndexBuffer;
-	t_context_vtbl.IASetIndexBuffer					   = NULL;
+	PFN_IASetIndexBuffer saved	= t_context_vtbl.IASetIndexBuffer;
+	t_context_vtbl.IASetIndexBuffer = NULL;
 
 	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
 
@@ -3696,8 +3473,7 @@ TEST(gfx_d3d11_buffer_bind_missing_vertex_buffer_callback)
 		.pipeline = &pipeline,
 		.active	  = 1,
 	};
-	void (*saved)(t_d3d11_context_t *, UINT, UINT, t_d3d11_buffer_t *const *, const UINT *, const UINT *) =
-		t_context_vtbl.IASetVertexBuffers;
+	PFN_IASetVertexBuffers saved	  = t_context_vtbl.IASetVertexBuffers;
 	t_context_vtbl.IASetVertexBuffers = NULL;
 
 	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 1);
@@ -3725,9 +3501,9 @@ TEST(gfx_d3d11_pipeline_bind_missing_shader_callback)
 		.gfx  = &gfx,
 		.data = &driver_pipeline,
 	};
-	gfx_frame_t frame					     = {.gfx = &gfx, .active = 1};
-	void (*saved)(t_d3d11_context_t *, t_d3d11_input_layout_t *) = t_context_vtbl.IASetInputLayout;
-	t_context_vtbl.IASetInputLayout				     = NULL;
+	gfx_frame_t frame		= {.gfx = &gfx, .active = 1};
+	PFN_IASetInputLayout saved	= t_context_vtbl.IASetInputLayout;
+	t_context_vtbl.IASetInputLayout = NULL;
 
 	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 
@@ -3744,9 +3520,9 @@ TEST(gfx_d3d11_draw_missing_draw_callback)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	void (*saved)(t_d3d11_context_t *, UINT, UINT) = t_context_vtbl.Draw;
-	t_context_vtbl.Draw			       = NULL;
-	gfx_frame_t frame			       = {.gfx = &gfx, .active = 1};
+	PFN_Draw saved	    = t_context_vtbl.Draw;
+	t_context_vtbl.Draw = NULL;
+	gfx_frame_t frame   = {.gfx = &gfx, .active = 1};
 
 	EXPECT_EQ(gfx.drv->draw(&frame, 3, 0), 1);
 
@@ -3767,7 +3543,7 @@ TEST(gfx_d3d11_draw_calls_context)
 
 	EXPECT_EQ(gfx.drv->draw(&frame, 3, 2), 0);
 	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
-	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	EXPECT_EQ(t_primitive_topology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	EXPECT_EQ(t_draw_calls, 1);
 	EXPECT_EQ(t_draw_vertex_count, 3);
 	EXPECT_EQ(t_draw_start_vertex, 2);
@@ -3797,9 +3573,9 @@ TEST(gfx_d3d11_draw_indexed_missing_callback)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	void (*saved)(t_d3d11_context_t *, UINT, UINT, int) = t_context_vtbl.DrawIndexed;
-	t_context_vtbl.DrawIndexed			    = NULL;
-	gfx_frame_t frame				    = {.gfx = &gfx, .active = 1};
+	PFN_DrawIndexed saved	   = t_context_vtbl.DrawIndexed;
+	t_context_vtbl.DrawIndexed = NULL;
+	gfx_frame_t frame	   = {.gfx = &gfx, .active = 1};
 
 	EXPECT_EQ(gfx.drv->draw_indexed(&frame, 3), 1);
 
@@ -3820,7 +3596,7 @@ TEST(gfx_d3d11_draw_indexed_calls_context)
 
 	EXPECT_EQ(gfx.drv->draw_indexed(&frame, 5), 0);
 	EXPECT_EQ(t_ia_set_primitive_topology_calls, 1);
-	EXPECT_EQ(t_primitive_topology, T_D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	EXPECT_EQ(t_primitive_topology, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	EXPECT_EQ(t_draw_indexed_calls, 1);
 	EXPECT_EQ(t_draw_index_count, 5);
 	EXPECT_EQ(t_draw_start_index, 0);
