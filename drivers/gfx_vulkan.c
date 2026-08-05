@@ -2006,7 +2006,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		attributes[i].location = config->input_layout[i].index;
 		attributes[i].binding  = 0;
 
-		size_t size = sizeof(float) * config->input_layout[i].count;
+		u64 size = (u64)sizeof(float) * config->input_layout[i].count;
 		if (size > U32_MAX || offset > U32_MAX - (u32)size) {
 			log_error("cgfx", "gfx_vulkan", NULL, "input layout stride is too large");
 			alloc_free(&pipeline->gfx->alloc, attributes, layout_cnt * sizeof(VkVertexInputAttributeDescription));

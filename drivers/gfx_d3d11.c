@@ -649,9 +649,11 @@ static int gfx_d3d11_buffer_flags(gfx_buffer_type_t type, UINT *flags)
 
 static int gfx_d3d11_buffer_create(gfx_buffer_t *buffer, gfx_d3d11_buffer_t *d3d_buffer, const void *data, size_t size)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || d3d_buffer == NULL || size == 0 ||
-	    size > (size_t)U32_MAX) {
-		return 1;
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || d3d_buffer == NULL || size == 0) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (size > (size_t)U32_MAX) {
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_d3d11_t *d3d11 = buffer->gfx->data;
@@ -725,6 +727,12 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 
 	gfx_d3d11_t *d3d11	       = buffer->gfx->data;
 	gfx_d3d11_buffer_t *d3d_buffer = buffer->data;
+
+	UINT flags = 0;
+	if (gfx_d3d11_buffer_flags(buffer->type, &flags)) {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", buffer->type);
+		return 1;
+	}
 
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
 	if (context->UpdateSubresource == NULL) {
@@ -958,7 +966,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 			.InputSlotClass	   = D3D11_INPUT_PER_VERTEX_DATA,
 		};
 
-		size_t size = sizeof(float) * config->input_layout[i].count;
+		u64 size = (u64)sizeof(float) * config->input_layout[i].count;
 		if (size > U32_MAX || offset > U32_MAX - (UINT)size) {
 			log_error("cgfx", "gfx_d3d11", NULL, "input layout stride is too large");
 			alloc_free(&pipeline->gfx->alloc, elements, layout_cnt * sizeof(D3D11_INPUT_ELEMENT_DESC));

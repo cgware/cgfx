@@ -212,6 +212,7 @@ typedef struct t_gfx_d3d11_framebuffer_data_s {
 
 typedef struct t_gfx_d3d11_buffer_data_s {
 	t_d3d11_buffer_t *buffer;
+	gfx_buffer_type_t type;
 } t_gfx_d3d11_buffer_data_t;
 
 typedef struct t_gfx_d3d11_pipeline_data_s {
@@ -2751,7 +2752,7 @@ TEST(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_gfx_d3d11_buffer_data_t driver_buffer = {0};
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.type = GFX_BUFFER_VERTEX};
 	gfx_vertex_2d_t vertices[3]		= {0};
 	gfx_buffer_t buffer			= {
 		.gfx  = &gfx,
@@ -2763,6 +2764,32 @@ TEST(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct)
 	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
 	log_set_quiet(0, 0);
 	EXPECT_EQ(t_create_buffer_calls, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_set_data_rejects_unknown_driver_type_direct)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {.type = GFX_BUFFER_UNKNOWN};
+	gfx_vertex_2d_t vertices[3]		= {0};
+	gfx_buffer_t buffer			= {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
+		.data = &driver_buffer,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_create_buffer_calls, 0);
+	EXPECT_EQ(t_update_subresource_calls, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -4006,6 +4033,7 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_buffer_init_create_buffer_failure);
 	RUN(gfx_d3d11_buffer_set_data_null_data);
 	RUN(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct);
+	RUN(gfx_d3d11_buffer_set_data_rejects_unknown_driver_type_direct);
 	RUN(gfx_d3d11_buffer_set_data_rejects_oversized_direct);
 	RUN(gfx_d3d11_shader_free_releases_pixel_shader);
 	RUN(gfx_d3d11_shader_free_null_data);
