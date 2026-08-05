@@ -342,6 +342,8 @@ static int gfx_d3d11_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapch
 	}
 	*d3d_swapchain	= (gfx_d3d11_swapchain_t){.swapchain = (IDXGISwapChain *)(uintptr_t)swapchain->surface->handle};
 	swapchain->data = d3d_swapchain;
+	swapchain->actual_present_mode =
+		swapchain->present_mode == GFX_PRESENT_MODE_IMMEDIATE ? GFX_PRESENT_MODE_IMMEDIATE : GFX_PRESENT_MODE_VSYNC;
 	return 0;
 }
 
@@ -381,7 +383,7 @@ static int gfx_d3d11_swapchain_present(gfx_swapchain_t *swapchain)
 		return 1;
 	}
 
-	return swapchain->surface->ops->present(swapchain->surface);
+	return swapchain->surface->ops->present(swapchain->surface, swapchain->actual_present_mode);
 }
 
 static void gfx_d3d11_render_pass_free(gfx_render_pass_t *render_pass)

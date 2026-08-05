@@ -44,6 +44,7 @@ static int t_vk_create_xlib_surface_calls;
 static int t_vk_get_surface_support_calls;
 static int t_vk_get_surface_capabilities_calls;
 static int t_vk_get_surface_formats_calls;
+static int t_vk_get_surface_present_modes_calls;
 static int t_vk_create_swapchain_calls;
 static int t_vk_destroy_swapchain_calls;
 static int t_vk_get_swapchain_images_calls;
@@ -135,6 +136,8 @@ static int t_vk_surface_capabilities_fail_at;
 static VkSurfaceCapabilitiesKHR t_vk_surface_capabilities;
 static int t_vk_surface_formats_count_ret;
 static int t_vk_surface_formats_ret;
+static int t_vk_surface_present_modes_count_ret;
+static int t_vk_surface_present_modes_ret;
 static u32 t_vk_swapchain_image_count;
 static int t_vk_create_swapchain_ret;
 static int t_vk_get_swapchain_images_count_ret;
@@ -154,6 +157,8 @@ static VkSwapchainKHR t_vk_swapchain;
 static VkSwapchainCreateInfoKHR t_vk_swapchain_create;
 static VkSurfaceFormatKHR t_vk_surface_formats[20];
 static u32 t_vk_surface_format_count;
+static VkPresentModeKHR t_vk_surface_present_modes[20];
+static u32 t_vk_surface_present_mode_count;
 static VkImage t_vk_swapchain_images[20];
 static u32 t_vk_present_image_index;
 static gfx_shader_compiler_t t_gfx_vulkan_compiler;
@@ -890,6 +895,21 @@ static int t_vkGetPhysicalDeviceSurfaceFormatsKHR(VkPhysicalDevice device, VkSur
 	return t_vk_surface_formats_ret;
 }
 
+static int t_vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice device, VkSurfaceKHR surface, u32 *count, VkPresentModeKHR *modes)
+{
+	(void)device;
+	t_vk_get_surface_present_modes_calls++;
+	t_vk_surface = surface;
+	if (modes == NULL) {
+		*count = t_vk_surface_present_mode_count;
+		return t_vk_surface_present_modes_count_ret;
+	}
+	for (u32 i = 0; i < *count; i++) {
+		modes[i] = t_vk_surface_present_modes[i];
+	}
+	return t_vk_surface_present_modes_ret;
+}
+
 static int t_vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *create, const void *alloc, VkSwapchainKHR *swapchain)
 {
 	(void)device;
@@ -988,6 +1008,7 @@ static void t_vkReset(void)
 	t_vk_get_surface_support_calls		   = 0;
 	t_vk_get_surface_capabilities_calls	   = 0;
 	t_vk_get_surface_formats_calls		   = 0;
+	t_vk_get_surface_present_modes_calls	   = 0;
 	t_vk_create_swapchain_calls		   = 0;
 	t_vk_destroy_swapchain_calls		   = 0;
 	t_vk_get_swapchain_images_calls		   = 0;
@@ -1085,22 +1106,24 @@ static void t_vkReset(void)
 		.supportedCompositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
 		.supportedUsageFlags	 = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 	};
-	t_vk_surface_formats_count_ret	    = VK_SUCCESS;
-	t_vk_surface_formats_ret	    = VK_SUCCESS;
-	t_vk_swapchain_image_count	    = 2;
-	t_vk_create_swapchain_ret	    = VK_SUCCESS;
-	t_vk_get_swapchain_images_count_ret = VK_SUCCESS;
-	t_vk_get_swapchain_images_ret	    = VK_SUCCESS;
-	t_vk_acquire_next_image_ret	    = VK_SUCCESS;
-	t_vk_acquire_next_image_index	    = 1;
-	t_vk_queue_present_ret		    = VK_SUCCESS;
-	t_gfx_vulkan_alloc_count	    = 0;
-	t_gfx_vulkan_alloc_fail_at	    = 0;
-	t_vk_instance_extension_count	    = 0;
-	t_vk_instance_extensions	    = NULL;
-	t_vk_application_api_version	    = 0;
-	t_vk_device_extension_count	    = 0;
-	t_vk_device_extensions		    = NULL;
+	t_vk_surface_formats_count_ret	     = VK_SUCCESS;
+	t_vk_surface_formats_ret	     = VK_SUCCESS;
+	t_vk_surface_present_modes_count_ret = VK_SUCCESS;
+	t_vk_surface_present_modes_ret	     = VK_SUCCESS;
+	t_vk_swapchain_image_count	     = 2;
+	t_vk_create_swapchain_ret	     = VK_SUCCESS;
+	t_vk_get_swapchain_images_count_ret  = VK_SUCCESS;
+	t_vk_get_swapchain_images_ret	     = VK_SUCCESS;
+	t_vk_acquire_next_image_ret	     = VK_SUCCESS;
+	t_vk_acquire_next_image_index	     = 1;
+	t_vk_queue_present_ret		     = VK_SUCCESS;
+	t_gfx_vulkan_alloc_count	     = 0;
+	t_gfx_vulkan_alloc_fail_at	     = 0;
+	t_vk_instance_extension_count	     = 0;
+	t_vk_instance_extensions	     = NULL;
+	t_vk_application_api_version	     = 0;
+	t_vk_device_extension_count	     = 0;
+	t_vk_device_extensions		     = NULL;
 	for (u32 i = 0; i < sizeof(t_vk_device_extension_storage) / sizeof(t_vk_device_extension_storage[0]); i++) {
 		t_vk_device_extension_storage[i] = NULL;
 	}
@@ -1109,9 +1132,10 @@ static void t_vkReset(void)
 		.api	= GFX_API_VULKAN,
 		.handle = 0x44,
 	};
-	t_vk_swapchain		  = 9;
-	t_vk_swapchain_create	  = (VkSwapchainCreateInfoKHR){0};
-	t_vk_surface_format_count = 1;
+	t_vk_swapchain			= 9;
+	t_vk_swapchain_create		= (VkSwapchainCreateInfoKHR){0};
+	t_vk_surface_format_count	= 1;
+	t_vk_surface_present_mode_count = 1;
 
 	t_vk_surface_formats[0] = (VkSurfaceFormatKHR){
 		.format	    = VK_FORMAT_R8G8B8A8_UNORM,
@@ -1119,6 +1143,10 @@ static void t_vkReset(void)
 	};
 	for (u32 i = 1; i < sizeof(t_vk_surface_formats) / sizeof(t_vk_surface_formats[0]); i++) {
 		t_vk_surface_formats[i] = (VkSurfaceFormatKHR){0};
+	}
+	t_vk_surface_present_modes[0] = VK_PRESENT_MODE_FIFO_KHR;
+	for (u32 i = 1; i < sizeof(t_vk_surface_present_modes) / sizeof(t_vk_surface_present_modes[0]); i++) {
+		t_vk_surface_present_modes[i] = VK_PRESENT_MODE_MAX_ENUM_KHR;
 	}
 	t_vk_swapchain_images[0] = 10;
 	t_vk_swapchain_images[1] = 11;
@@ -1348,6 +1376,9 @@ static void *t_vkGetInstanceProcAddr(VkInstance instance, const char *name)
 	if (t_strcmp(name, "vkGetPhysicalDeviceSurfaceFormatsKHR") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetPhysicalDeviceSurfaceFormatsKHR);
 	}
+	if (t_strcmp(name, "vkGetPhysicalDeviceSurfacePresentModesKHR") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetPhysicalDeviceSurfacePresentModesKHR);
+	}
 	if (t_strcmp(name, "vkCreateDevice") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateDevice);
 	}
@@ -1540,6 +1571,18 @@ static gfx_target_t *t_gfx_vulkan_init_swapchain_target(gfx_t *gfx, gfx_swapchai
 		return NULL;
 	}
 	return target;
+}
+
+static gfx_swapchain_t *t_gfx_vulkan_init_swapchain(gfx_t *gfx, gfx_swapchain_t *swapchain, gfx_present_mode_t present_mode)
+{
+	gfx_swapchain_config_t swapchain_config = {
+		.format	      = GFX_FORMAT_RGBA8,
+		.surface      = &t_gfx_vulkan_surface,
+		.width	      = 640,
+		.height	      = 480,
+		.present_mode = present_mode,
+	};
+	return gfx_swapchain_init(swapchain, gfx, &swapchain_config);
 }
 
 TEST(gfx_vulkan_driver_is_registered)
@@ -4311,6 +4354,171 @@ TEST(gfx_vulkan_swapchain_init_rejects_invalid_direct)
 	END;
 }
 
+TEST(gfx_vulkan_swapchain_init_uses_immediate_present_mode)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_present_mode_count = 2;
+	t_vk_surface_present_modes[0]	= VK_PRESENT_MODE_FIFO_KHR;
+	t_vk_surface_present_modes[1]	= VK_PRESENT_MODE_IMMEDIATE_KHR;
+	gfx_swapchain_t swapchain	= {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_IMMEDIATE), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_IMMEDIATE_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_IMMEDIATE);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_uses_mailbox_present_mode)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_present_mode_count = 2;
+	t_vk_surface_present_modes[0]	= VK_PRESENT_MODE_FIFO_KHR;
+	t_vk_surface_present_modes[1]	= VK_PRESENT_MODE_MAILBOX_KHR;
+	gfx_swapchain_t swapchain	= {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_MAILBOX), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_MAILBOX_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_MAILBOX);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_falls_back_to_vsync_present_mode)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_IMMEDIATE), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_FIFO_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_mailbox_falls_back_to_vsync_present_mode)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_MAILBOX), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_FIFO_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_invalid_present_mode_falls_back_to_vsync)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, (gfx_present_mode_t)99), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_FIFO_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_limits_present_modes)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_present_mode_count = sizeof(t_vk_surface_present_modes) / sizeof(t_vk_surface_present_modes[0]);
+	for (u32 i = 0; i < t_vk_surface_present_mode_count; i++) {
+		t_vk_surface_present_modes[i] = VK_PRESENT_MODE_FIFO_KHR;
+	}
+	t_vk_surface_present_modes[15] = VK_PRESENT_MODE_MAILBOX_KHR;
+	gfx_swapchain_t swapchain      = {0};
+
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_MAILBOX), &swapchain);
+	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_MAILBOX_KHR);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_MAILBOX);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_present_mode_count_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_present_modes_count_ret = 1;
+	gfx_swapchain_t swapchain	     = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_DEFAULT));
+	log_set_quiet(0, 0);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_init_present_mode_list_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_vk_surface_present_modes_ret = 1;
+	gfx_swapchain_t swapchain      = {0};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_DEFAULT));
+	log_set_quiet(0, 0);
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_surface_target_init_without_wsi)
 {
 	START;
@@ -5963,6 +6171,14 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_target_init_rejects_unknown_type_direct);
 	RUN(gfx_vulkan_surface_target_init_alloc_failure);
 	RUN(gfx_vulkan_swapchain_init_rejects_invalid_direct);
+	RUN(gfx_vulkan_swapchain_init_uses_immediate_present_mode);
+	RUN(gfx_vulkan_swapchain_init_uses_mailbox_present_mode);
+	RUN(gfx_vulkan_swapchain_init_falls_back_to_vsync_present_mode);
+	RUN(gfx_vulkan_swapchain_init_mailbox_falls_back_to_vsync_present_mode);
+	RUN(gfx_vulkan_swapchain_init_invalid_present_mode_falls_back_to_vsync);
+	RUN(gfx_vulkan_swapchain_init_limits_present_modes);
+	RUN(gfx_vulkan_swapchain_init_present_mode_count_failure);
+	RUN(gfx_vulkan_swapchain_init_present_mode_list_failure);
 	RUN(gfx_vulkan_surface_target_init_without_wsi);
 	RUN(gfx_vulkan_surface_target_init_surface_support_failure);
 	RUN(gfx_vulkan_surface_target_init_capabilities_failure);

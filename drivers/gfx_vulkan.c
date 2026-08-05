@@ -44,6 +44,7 @@ typedef struct gfx_vulkan_s {
 	PFN_vkGetPhysicalDeviceSurfaceSupportKHR GetPhysicalDeviceSurfaceSupportKHR;
 	PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR GetPhysicalDeviceSurfaceCapabilitiesKHR;
 	PFN_vkGetPhysicalDeviceSurfaceFormatsKHR GetPhysicalDeviceSurfaceFormatsKHR;
+	PFN_vkGetPhysicalDeviceSurfacePresentModesKHR GetPhysicalDeviceSurfacePresentModesKHR;
 	PFN_vkCreateDevice CreateDevice;
 	PFN_vkDestroyDevice DestroyDevice;
 	PFN_vkDeviceWaitIdle DeviceWaitIdle;
@@ -577,7 +578,7 @@ static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 	}
 	if (vulkan->surface_enabled &&
 	    (LOAD_VK_INST(vulkan, GetPhysicalDeviceSurfaceSupportKHR) || LOAD_VK_INST(vulkan, GetPhysicalDeviceSurfaceCapabilitiesKHR) ||
-	     LOAD_VK_INST(vulkan, GetPhysicalDeviceSurfaceFormatsKHR))) {
+	     LOAD_VK_INST(vulkan, GetPhysicalDeviceSurfaceFormatsKHR) || LOAD_VK_INST(vulkan, GetPhysicalDeviceSurfacePresentModesKHR))) {
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
@@ -884,6 +885,66 @@ static int gfx_vulkan_surface_format(gfx_vulkan_t *vulkan, VkSurfaceKHR surface,
 	return 0;
 }
 
+static int gfx_vulkan_present_mode_supported(const VkPresentModeKHR *modes, u32 count, VkPresentModeKHR mode)
+{
+	for (u32 i = 0; i < count; i++) {
+		if (modes[i] == mode) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static VkPresentModeKHR gfx_vulkan_present_mode_choose(const VkPresentModeKHR *modes, u32 count, gfx_present_mode_t requested,
+						       gfx_present_mode_t *actual)
+{
+	switch (requested) {
+	case GFX_PRESENT_MODE_IMMEDIATE:
+		if (gfx_vulkan_present_mode_supported(modes, count, VK_PRESENT_MODE_IMMEDIATE_KHR)) {
+			*actual = GFX_PRESENT_MODE_IMMEDIATE;
+			return VK_PRESENT_MODE_IMMEDIATE_KHR;
+		}
+		break;
+	case GFX_PRESENT_MODE_MAILBOX:
+		if (gfx_vulkan_present_mode_supported(modes, count, VK_PRESENT_MODE_MAILBOX_KHR)) {
+			*actual = GFX_PRESENT_MODE_MAILBOX;
+			return VK_PRESENT_MODE_MAILBOX_KHR;
+		}
+		break;
+	case GFX_PRESENT_MODE_DEFAULT:
+	case GFX_PRESENT_MODE_VSYNC:
+		break;
+	default:
+		break;
+	}
+
+	*actual = GFX_PRESENT_MODE_VSYNC;
+	return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+static int gfx_vulkan_present_mode(gfx_vulkan_t *vulkan, VkSurfaceKHR surface, gfx_present_mode_t requested, VkPresentModeKHR *mode,
+				   gfx_present_mode_t *actual)
+{
+	u32 count = 0;
+	if (!vk_ok(vulkan->GetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, surface, &count, NULL)) || count == 0) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to enumerate Vulkan present modes");
+		return 1;
+	}
+
+	VkPresentModeKHR modes[16] = {0};
+	if (count > sizeof(modes) / sizeof(modes[0])) {
+		count = sizeof(modes) / sizeof(modes[0]);
+	}
+	if (!vk_ok(vulkan->GetPhysicalDeviceSurfacePresentModesKHR(vulkan->physical_device, surface, &count, modes))) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to enumerate Vulkan present modes");
+		return 1;
+	}
+
+	*mode = gfx_vulkan_present_mode_choose(modes, count, requested, actual);
+	return 0;
+}
+
 static void gfx_vulkan_target_free(gfx_target_t *target)
 {
 	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
@@ -955,6 +1016,10 @@ static int gfx_vulkan_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapc
 	if (gfx_vulkan_surface_format(vulkan, surface, swapchain->format, &format, &target_format)) {
 		return 1;
 	}
+	VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+	if (gfx_vulkan_present_mode(vulkan, surface, swapchain->present_mode, &present_mode, &swapchain->actual_present_mode)) {
+		return 1;
+	}
 
 	u32 image_count = caps.minImageCount + 1;
 	if (caps.maxImageCount != 0 && image_count > caps.maxImageCount) {
@@ -984,7 +1049,7 @@ static int gfx_vulkan_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapc
 		.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
 		.preTransform	  = caps.currentTransform,
 		.compositeAlpha	  = composite_alpha_choose(caps.supportedCompositeAlpha),
-		.presentMode	  = VK_PRESENT_MODE_FIFO_KHR,
+		.presentMode	  = present_mode,
 		.clipped	  = 1,
 		.oldSwapchain	  = vk_swapchain->swapchain,
 	};

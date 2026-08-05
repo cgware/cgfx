@@ -11,11 +11,13 @@ gfx_swapchain_t *gfx_swapchain_init(gfx_swapchain_t *swapchain, gfx_t *gfx, cons
 	}
 
 	*swapchain = (gfx_swapchain_t){
-		.gfx	 = gfx,
-		.surface = config->surface,
-		.format	 = config->format,
-		.width	 = config->width,
-		.height	 = config->height,
+		.gfx		     = gfx,
+		.surface	     = config->surface,
+		.format		     = config->format,
+		.width		     = config->width,
+		.height		     = config->height,
+		.present_mode	     = config->present_mode,
+		.actual_present_mode = config->present_mode,
 	};
 	if (gfx->drv->swapchain_init != NULL && gfx->drv->swapchain_init(swapchain, config)) {
 		if (gfx->drv->swapchain_free != NULL) {

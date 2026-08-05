@@ -33,8 +33,10 @@ static void gfx_none_target_free(gfx_target_t *target)
 
 static int gfx_none_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
 {
-	(void)swapchain;
 	(void)config;
+	if (swapchain != NULL) {
+		swapchain->actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE;
+	}
 	return 0;
 }
 

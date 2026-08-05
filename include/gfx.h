@@ -31,6 +31,13 @@ typedef enum gfx_api_e {
 	GFX_API_D3D11,
 } gfx_api_t;
 
+typedef enum gfx_present_mode_e {
+	GFX_PRESENT_MODE_DEFAULT,
+	GFX_PRESENT_MODE_VSYNC,
+	GFX_PRESENT_MODE_IMMEDIATE,
+	GFX_PRESENT_MODE_MAILBOX,
+} gfx_present_mode_t;
+
 typedef struct gfx_frame_s gfx_frame_t;
 typedef struct gfx_s gfx_t;
 typedef struct gfx_native_s {
@@ -54,7 +61,8 @@ typedef struct gfx_surface_ops_s {
 	int (*proc)(gfx_surface_t *surface, strv_t name, void **proc);
 	int (*make_current)(gfx_surface_t *surface);
 	int (*clear_current)(gfx_surface_t *surface);
-	int (*present)(gfx_surface_t *surface);
+	int (*present_mode)(gfx_surface_t *surface, gfx_present_mode_t requested, gfx_present_mode_t *actual);
+	int (*present)(gfx_surface_t *surface, gfx_present_mode_t present_mode);
 	int (*memory)(gfx_surface_t *surface, gfx_surface_memory_t *memory);
 } gfx_surface_ops_t;
 

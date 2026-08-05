@@ -199,6 +199,7 @@ static int gfx_software_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swa
 	    swapchain->surface->ops == NULL || swapchain->surface->ops->memory == NULL || swapchain->width == 0 || swapchain->height == 0) {
 		return 1;
 	}
+	swapchain->actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE;
 	return 0;
 }
 
@@ -226,7 +227,7 @@ static int gfx_software_swapchain_present(gfx_swapchain_t *swapchain)
 		return 1;
 	}
 
-	return swapchain->surface->ops->present(swapchain->surface);
+	return swapchain->surface->ops->present(swapchain->surface, swapchain->actual_present_mode);
 }
 
 static void gfx_software_clear(gfx_software_t *render, gfx_color_t color)

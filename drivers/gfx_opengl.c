@@ -374,6 +374,13 @@ static int gfx_opengl_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapc
 		log_error("cgfx", "gfx_opengl", NULL, "failed to make the OpenGL surface current");
 		return 1;
 	}
+	if (swapchain->surface->ops->present_mode != NULL) {
+		if (swapchain->surface->ops->present_mode(swapchain->surface, swapchain->present_mode, &swapchain->actual_present_mode)) {
+			return 1;
+		}
+	} else {
+		swapchain->actual_present_mode = GFX_PRESENT_MODE_DEFAULT;
+	}
 
 	return 0;
 }
@@ -404,7 +411,7 @@ static int gfx_opengl_swapchain_present(gfx_swapchain_t *swapchain)
 		return 1;
 	}
 
-	return swapchain->surface->ops->present(swapchain->surface);
+	return swapchain->surface->ops->present(swapchain->surface, swapchain->actual_present_mode);
 }
 
 static int gfx_opengl_target_init(gfx_target_t *target)

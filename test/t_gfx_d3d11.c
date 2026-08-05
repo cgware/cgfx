@@ -578,9 +578,10 @@ static HRESULT t_ResizeBuffers(IDXGISwapChain *self, UINT buffer_count, UINT wid
 	return t_resize_buffers_ret;
 }
 
-static int t_surface_present(gfx_surface_t *surface)
+static int t_surface_present(gfx_surface_t *surface, gfx_present_mode_t present_mode)
 {
 	(void)surface;
+	(void)present_mode;
 	t_surface_present_calls++;
 	return 0;
 }

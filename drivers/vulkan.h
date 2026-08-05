@@ -335,6 +335,21 @@ typedef struct VkSurfaceCapabilitiesKHR_s {
 typedef VkResult (*PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR)(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
 								  VkSurfaceCapabilitiesKHR *pSurfaceCapabilities);
 
+typedef enum VkPresentModeKHR_e {
+	VK_PRESENT_MODE_IMMEDIATE_KHR = 0,
+	VK_PRESENT_MODE_MAILBOX_KHR   = 1,
+	VK_PRESENT_MODE_FIFO_KHR      = 2,
+	VK_PRESENT_MODE_MAX_ENUM_KHR  = 0x7FFFFFFF
+} VkPresentModeKHR;
+
+/**
+ * @brief Query supported presentation modes
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceSurfacePresentModesKHR.html
+ */
+typedef VkResult (*PFN_vkGetPhysicalDeviceSurfacePresentModesKHR)(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+								  u32 *pPresentModeCount, VkPresentModeKHR *pPresentModes);
+
 typedef enum VkColorSpaceKHR_e {
 	VK_COLOR_SPACE_SRGB_NONLINEAR_KHR = 0,
 	VK_COLOR_SPACE_MAX_ENUM_KHR	  = 0x7FFFFFFF
@@ -1725,11 +1740,6 @@ typedef u64 VkSemaphore;
 typedef u64 VkSwapchainKHR;
 
 typedef VkFlags VkSwapchainCreateFlagsKHR;
-
-typedef enum VkPresentModeKHR_e {
-	VK_PRESENT_MODE_FIFO_KHR     = 2,
-	VK_PRESENT_MODE_MAX_ENUM_KHR = 0x7FFFFFFF
-} VkPresentModeKHR;
 
 typedef struct VkSwapchainCreateInfoKHR_s {
 	VkStructureType sType;

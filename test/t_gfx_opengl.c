@@ -577,11 +577,20 @@ static int t_gfx_opengl_surface_clear_current(gfx_surface_t *surface)
 	return 0;
 }
 
-static int t_gfx_opengl_surface_present(gfx_surface_t *surface)
+static int t_gfx_opengl_surface_present(gfx_surface_t *surface, gfx_present_mode_t present_mode)
 {
 	(void)surface;
+	(void)present_mode;
 	t_surface_present_calls++;
 	return 0;
+}
+
+static int t_gfx_opengl_surface_present_mode_failure(gfx_surface_t *surface, gfx_present_mode_t requested, gfx_present_mode_t *actual)
+{
+	(void)surface;
+	(void)requested;
+	(void)actual;
+	return 1;
 }
 
 static const gfx_surface_ops_t t_gfx_opengl_surface_ops = {
@@ -1350,7 +1359,8 @@ TEST(gfx_opengl_buffer_init_index_buffer)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	EXPECT_EQ(t_gl_gen_buffers_calls, 1);
 
 	gfx_buffer_free(&buffer);
@@ -1441,7 +1451,8 @@ TEST(gfx_opengl_buffer_free_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
 	t_surface_make_current_ret		   = 0;
 
@@ -1530,7 +1541,8 @@ TEST(gfx_opengl_buffer_set_data_uploads_vertices)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3] = {
 		{.x = 1.0f},
 		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
@@ -1558,7 +1570,8 @@ TEST(gfx_opengl_buffer_set_data_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
 	t_surface_make_current_ret		   = 0;
 	gfx_vertex_2d_t vertices[3]		   = {0};
@@ -2917,6 +2930,32 @@ TEST(gfx_opengl_swapchain_init_rejects_invalid_direct)
 	END;
 }
 
+TEST(gfx_opengl_swapchain_init_present_mode_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_surface_ops_t ops	      = t_gfx_opengl_surface_ops;
+	ops.present_mode	      = t_gfx_opengl_surface_present_mode_failure;
+	t_gfx_opengl_surface.ops      = &ops;
+	gfx_swapchain_config_t config = {
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_opengl_surface,
+		.width	 = 2,
+		.height	 = 2,
+	};
+	gfx_swapchain_t swapchain = {0};
+
+	EXPECT_NULL(gfx_swapchain_init(&swapchain, &gfx, &config));
+
+	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_surface_target_init_success)
 {
 	START;
@@ -3740,6 +3779,7 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_memory_target_init_surface_make_current_failure);
 	RUN(gfx_opengl_surface_target_init_invalid_config);
 	RUN(gfx_opengl_swapchain_init_rejects_invalid_direct);
+	RUN(gfx_opengl_swapchain_init_present_mode_failure);
 	RUN(gfx_opengl_surface_target_init_success);
 	RUN(gfx_opengl_surface_target_init_make_current_failure);
 	RUN(gfx_opengl_swapchain_free_rejects_invalid_direct);

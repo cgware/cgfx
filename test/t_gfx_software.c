@@ -23,9 +23,10 @@ typedef struct t_gfx_software_buffer_data_s {
 	buf_t buf;
 } t_gfx_software_buffer_data_t;
 
-static int t_gfx_software_surface_present(gfx_surface_t *surface)
+static int t_gfx_software_surface_present(gfx_surface_t *surface, gfx_present_mode_t present_mode)
 {
 	(void)surface;
+	(void)present_mode;
 	t_gfx_software_present_calls++;
 	return t_gfx_software_present_ret;
 }
