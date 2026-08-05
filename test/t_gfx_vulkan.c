@@ -86,6 +86,7 @@ static VkDeviceMemory t_vk_freed_memory;
 static VkMappedMemoryRange t_vk_invalidate_range;
 static VkMappedMemoryRange t_vk_flush_range;
 static VkImageMemoryBarrier t_vk_last_barrier;
+static VkDeviceSize t_vk_buffer_size;
 static VkBuffer t_vk_bound_vertex_buffer;
 static VkBuffer t_vk_bound_index_buffer;
 static u32 t_vk_bound_index_type;
@@ -194,8 +195,10 @@ typedef struct t_gfx_vulkan_framebuffer_data_s {
 typedef struct t_gfx_vulkan_buffer_data_s {
 	VkBuffer buffer;
 	VkDeviceMemory memory;
+	VkDeviceSize size;
 	VkDeviceSize memory_size;
 	int memory_coherent;
+	gfx_buffer_type_t type;
 } t_gfx_vulkan_buffer_data_t;
 
 typedef struct t_gfx_vulkan_shader_data_s {
@@ -466,10 +469,11 @@ static void t_vkGetImageMemoryRequirements(VkDevice device, VkImage image, VkMem
 static int t_vkCreateBuffer(VkDevice device, const void *create, const void *alloc, VkBuffer *buffer)
 {
 	(void)device;
-	(void)create;
 	(void)alloc;
+	const VkBufferCreateInfo *info = create;
 	t_vk_create_buffer_calls++;
-	*buffer = 12;
+	t_vk_buffer_size = info->size;
+	*buffer		 = 12;
 	return t_vk_create_buffer_ret;
 }
 
@@ -1022,6 +1026,7 @@ static void t_vkReset(void)
 	t_vk_invalidate_range			   = (VkMappedMemoryRange){0};
 	t_vk_flush_range			   = (VkMappedMemoryRange){0};
 	t_vk_last_barrier			   = (VkImageMemoryBarrier){0};
+	t_vk_buffer_size			   = 0;
 	t_vk_begin_render_pass_framebuffer	   = 0;
 	t_vk_bound_vertex_buffer		   = 0;
 	t_vk_bound_index_buffer			   = 0;
@@ -2557,8 +2562,28 @@ TEST(gfx_vulkan_buffer_init_unsupported_type)
 	gfx_buffer_t buffer = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_init_rejects_invalid_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(buffer.data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -2575,9 +2600,99 @@ TEST(gfx_vulkan_buffer_init_alloc_failure)
 	gfx_buffer_t buffer = {0};
 	gfx.alloc	    = (alloc_t){.alloc = t_gfx_vulkan_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	gfx.alloc = ALLOC_STD;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_init_static_create_buffer_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_buffer_ret	    = 1;
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_buffer_t buffer	    = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &buffer_config));
+	EXPECT_NULL(buffer.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_init_static_upload_failure)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_map_memory_ret	    = 1;
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_buffer_t buffer	    = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &buffer_config));
+	EXPECT_NULL(buffer.data);
+	EXPECT_EQ(t_vk_create_buffer_calls, 1);
+	EXPECT_EQ(t_vk_destroy_buffer_calls, 1);
+	EXPECT_EQ(t_vk_free_memory_calls, 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_init_static_uploads_data)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f},
+		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
+		{.y = 2.0f},
+	};
+	gfx_buffer_t buffer = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &buffer_config), &buffer);
+	EXPECT_EQ(t_vk_create_buffer_calls, 1);
+	EXPECT_EQ(t_vk_buffer_size, sizeof(vertices));
+	EXPECT_EQ(t_vk_map_memory_calls, 1);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
+	EXPECT_EQ(t_vk_vertex_first_x, 1);
+	EXPECT_EQ(t_vk_vertex_last_y, 2);
+
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2615,61 +2730,70 @@ TEST(gfx_vulkan_buffer_init_null_config)
 	END;
 }
 
-TEST(gfx_vulkan_buffer_init_create_buffer_failure)
+TEST(gfx_vulkan_buffer_set_data_create_buffer_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_create_buffer_ret = 1;
-	gfx_buffer_t buffer    = {0};
+	t_vk_create_buffer_ret	    = 1;
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
-	EXPECT_NULL(buffer.data);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
 
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_vulkan_buffer_init_memory_type_failure)
+TEST(gfx_vulkan_buffer_set_data_memory_type_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_memory_type_bits = 0;
-	gfx_buffer_t buffer   = {0};
+	t_vk_memory_type_bits	    = 0;
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
-	EXPECT_NULL(buffer.data);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
 
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_vulkan_buffer_init_allocate_memory_failure)
+TEST(gfx_vulkan_buffer_set_data_allocate_memory_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_allocate_memory_ret = 1;
-	gfx_buffer_t buffer	 = {0};
+	t_vk_allocate_memory_ret    = 1;
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
-	EXPECT_NULL(buffer.data);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
 
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_vulkan_buffer_init_bind_memory_failure)
+TEST(gfx_vulkan_buffer_set_data_bind_memory_failure)
 {
 	START;
 
@@ -2678,10 +2802,13 @@ TEST(gfx_vulkan_buffer_init_bind_memory_failure)
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	t_vk_bind_buffer_memory_ret = 1;
 	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
-	EXPECT_NULL(buffer.data);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
 
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -2695,7 +2822,10 @@ TEST(gfx_vulkan_buffer_bind_index_uses_uint32_indices)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	u32 indices[3] = {0, 1, 2};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, indices, sizeof(indices)), 0);
 	gfx_frame_t frame = {
 		.gfx	  = &gfx,
 		.pipeline = (const gfx_pipeline_t *)&buffer,
@@ -2744,6 +2874,29 @@ TEST(gfx_vulkan_buffer_bind_rejects_unknown_type)
 	END;
 }
 
+TEST(gfx_vulkan_buffer_bind_rejects_empty_storage)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_buffer_data_t driver_buffer = {
+		.type = GFX_BUFFER_VERTEX,
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
+		.data = &driver_buffer,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&(gfx_frame_t){.gfx = &gfx, .active = 1}, &buffer), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_buffer_set_data_null_data)
 {
 	START;
@@ -2768,7 +2921,8 @@ TEST(gfx_vulkan_buffer_set_data_map_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3] = {0};
 	t_vk_map_memory_ret	    = 1;
 
@@ -2789,7 +2943,8 @@ TEST(gfx_vulkan_buffer_set_data_flushes_noncoherent_memory)
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3] = {0};
 
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
@@ -2810,7 +2965,8 @@ TEST(gfx_vulkan_buffer_set_data_flush_failure)
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	t_vk_memory_flags   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3]	    = {0};
 	t_vk_flush_mapped_memory_ranges_ret = 1;
 
@@ -2818,6 +2974,88 @@ TEST(gfx_vulkan_buffer_set_data_flush_failure)
 	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
 
 	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_set_data_grows_buffer)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	gfx_vertex_2d_t triangle[3]  = {0};
+	gfx_vertex_2d_t rectangle[4] = {0};
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, triangle, sizeof(triangle)), 0);
+	EXPECT_EQ(t_vk_create_buffer_calls, 1);
+	EXPECT_EQ(t_vk_buffer_size, sizeof(triangle));
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, rectangle, sizeof(rectangle)), 0);
+	EXPECT_EQ(t_vk_create_buffer_calls, 2);
+	EXPECT_EQ(t_vk_destroy_buffer_calls, 1);
+	EXPECT_EQ(t_vk_free_memory_calls, 1);
+	EXPECT_EQ(t_vk_buffer_size, sizeof(rectangle));
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_set_data_rejects_unknown_type_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_buffer_data_t driver_buffer = {
+		.type = GFX_BUFFER_UNKNOWN,
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_buffer_t buffer	    = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_UNKNOWN,
+		.data = &driver_buffer,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_vk_create_buffer_calls, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_buffer_set_data_rejects_empty_storage_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_buffer_data_t driver_buffer = {
+		.size = sizeof(gfx_vertex_2d_t),
+		.type = GFX_BUFFER_VERTEX,
+	};
+	gfx_vertex_2d_t vertex = {0};
+	gfx_buffer_t buffer    = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
+		.data = &driver_buffer,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, &vertex, sizeof(vertex)), 1);
+	EXPECT_EQ(t_vk_map_memory_calls, 0);
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3021,7 +3259,8 @@ TEST(gfx_vulkan_memory_target_render_flow)
 	};
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &pipeline_config), &pipeline);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3] = {
 		{.x = 1.0f},
 		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
@@ -3104,7 +3343,9 @@ TEST(gfx_vulkan_memory_target_draw_indexed_flow)
 	};
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &pipeline_config), &pipeline);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	gfx_vertex_2d_t vertices[3] = {
 		{.x = 1.0f},
 		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
@@ -3112,7 +3353,9 @@ TEST(gfx_vulkan_memory_target_draw_indexed_flow)
 	};
 	EXPECT_EQ(gfx_buffer_set_data(&vertex_buffer, vertices, sizeof(vertices)), 0);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	u32 indices[3] = {0, 1, 2};
 	EXPECT_EQ(gfx_buffer_set_data(&index_buffer, indices, sizeof(indices)), 0);
 	gfx_frame_t frame	      = {0};
@@ -5657,19 +5900,27 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_draw_indexed_null_data);
 	RUN(gfx_vulkan_draw_indexed_inactive_frame);
 	RUN(gfx_vulkan_buffer_init_unsupported_type);
+	RUN(gfx_vulkan_buffer_init_rejects_invalid_direct);
 	RUN(gfx_vulkan_buffer_init_alloc_failure);
+	RUN(gfx_vulkan_buffer_init_static_create_buffer_failure);
+	RUN(gfx_vulkan_buffer_init_static_upload_failure);
+	RUN(gfx_vulkan_buffer_init_static_uploads_data);
 	RUN(gfx_vulkan_buffer_free_null_data);
 	RUN(gfx_vulkan_buffer_init_null_config);
-	RUN(gfx_vulkan_buffer_init_create_buffer_failure);
-	RUN(gfx_vulkan_buffer_init_memory_type_failure);
-	RUN(gfx_vulkan_buffer_init_allocate_memory_failure);
-	RUN(gfx_vulkan_buffer_init_bind_memory_failure);
+	RUN(gfx_vulkan_buffer_set_data_create_buffer_failure);
+	RUN(gfx_vulkan_buffer_set_data_memory_type_failure);
+	RUN(gfx_vulkan_buffer_set_data_allocate_memory_failure);
+	RUN(gfx_vulkan_buffer_set_data_bind_memory_failure);
 	RUN(gfx_vulkan_buffer_bind_index_uses_uint32_indices);
 	RUN(gfx_vulkan_buffer_bind_rejects_unknown_type);
+	RUN(gfx_vulkan_buffer_bind_rejects_empty_storage);
 	RUN(gfx_vulkan_buffer_set_data_null_data);
 	RUN(gfx_vulkan_buffer_set_data_map_failure);
 	RUN(gfx_vulkan_buffer_set_data_flushes_noncoherent_memory);
 	RUN(gfx_vulkan_buffer_set_data_flush_failure);
+	RUN(gfx_vulkan_buffer_set_data_grows_buffer);
+	RUN(gfx_vulkan_buffer_set_data_rejects_unknown_type_direct);
+	RUN(gfx_vulkan_buffer_set_data_rejects_empty_storage_direct);
 	RUN(gfx_vulkan_shader_free_null_data);
 	RUN(gfx_vulkan_shader_init_null_config);
 	RUN(gfx_vulkan_shader_init_null_data);

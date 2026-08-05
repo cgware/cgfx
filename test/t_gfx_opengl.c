@@ -66,6 +66,7 @@ static unsigned int t_gl_buffer_target;
 static unsigned int t_gl_draw_mode;
 static unsigned int t_gl_draw_type;
 static unsigned int t_gl_attrib_index;
+static unsigned int t_gl_buffer_usage;
 static int t_gl_buffer_data_size;
 static int t_gl_draw_count;
 static const void *t_gl_draw_indices;
@@ -403,10 +404,10 @@ static void t_glBindBuffer(unsigned int target, unsigned int buffer)
 static void t_glBufferData(unsigned int target, size_t size, const void *data, unsigned int usage)
 {
 	(void)target;
-	(void)usage;
 	const float *values = data;
 	t_gl_buffer_data_calls++;
 	t_gl_buffer_data_size = (int)size;
+	t_gl_buffer_usage     = usage;
 	t_gl_buffer_first_x   = values[0];
 	t_gl_buffer_last_y    = values[13];
 }
@@ -652,6 +653,7 @@ static void t_gfx_opengl_reset(void)
 	t_gl_draw_mode			       = 0;
 	t_gl_draw_type			       = 0;
 	t_gl_attrib_index		       = 0;
+	t_gl_buffer_usage		       = 0;
 	t_gl_buffer_data_size		       = 0;
 	t_gl_draw_count			       = 0;
 	t_gl_vertex_attrib_size		       = 0;
@@ -1311,7 +1313,7 @@ TEST(gfx_opengl_buffer_init_alloc_failure)
 	gfx.alloc	    = (alloc_t){.alloc = t_gfx_opengl_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
 
 	gfx.alloc = ALLOC_STD;
@@ -1331,7 +1333,7 @@ TEST(gfx_opengl_buffer_init_create_buffer_failure)
 	EXPECT_EQ(t_gfx_opengl_init_gfx_configured(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	EXPECT_NULL(buffer.data);
 
 	gfx_free(&gfx);
@@ -1348,7 +1350,7 @@ TEST(gfx_opengl_buffer_init_index_buffer)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
 	EXPECT_EQ(t_gl_gen_buffers_calls, 1);
 
 	gfx_buffer_free(&buffer);
@@ -1367,10 +1369,65 @@ TEST(gfx_opengl_buffer_init_unsupported_type)
 	gfx_buffer_t buffer = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
 	EXPECT_NULL(buffer.data);
 
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_init_rejects_invalid_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(buffer.data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_init_static_uploads_data)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f},
+		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
+		{.y = 2.0f},
+	};
+	gfx_buffer_t buffer = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &buffer_config), &buffer);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 2);
+	EXPECT_EQ(t_gl_buffer_data_calls, 1);
+	EXPECT_EQ(t_gl_buffer_data_size, sizeof(vertices));
+	EXPECT_EQ(t_gl_buffer_usage, GL_STATIC_DRAW);
+	EXPECT_EQ(t_gl_buffer_first_x, 1.0f);
+	EXPECT_EQ(t_gl_buffer_last_y, 2.0f);
+
+	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -1384,7 +1441,7 @@ TEST(gfx_opengl_buffer_free_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
 	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
 	t_surface_make_current_ret		   = 0;
 
@@ -1414,7 +1471,7 @@ TEST(gfx_opengl_buffer_init_make_current_failure)
 	gfx_buffer_t buffer			   = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
 
 	t_surface_make_current_ret = 1;
@@ -1439,7 +1496,7 @@ TEST(gfx_opengl_buffer_init_missing_make_current_callback)
 	gfx_buffer_t buffer			   = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
 	EXPECT_EQ(t_surface_make_current_calls, 0);
 
@@ -1473,7 +1530,7 @@ TEST(gfx_opengl_buffer_set_data_uploads_vertices)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
 	gfx_vertex_2d_t vertices[3] = {
 		{.x = 1.0f},
 		{.x = 0.0f, .y = 0.0f, .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = 0.0f},
@@ -1501,7 +1558,7 @@ TEST(gfx_opengl_buffer_set_data_make_current_failure)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), &buffer);
 	((t_gfx_opengl_data_t *)gfx.data)->surface = &t_gfx_opengl_surface;
 	t_surface_make_current_ret		   = 0;
 	gfx_vertex_2d_t vertices[3]		   = {0};
@@ -3620,6 +3677,8 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_buffer_init_create_buffer_failure);
 	RUN(gfx_opengl_buffer_init_index_buffer);
 	RUN(gfx_opengl_buffer_init_unsupported_type);
+	RUN(gfx_opengl_buffer_init_rejects_invalid_direct);
+	RUN(gfx_opengl_buffer_init_static_uploads_data);
 	RUN(gfx_opengl_buffer_init_make_current_failure);
 	RUN(gfx_opengl_buffer_init_missing_make_current_callback);
 	RUN(gfx_opengl_buffer_set_data_null_data);

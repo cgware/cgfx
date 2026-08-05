@@ -12,11 +12,16 @@ static int t_gfx_software_present_calls;
 static int t_gfx_software_present_ret;
 static int t_gfx_software_memory_calls;
 static int t_gfx_software_memory_ret;
+static int t_gfx_software_alloc_count;
 static gfx_surface_memory_t t_gfx_software_memory;
 
 typedef struct t_gfx_software_surface_target_data_s {
 	gfx_surface_memory_t memory;
 } t_gfx_software_surface_target_data_t;
+
+typedef struct t_gfx_software_buffer_data_s {
+	buf_t buf;
+} t_gfx_software_buffer_data_t;
 
 static int t_gfx_software_surface_present(gfx_surface_t *surface)
 {
@@ -62,6 +67,24 @@ static void *t_gfx_software_alloc_fail(alloc_t *alloc, size_t size)
 	(void)alloc;
 	(void)size;
 	return NULL;
+}
+
+static void *t_gfx_software_alloc_fail_after_first(alloc_t *alloc, size_t size)
+{
+	t_gfx_software_alloc_count++;
+	if (t_gfx_software_alloc_count > 1) {
+		return NULL;
+	}
+	return alloc_alloc_std(alloc, size);
+}
+
+static int t_gfx_software_realloc_fail(alloc_t *alloc, void **ptr, size_t *capacity, size_t size)
+{
+	(void)alloc;
+	(void)ptr;
+	(void)capacity;
+	(void)size;
+	return 1;
 }
 
 static int t_gfx_software_scene(gfx_t *gfx, gfx_target_t *target, gfx_render_pass_t *render_pass, gfx_framebuffer_t *framebuffer,
@@ -354,7 +377,8 @@ TEST(gfx_software_draw_triangle)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[] = {
 		{.x = -1.0f, .y = -1.0f, .r = -1.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f},
 		{.x = 1.0f, .y = -1.0f, .r = 0.0f, .g = 2.0f, .b = 0.0f, .a = 1.0f},
@@ -405,7 +429,9 @@ TEST(gfx_software_draw_indexed_triangle)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	gfx_vertex_2d_t vertices[] = {
 		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f},
 		{.x = 1.0f, .y = -1.0f, .r = 0.0f, .g = 1.0f, .b = 0.0f, .a = 1.0f},
@@ -413,7 +439,9 @@ TEST(gfx_software_draw_indexed_triangle)
 	};
 	EXPECT_EQ(gfx_buffer_set_data(&vertex_buffer, vertices, sizeof(vertices)), 0);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	u32 indices[3] = {0, 1, 2};
 	EXPECT_EQ(gfx_buffer_set_data(&index_buffer, indices, sizeof(indices)), 0);
 
@@ -453,7 +481,9 @@ TEST(gfx_software_draw_buffer_failures)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	gfx_vertex_2d_t vertices[] = {
 		{.x = -1.0f, .y = -1.0f},
 		{.x = 1.0f, .y = -1.0f},
@@ -461,7 +491,9 @@ TEST(gfx_software_draw_buffer_failures)
 	};
 	EXPECT_EQ(gfx_buffer_set_data(&vertex_buffer, vertices, sizeof(gfx_vertex_2d_t) * 2), 0);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	u32 indices[3] = {0, 1, 2};
 	EXPECT_EQ(gfx_buffer_set_data(&index_buffer, indices, sizeof(u32) * 2), 0);
 
@@ -496,7 +528,8 @@ TEST(gfx_software_buffer_set_data_alloc_failure)
 	gfx_t gfx = {0};
 	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx.alloc		    = (alloc_t){.alloc = t_gfx_software_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
 	gfx_vertex_2d_t vertices[3] = {0};
 
@@ -510,6 +543,115 @@ TEST(gfx_software_buffer_set_data_alloc_failure)
 	END;
 }
 
+TEST(gfx_software_buffer_init_static_uploads_data)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f},
+		{.x = 2.0f},
+		{.x = 3.0f},
+	};
+	gfx_buffer_t buffer = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &buffer_config), &buffer);
+	EXPECT_EQ(buffer.size, sizeof(vertices));
+	t_gfx_software_buffer_data_t *data = buffer.data;
+	EXPECT_EQ(data->buf.used, sizeof(vertices));
+	EXPECT_EQ(((gfx_vertex_2d_t *)data->buf.data)[0].x, 1.0f);
+	EXPECT_EQ(((gfx_vertex_2d_t *)data->buf.data)[2].x, 3.0f);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_buffer_init_static_alloc_failure)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	t_gfx_software_alloc_count = 0;
+	gfx_t gfx		   = {
+		.drv   = drv,
+		.alloc = {.alloc = t_gfx_software_alloc_fail_after_first, .realloc = alloc_realloc_std, .free = alloc_free_std},
+	};
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_buffer_t buffer	    = {.gfx = &gfx};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(drv->buffer_init(&buffer, &buffer_config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(buffer.data);
+
+	END;
+}
+
+TEST(gfx_software_buffer_set_data_resize_failure)
+{
+	START;
+
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	gfx_vertex_2d_t triangle[3]  = {0};
+	gfx_vertex_2d_t rectangle[4] = {0};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, triangle, sizeof(triangle)), 0);
+	t_gfx_software_buffer_data_t *data = buffer.data;
+	data->buf.alloc.realloc		   = t_gfx_software_realloc_fail;
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, rectangle, sizeof(rectangle)), 1);
+	log_set_quiet(0, 0);
+
+	data->buf.alloc = ALLOC_STD;
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_buffer_set_data_rejects_invalid_storage)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	char storage[1]			  = {0};
+	t_gfx_software_buffer_data_t data = {.buf = {.data = storage, .size = sizeof(storage), .used = sizeof(storage)}};
+	u32 values[2]			  = {1, 2};
+	gfx_buffer_t buffer		  = {
+		.gfx  = &gfx,
+		.size = sizeof(values),
+		.data = &data,
+	};
+
+	EXPECT_EQ(drv->buffer_set_data(&buffer, values, sizeof(values)), 1);
+
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_draw_indexed_rejects_invalid_target)
 {
 	START;
@@ -517,11 +659,15 @@ TEST(gfx_software_draw_indexed_rejects_invalid_target)
 	gfx_t gfx = {0};
 	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	gfx_vertex_2d_t vertices[3] = {0};
 	EXPECT_EQ(gfx_buffer_set_data(&vertex_buffer, vertices, sizeof(vertices)), 0);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	u32 indices[3] = {0, 1, 2};
 	EXPECT_EQ(gfx_buffer_set_data(&index_buffer, indices, sizeof(indices)), 0);
 	gfx_frame_t frame = {
@@ -558,7 +704,8 @@ TEST(gfx_software_surface_pass_begin_and_draw_clips)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[] = {
 		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .g = 0.0f, .b = 0.0f, .a = 1.0f},
 		{.x = 1.0f, .y = -1.0f, .r = 0.0f, .g = 1.0f, .b = 0.0f, .a = 1.0f},
@@ -665,7 +812,7 @@ TEST(gfx_software_driver_direct_branches)
 	drv->buffer_free(NULL);
 	gfx_buffer_t buffer = {.gfx = &gfx};
 	gfx.alloc	    = (alloc_t){.alloc = t_gfx_software_alloc_fail};
-	EXPECT_EQ(drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), 1);
+	EXPECT_EQ(drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
 	gfx.alloc = ALLOC_STD;
 	EXPECT_EQ(drv->draw(&(gfx_frame_t){.gfx = &gfx, .vertex_buffer = &(gfx_buffer_t){.gfx = &gfx, .data = (void *)1}}, 3, 0), 1);
 
@@ -684,7 +831,7 @@ TEST(gfx_software_driver_callback_failures)
 	EXPECT_EQ(drv->target_init(&(gfx_target_t){.type = GFX_TARGET_NONE, .gfx = &(gfx_t){.data = (void *)1}}), 1);
 	EXPECT_EQ(drv->target_read(NULL, &(gfx_memory_readback_config_t){0}), 1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(NULL, NULL), 1);
-	EXPECT_EQ(drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), 1);
+	EXPECT_EQ(drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
 	EXPECT_EQ(drv->buffer_set_data(NULL, NULL, 0), 1);
 	EXPECT_EQ(drv->buffer_bind(NULL, NULL), 1);
 	EXPECT_EQ(drv->draw(NULL, 3, 0), 1);
@@ -708,6 +855,10 @@ STEST(gfx_software)
 	RUN(gfx_software_draw_indexed_triangle);
 	RUN(gfx_software_draw_buffer_failures);
 	RUN(gfx_software_buffer_set_data_alloc_failure);
+	RUN(gfx_software_buffer_init_static_uploads_data);
+	RUN(gfx_software_buffer_init_static_alloc_failure);
+	RUN(gfx_software_buffer_set_data_resize_failure);
+	RUN(gfx_software_buffer_set_data_rejects_invalid_storage);
 	RUN(gfx_software_draw_indexed_rejects_invalid_target);
 	RUN(gfx_software_surface_pass_begin_and_draw_clips);
 	RUN(gfx_software_driver_direct_branches);

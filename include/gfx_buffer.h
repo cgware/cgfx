@@ -9,13 +9,24 @@ typedef enum gfx_buffer_type_s {
 	GFX_BUFFER_INDEX,
 } gfx_buffer_type_t;
 
+typedef enum gfx_buffer_usage_s {
+	GFX_BUFFER_USAGE_UNKNOWN,
+	GFX_BUFFER_USAGE_STATIC,
+	GFX_BUFFER_USAGE_DYNAMIC,
+} gfx_buffer_usage_t;
+
 typedef struct gfx_buffer_config_s {
 	gfx_buffer_type_t type;
+	gfx_buffer_usage_t usage;
+	size_t size;
+	const void *data;
 } gfx_buffer_config_t;
 
 typedef struct gfx_buffer_s {
 	gfx_t *gfx;
 	gfx_buffer_type_t type;
+	gfx_buffer_usage_t usage;
+	size_t size;
 	void *data;
 } gfx_buffer_t;
 

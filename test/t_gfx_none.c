@@ -40,6 +40,11 @@ TEST(gfx_none_driver_callbacks_handle_invalid_args)
 	EXPECT_EQ(drv->init(NULL, &(gfx_config_t){0}), 1);
 	EXPECT_EQ(drv->free(NULL), 1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(NULL, NULL), 1);
+	EXPECT_EQ(drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	EXPECT_EQ(
+		drv->buffer_init(&(gfx_buffer_t){0}, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		1);
+	EXPECT_EQ(drv->buffer_set_data(&(gfx_buffer_t){.usage = GFX_BUFFER_USAGE_STATIC}, &(int){1}, sizeof(int)), 1);
 	EXPECT_EQ(drv->draw(NULL, 3, 0), 1);
 	EXPECT_EQ(drv->draw_indexed(NULL, 3), 1);
 	EXPECT_EQ(drv->end(NULL), 1);
@@ -123,7 +128,8 @@ TEST(gfx_none_draw_pipeline_success)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, &data, sizeof(data)), 0);
 
 	gfx_frame_t frame = {0};
@@ -179,10 +185,14 @@ TEST(gfx_none_draw_indexed_pipeline_success)
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
 		   &pipeline);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	EXPECT_EQ(gfx_buffer_set_data(&vertex_buffer, &data, sizeof(data)), 0);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	EXPECT_EQ(gfx_buffer_set_data(&index_buffer, &data, sizeof(data)), 0);
 
 	gfx_frame_t frame = {0};

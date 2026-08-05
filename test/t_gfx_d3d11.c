@@ -112,6 +112,8 @@ static int t_rs_set_viewports_calls;
 static int t_surface_present_calls;
 static UINT t_create_buffer_bytes;
 static UINT t_create_buffer_bind_flags;
+static UINT t_create_buffer_usage;
+static const void *t_create_buffer_initial_data;
 static UINT t_create_texture_width;
 static UINT t_create_texture_height;
 static UINT t_create_texture_usage;
@@ -337,11 +339,12 @@ static size_t t_blob_GetBufferSize(ID3DBlob *self)
 static HRESULT t_CreateBuffer(ID3D11Device *self, const D3D11_BUFFER_DESC *desc, const void *initial_data, ID3D11Buffer **buffer)
 {
 	(void)self;
-	(void)initial_data;
 	t_create_buffer_calls++;
-	t_create_buffer_bytes	   = desc->ByteWidth;
-	t_create_buffer_bind_flags = desc->BindFlags;
-	*buffer			   = (ID3D11Buffer *)&t_buffer;
+	t_create_buffer_bytes	     = desc->ByteWidth;
+	t_create_buffer_bind_flags   = desc->BindFlags;
+	t_create_buffer_usage	     = desc->Usage;
+	t_create_buffer_initial_data = initial_data;
+	*buffer			     = (ID3D11Buffer *)&t_buffer;
 	return t_create_buffer_ret;
 }
 
@@ -728,6 +731,8 @@ static void t_gfx_d3d11_reset(void)
 	t_surface_present_calls		  = 0;
 	t_create_buffer_bytes		  = 0;
 	t_create_buffer_bind_flags	  = 0;
+	t_create_buffer_usage		  = 0;
+	t_create_buffer_initial_data	  = NULL;
 	t_create_texture_width		  = 0;
 	t_create_texture_height		  = 0;
 	t_create_texture_usage		  = 0;
@@ -2591,8 +2596,28 @@ TEST(gfx_d3d11_buffer_init_unsupported_type)
 	gfx_buffer_t buffer = {0};
 
 	log_set_quiet(0, 1);
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_init_rejects_invalid_direct)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(buffer.data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -2638,10 +2663,18 @@ TEST(gfx_d3d11_buffer_init_missing_create_buffer_callback)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	gfx_buffer_t buffer = {0};
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
 
 	t_device_vtbl.CreateBuffer = NULL;
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &buffer_config));
 	t_device_vtbl.CreateBuffer = t_CreateBuffer;
 
 	gfx_free(&gfx);
@@ -2659,7 +2692,7 @@ TEST(gfx_d3d11_buffer_init_alloc_failure)
 	gfx_buffer_t buffer = {0};
 	gfx.alloc	    = (alloc_t){.alloc = t_gfx_d3d11_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	gfx.alloc = ALLOC_STD;
 	gfx_free(&gfx);
@@ -2674,10 +2707,18 @@ TEST(gfx_d3d11_buffer_init_create_buffer_failure)
 	proc_t proc = {0};
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
-	t_create_buffer_ret = -1;
-	gfx_buffer_t buffer = {0};
+	t_create_buffer_ret	    = -1;
+	gfx_buffer_t buffer	    = {0};
+	gfx_vertex_2d_t vertices[3] = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &buffer_config));
 	EXPECT_NULL(buffer.data);
 
 	gfx_free(&gfx);
@@ -2696,6 +2737,54 @@ TEST(gfx_d3d11_buffer_set_data_null_data)
 	gfx_buffer_t buffer	    = {.gfx = &gfx};
 
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {0};
+	gfx_vertex_2d_t vertices[3]		= {0};
+	gfx_buffer_t buffer			= {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_UNKNOWN,
+		.data = &driver_buffer,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
+	log_set_quiet(0, 0);
+	EXPECT_EQ(t_create_buffer_calls, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_set_data_rejects_oversized_direct)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	t_gfx_d3d11_buffer_data_t driver_buffer = {0};
+	u8 data					= 1;
+	gfx_buffer_t buffer			= {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_VERTEX,
+		.data = &driver_buffer,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_set_data(&buffer, &data, (size_t)U32_MAX + 1), 1);
+	EXPECT_EQ(t_create_buffer_calls, 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3203,7 +3292,8 @@ TEST(gfx_d3d11_buffer_set_data_missing_update_callback)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	PFN_UpdateSubresource saved	 = t_context_vtbl.UpdateSubresource;
 	t_context_vtbl.UpdateSubresource = NULL;
 	gfx_vertex_2d_t vertices[3]	 = {0};
@@ -3225,7 +3315,8 @@ TEST(gfx_d3d11_buffer_set_data_uploads_vertices)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	gfx_vertex_2d_t vertices[3] = {
 		{.x = 1.0f, .y = 2.0f, .r = 3.0f, .g = 4.0f, .b = 5.0f, .a = 6.0f},
 		{.x = 7.0f, .y = 8.0f},
@@ -3245,6 +3336,94 @@ TEST(gfx_d3d11_buffer_set_data_uploads_vertices)
 	END;
 }
 
+TEST(gfx_d3d11_buffer_init_static_uploads_initial_data)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_vertex_2d_t vertices[3] = {
+		{.x = 1.0f},
+		{.x = 2.0f},
+		{.x = 3.0f},
+	};
+	gfx_buffer_t buffer = {0};
+
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &buffer_config), &buffer);
+	EXPECT_EQ(t_create_buffer_calls, 1);
+	EXPECT_EQ(t_create_buffer_bytes, sizeof(vertices));
+	EXPECT_EQ(t_create_buffer_bind_flags, D3D11_BIND_VERTEX_BUFFER);
+	EXPECT_EQ(t_create_buffer_usage, D3D11_USAGE_IMMUTABLE);
+	EXPECT_NOT_NULL(t_create_buffer_initial_data);
+	EXPECT_EQ(t_update_subresource_calls, 0);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_set_data_grows_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	gfx_vertex_2d_t triangle[3]  = {0};
+	gfx_vertex_2d_t rectangle[4] = {0};
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, triangle, sizeof(triangle)), 0);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, rectangle, sizeof(rectangle)), 0);
+	EXPECT_EQ(t_create_buffer_calls, 2);
+	EXPECT_EQ(t_release_buffer_calls, 1);
+	EXPECT_EQ(t_create_buffer_bytes, sizeof(rectangle));
+	EXPECT_EQ(t_update_subresource_calls, 2);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_buffer_set_data_grow_create_failure_keeps_buffer)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	gfx_vertex_2d_t triangle[3]  = {0};
+	gfx_vertex_2d_t rectangle[4] = {0};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, triangle, sizeof(triangle)), 0);
+	t_create_buffer_ret = -1;
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, rectangle, sizeof(rectangle)), 1);
+	EXPECT_EQ(t_create_buffer_calls, 2);
+	EXPECT_EQ(t_release_buffer_calls, 0);
+	EXPECT_NOT_NULL(buffer.data);
+
+	t_create_buffer_ret = S_OK;
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_buffer_init_creates_index_buffer)
 {
 	START;
@@ -3253,8 +3432,16 @@ TEST(gfx_d3d11_buffer_init_creates_index_buffer)
 	gfx_t gfx   = {0};
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	gfx_buffer_t buffer = {0};
+	u32 indices[3]	    = {0, 1, 2};
 
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &buffer);
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_INDEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(indices),
+		.data  = indices,
+	};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &buffer_config), &buffer);
 	EXPECT_EQ(t_create_buffer_calls, 1);
 	EXPECT_EQ(t_create_buffer_bind_flags, D3D11_BIND_INDEX_BUFFER);
 
@@ -3353,7 +3540,10 @@ TEST(gfx_d3d11_buffer_bind_binds_vertex_buffer)
 	t_gfx_d3d11_active_render_pass = &render_pass;
 	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
 	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+	t_d3d11_vertex_2d_t vertices[3] = {0};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 0);
 	gfx.frame = &frame;
 	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
 
@@ -3807,12 +3997,15 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_draw_null_data);
 	RUN(gfx_d3d11_end_null_frame);
 	RUN(gfx_d3d11_buffer_init_unsupported_type);
+	RUN(gfx_d3d11_buffer_init_rejects_invalid_direct);
 	RUN(gfx_d3d11_buffer_free_null_data);
 	RUN(gfx_d3d11_buffer_init_null_config);
 	RUN(gfx_d3d11_buffer_init_missing_create_buffer_callback);
 	RUN(gfx_d3d11_buffer_init_alloc_failure);
 	RUN(gfx_d3d11_buffer_init_create_buffer_failure);
 	RUN(gfx_d3d11_buffer_set_data_null_data);
+	RUN(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct);
+	RUN(gfx_d3d11_buffer_set_data_rejects_oversized_direct);
 	RUN(gfx_d3d11_shader_free_releases_pixel_shader);
 	RUN(gfx_d3d11_shader_free_null_data);
 	RUN(gfx_d3d11_shader_init_null_config);
@@ -3838,6 +4031,9 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_init_unsupported_input_layout);
 	RUN(gfx_d3d11_buffer_set_data_missing_update_callback);
 	RUN(gfx_d3d11_buffer_set_data_uploads_vertices);
+	RUN(gfx_d3d11_buffer_init_static_uploads_initial_data);
+	RUN(gfx_d3d11_buffer_set_data_grows_buffer);
+	RUN(gfx_d3d11_buffer_set_data_grow_create_failure_keeps_buffer);
 	RUN(gfx_d3d11_buffer_init_creates_index_buffer);
 	RUN(gfx_d3d11_pipeline_bind_null_frame);
 	RUN(gfx_d3d11_buffer_bind_null_frame);

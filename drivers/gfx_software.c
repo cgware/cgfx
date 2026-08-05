@@ -404,20 +404,42 @@ static int gfx_software_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_confi
 	*sw_buffer   = (gfx_software_buffer_t){0};
 	buffer->data = sw_buffer;
 
+	if (config->size != 0) {
+		if (buf_init(&sw_buffer->buf, config->size, buffer->gfx->alloc) == NULL) {
+			gfx_software_buffer_free(buffer);
+			return 1;
+		}
+		buffer->size = config->size;
+	}
+	if (config->data != NULL) {
+		if (buf_set(&sw_buffer->buf, 0, config->size, config->data)) {
+			gfx_software_buffer_free(buffer); // LCOV_EXCL_LINE
+			return 1;			  // LCOV_EXCL_LINE
+		}
+		sw_buffer->buf.used = config->size;
+	}
+
 	return 0;
 }
 
 static int gfx_software_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL || data == NULL || size == 0) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->data == NULL || data == NULL || size == 0 ||
+	    buffer->usage == GFX_BUFFER_USAGE_STATIC) {
 		return 1;
 	}
 
 	gfx_software_buffer_t *sw_buffer = buffer->data;
 	if (sw_buffer->buf.data == NULL) {
-		buf_init(&sw_buffer->buf, size, buffer->gfx->alloc);
-	} else {
-		buf_resize(&sw_buffer->buf, size);
+		if (buf_init(&sw_buffer->buf, size, buffer->gfx->alloc) == NULL) {
+			return 1;
+		}
+		buffer->size = size;
+	} else if (size > buffer->size) {
+		if (buf_resize(&sw_buffer->buf, size)) {
+			return 1;
+		}
+		buffer->size = size;
 	}
 
 	if (buf_set(&sw_buffer->buf, 0, size, data)) {

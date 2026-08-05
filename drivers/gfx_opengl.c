@@ -3,15 +3,6 @@
 #include "log.h"
 #include "opengl.h"
 
-typedef struct gfx_opengl_vertex_2d_s {
-	float x;
-	float y;
-	float r;
-	float g;
-	float b;
-	float a;
-} gfx_opengl_vertex_2d_t;
-
 typedef struct gfx_opengl_s {
 	void *gl_lib;
 	const gfx_target_t *target;
@@ -783,13 +774,23 @@ static int gfx_opengl_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 		gfx_opengl_buffer_free(buffer);
 		return 1;
 	}
+	if (config->size != 0) {
+		opengl->BindBuffer(gl_buffer->target, gl_buffer->buffer);
+		opengl->BufferData(gl_buffer->target,
+				   config->size,
+				   config->data,
+				   config->usage == GFX_BUFFER_USAGE_STATIC ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+		opengl->BindBuffer(gl_buffer->target, 0);
+		buffer->size = config->size;
+	}
 
 	return 0;
 }
 
 static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL || data == NULL || size == 0 ||
+	    buffer->usage == GFX_BUFFER_USAGE_STATIC) {
 		return 1;
 	}
 
@@ -804,6 +805,7 @@ static int gfx_opengl_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 	opengl->BindBuffer(gl_buffer->target, gl_buffer->buffer);
 	opengl->BufferData(gl_buffer->target, size, data, GL_DYNAMIC_DRAW);
 	opengl->BindBuffer(gl_buffer->target, 0);
+	buffer->size = size;
 
 	return 0;
 }

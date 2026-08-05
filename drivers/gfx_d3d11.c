@@ -8,15 +8,6 @@ enum {
 	GFX_D3D11_SWAPCHAIN_BUFFER_COUNT = 0,
 };
 
-typedef struct gfx_d3d11_vertex_2d_s {
-	float x;
-	float y;
-	float r;
-	float g;
-	float b;
-	float a;
-} gfx_d3d11_vertex_2d_t;
-
 typedef struct gfx_d3d11_s {
 	void *lib;
 	void *compiler_lib;
@@ -631,9 +622,33 @@ static void gfx_d3d11_buffer_free(gfx_buffer_t *buffer)
 	buffer->data = NULL;
 }
 
-static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+static int gfx_d3d11_buffer_flags(gfx_buffer_type_t type, UINT *flags)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+	if (flags == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	*flags = 0;
+	switch (type) {
+	case GFX_BUFFER_VERTEX: {
+		*flags |= D3D11_BIND_VERTEX_BUFFER;
+		break;
+	}
+	case GFX_BUFFER_INDEX: {
+		*flags |= D3D11_BIND_INDEX_BUFFER;
+		break;
+	}
+	default: {
+		return 1;
+	}
+	}
+	return 0;
+}
+
+static int gfx_d3d11_buffer_create(gfx_buffer_t *buffer, gfx_d3d11_buffer_t *d3d_buffer, const void *data, size_t size)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || d3d_buffer == NULL || size == 0 ||
+	    size > (size_t)U32_MAX) {
 		return 1;
 	}
 
@@ -645,19 +660,42 @@ static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t
 	}
 
 	UINT flags = 0;
-	switch (config->type) {
-	case GFX_BUFFER_VERTEX: {
-		flags |= D3D11_BIND_VERTEX_BUFFER;
-		break;
-	}
-	case GFX_BUFFER_INDEX: {
-		flags |= D3D11_BIND_INDEX_BUFFER;
-		break;
-	}
-	default: {
-		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", config->type);
+	if (gfx_d3d11_buffer_flags(d3d_buffer->type, &flags)) {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", d3d_buffer->type);
 		return 1;
 	}
+
+	D3D11_BUFFER_DESC desc = {
+		.ByteWidth = (UINT)size,
+		.Usage	   = buffer->usage == GFX_BUFFER_USAGE_STATIC ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DEFAULT,
+		.BindFlags = flags,
+	};
+	D3D11_SUBRESOURCE_DATA initial = {
+		.pSysMem = data,
+	};
+	ID3D11Buffer *next = NULL;
+	if (!hresult_ok(device->CreateBuffer(d3d11->device, &desc, data != NULL ? &initial : NULL, &next)) || next == NULL) {
+		return 1;
+	}
+	if (d3d_buffer->buffer != NULL) {
+		d3d11_release(d3d_buffer->buffer);
+	}
+	d3d_buffer->buffer = next;
+	buffer->size	   = size;
+
+	return 0;
+}
+
+static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	UINT flags = 0;
+	if (gfx_d3d11_buffer_flags(config->type, &flags)) {
+		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", config->type);
+		return 1;
 	}
 
 	gfx_d3d11_buffer_t *d3d_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_d3d11_buffer_t));
@@ -669,12 +707,7 @@ static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t
 	};
 	buffer->data = d3d_buffer;
 
-	D3D11_BUFFER_DESC desc = {
-		.ByteWidth = (UINT)(sizeof(gfx_d3d11_vertex_2d_t) * 3),
-		.Usage	   = D3D11_USAGE_DEFAULT,
-		.BindFlags = flags,
-	};
-	if (!hresult_ok(device->CreateBuffer(d3d11->device, &desc, NULL, &d3d_buffer->buffer)) || d3d_buffer->buffer == NULL) {
+	if (config->size != 0 && gfx_d3d11_buffer_create(buffer, d3d_buffer, config->data, config->size)) {
 		gfx_d3d11_buffer_free(buffer);
 		return 1;
 	}
@@ -683,9 +716,8 @@ static int gfx_d3d11_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t
 
 static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
 {
-	(void)size;
-
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL || data == NULL || size == 0 ||
+	    buffer->usage == GFX_BUFFER_USAGE_STATIC) {
 		return 1;
 	}
 
@@ -695,6 +727,12 @@ static int gfx_d3d11_buffer_set_data(gfx_buffer_t *buffer, const void *data, siz
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
 	if (context->UpdateSubresource == NULL) {
 		return 1;
+	}
+
+	if (d3d_buffer->buffer == NULL || size > buffer->size) {
+		if (gfx_d3d11_buffer_create(buffer, d3d_buffer, NULL, size)) {
+			return 1;
+		}
 	}
 
 	context->UpdateSubresource(d3d11->context, d3d_buffer->buffer, 0, NULL, data, 0, 0);
@@ -712,7 +750,7 @@ static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 	gfx_d3d11_t *d3d11		   = buffer->gfx->data;
 	gfx_d3d11_buffer_t *d3d_buffer	   = buffer->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = frame->pipeline->data;
-	if (d3d_pipeline->stride == 0) {
+	if (d3d_buffer->buffer == NULL || d3d_pipeline->stride == 0) {
 		return 1;
 	}
 

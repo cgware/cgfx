@@ -136,6 +136,7 @@ typedef struct gfx_vulkan_framebuffer_s {
 typedef struct gfx_vulkan_buffer_s {
 	VkBuffer buffer;
 	VkDeviceMemory memory;
+	VkDeviceSize size;
 	VkDeviceSize memory_size;
 	int memory_coherent;
 	gfx_buffer_type_t type;
@@ -1568,14 +1569,24 @@ static int gfx_vulkan_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx
 	return 0;
 }
 
-typedef struct gfx_vulkan_vertex_2d_s {
-	float x;
-	float y;
-	float r;
-	float g;
-	float b;
-	float a;
-} gfx_vulkan_vertex_2d_t;
+static void gfx_vulkan_buffer_resources_free(gfx_vulkan_t *vulkan, gfx_vulkan_buffer_t *vk_buffer)
+{
+	if (vulkan == NULL || vk_buffer == NULL) {
+		return; // LCOV_EXCL_LINE
+	}
+
+	if (vk_buffer->buffer != 0) {
+		vulkan->DestroyBuffer(vulkan->device, vk_buffer->buffer, NULL);
+		vk_buffer->buffer = 0;
+	}
+	if (vk_buffer->memory != 0) {
+		vulkan->FreeMemory(vulkan->device, vk_buffer->memory, NULL);
+		vk_buffer->memory = 0;
+	}
+	vk_buffer->size		   = 0;
+	vk_buffer->memory_size	   = 0;
+	vk_buffer->memory_coherent = 0;
+}
 
 static void gfx_vulkan_buffer_free(gfx_buffer_t *buffer)
 {
@@ -1586,70 +1597,66 @@ static void gfx_vulkan_buffer_free(gfx_buffer_t *buffer)
 	gfx_vulkan_t *vulkan	       = buffer->gfx->data;
 	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
 
-	if (vk_buffer->buffer != 0) {
-		vulkan->DestroyBuffer(vulkan->device, vk_buffer->buffer, NULL);
-		vk_buffer->buffer = 0;
-	}
-	if (vk_buffer->memory != 0) {
-		vulkan->FreeMemory(vulkan->device, vk_buffer->memory, NULL);
-		vk_buffer->memory = 0;
-	}
-	vk_buffer->memory_size	   = 0;
-	vk_buffer->memory_coherent = 0;
+	gfx_vulkan_buffer_resources_free(vulkan, vk_buffer);
 	alloc_free(&buffer->gfx->alloc, vk_buffer, sizeof(gfx_vulkan_buffer_t));
 	buffer->data = NULL;
 }
 
-static int gfx_vulkan_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+static int gfx_vulkan_buffer_usage(gfx_buffer_type_t type, VkFlags *usage)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+	if (usage == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	switch (type) {
+	case GFX_BUFFER_VERTEX: {
+		*usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		break;
+	}
+	case GFX_BUFFER_INDEX: {
+		*usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+		break;
+	}
+	default: {
 		return 1;
+	}
+	}
+	return 0;
+}
+
+static int gfx_vulkan_buffer_allocate(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer, VkDeviceSize size)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || vk_buffer == NULL || size == 0) {
+		return 1; // LCOV_EXCL_LINE
 	}
 
 	gfx_vulkan_t *vulkan = buffer->gfx->data;
 
-	VkFlags usage;
-	switch (config->type) {
-	case GFX_BUFFER_VERTEX: {
-		usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-		break;
-	}
-	case GFX_BUFFER_INDEX: {
-		usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-		break;
-	}
-	default: {
-		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", config->type);
+	VkFlags usage = 0;
+	if (gfx_vulkan_buffer_usage(vk_buffer->type, &usage)) {
+		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", vk_buffer->type);
 		return 1;
-	}
 	}
 
-	gfx_vulkan_buffer_t *vk_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_vulkan_buffer_t));
-	if (vk_buffer == NULL) {
-		return 1;
-	}
-	*vk_buffer = (gfx_vulkan_buffer_t){
-		.type = config->type,
+	gfx_vulkan_buffer_t next = {
+		.type = vk_buffer->type,
 	};
-	buffer->data = vk_buffer;
-
 	VkBufferCreateInfo create = {
 		.sType	     = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-		.size	     = sizeof(gfx_vulkan_vertex_2d_t) * 3,
+		.size	     = size,
 		.usage	     = usage,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
-	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &create, NULL, &vk_buffer->buffer))) {
-		gfx_vulkan_buffer_free(buffer);
+	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &create, NULL, &next.buffer))) {
 		return 1;
 	}
 
 	VkMemoryRequirements req = {0};
-	vulkan->GetBufferMemoryRequirements(vulkan->device, vk_buffer->buffer, &req);
+	vulkan->GetBufferMemoryRequirements(vulkan->device, next.buffer, &req);
 
 	u32 memory_type = 0;
-	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vk_buffer->memory_coherent)) {
-		gfx_vulkan_buffer_free(buffer);
+	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &next.memory_coherent)) {
+		gfx_vulkan_buffer_resources_free(vulkan, &next);
 		return 1;
 	}
 
@@ -1658,30 +1665,37 @@ static int gfx_vulkan_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 		.allocationSize	 = req.size,
 		.memoryTypeIndex = memory_type,
 	};
-	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_buffer->memory))) {
-		gfx_vulkan_buffer_free(buffer);
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &next.memory))) {
+		gfx_vulkan_buffer_resources_free(vulkan, &next);
 		return 1;
 	}
-	vk_buffer->memory_size = req.size;
+	next.size	 = size;
+	next.memory_size = req.size;
 
-	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, vk_buffer->buffer, vk_buffer->memory, 0))) {
-		gfx_vulkan_buffer_free(buffer);
+	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, next.buffer, next.memory, 0))) {
+		gfx_vulkan_buffer_resources_free(vulkan, &next);
 		return 1;
 	}
+
+	gfx_vulkan_buffer_resources_free(vulkan, vk_buffer);
+	vk_buffer->buffer	   = next.buffer;
+	vk_buffer->memory	   = next.memory;
+	vk_buffer->size		   = next.size;
+	vk_buffer->memory_size	   = next.memory_size;
+	vk_buffer->memory_coherent = next.memory_coherent;
+	buffer->size		   = size;
 
 	return 0;
 }
 
-static int gfx_vulkan_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+static int gfx_vulkan_buffer_upload(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer, const void *data, size_t size)
 {
-	(void)size;
-
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || vk_buffer == NULL || vk_buffer->memory == 0 ||
+	    data == NULL || size == 0) {
 		return 1;
 	}
 
-	gfx_vulkan_t *vulkan	       = buffer->gfx->data;
-	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
+	gfx_vulkan_t *vulkan = buffer->gfx->data;
 
 	void *mapped = NULL;
 	if (!vk_ok(vulkan->MapMemory(vulkan->device, vk_buffer->memory, 0, size, 0, &mapped))) {
@@ -1704,6 +1718,55 @@ static int gfx_vulkan_buffer_set_data(gfx_buffer_t *buffer, const void *data, si
 	return 0;
 }
 
+static int gfx_vulkan_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || config == NULL) {
+		return 1;
+	}
+
+	VkFlags usage = 0;
+	if (gfx_vulkan_buffer_usage(config->type, &usage)) {
+		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", config->type);
+		return 1;
+	}
+
+	gfx_vulkan_buffer_t *vk_buffer = alloc_alloc(&buffer->gfx->alloc, sizeof(gfx_vulkan_buffer_t));
+	if (vk_buffer == NULL) {
+		return 1;
+	}
+	*vk_buffer = (gfx_vulkan_buffer_t){
+		.type = config->type,
+	};
+	buffer->data = vk_buffer;
+
+	if (config->size != 0 && gfx_vulkan_buffer_allocate(buffer, vk_buffer, (VkDeviceSize)config->size)) {
+		gfx_vulkan_buffer_free(buffer);
+		return 1;
+	}
+	if (config->data != NULL && gfx_vulkan_buffer_upload(buffer, vk_buffer, config->data, config->size)) {
+		gfx_vulkan_buffer_free(buffer);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int gfx_vulkan_buffer_set_data(gfx_buffer_t *buffer, const void *data, size_t size)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || buffer->data == NULL || data == NULL || size == 0 ||
+	    buffer->usage == GFX_BUFFER_USAGE_STATIC) {
+		return 1;
+	}
+
+	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
+
+	if (size > vk_buffer->size && gfx_vulkan_buffer_allocate(buffer, vk_buffer, (VkDeviceSize)size)) {
+		return 1;
+	}
+
+	return gfx_vulkan_buffer_upload(buffer, vk_buffer, data, size);
+}
+
 static int gfx_vulkan_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 {
 	(void)frame;
@@ -1714,6 +1777,9 @@ static int gfx_vulkan_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 
 	gfx_vulkan_t *vulkan	       = buffer->gfx->data;
 	gfx_vulkan_buffer_t *vk_buffer = buffer->data;
+	if (vk_buffer->buffer == 0) {
+		return 1;
+	}
 
 	VkDeviceSize offset = 0;
 

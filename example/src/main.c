@@ -1,9 +1,6 @@
-#include "buf.h"
 #include "fs.h"
 #include "gfx_driver.h"
-#include "gfx_framebuffer.h"
 #include "log.h"
-#include "proc.h"
 
 static int write_bmp(fs_t *fs, strv_t path, const u8 *pixels, u16 width, u16 height, size_t stride)
 {
@@ -96,32 +93,19 @@ int main(void)
 		ret = 1;
 	}
 
-	if (ret == 0 && gfx_buffer_init(&vb, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}) == NULL) {
-		log_error("cgfx_example", "main", NULL, "failed to initialize triangle vertex shader");
-		ret = 1;
-	}
 	gfx_vertex_2d_t vertices[3] = {
-		{
-			.x = 0.0f,
-			.y = 0.7f,
-			.r = 1.0f,
-			.a = 1.0f,
-		},
-		{
-			.x = 0.7f,
-			.y = -0.7f,
-			.g = 1.0f,
-			.a = 1.0f,
-		},
-		{
-			.x = -0.7f,
-			.y = -0.7f,
-			.b = 1.0f,
-			.a = 1.0f,
-		},
+		{.x = 0.0f, .y = 0.7f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.7f, .y = -0.7f, .g = 1.0f, .a = 1.0f},
+		{.x = -0.7f, .y = -0.7f, .b = 1.0f, .a = 1.0f},
 	};
-	if (ret == 0 && gfx_buffer_set_data(&vb, vertices, sizeof(vertices))) {
-		log_error("cgfx_example", "main", NULL, "failed to set triangle vertex data");
+	gfx_buffer_config_t buffer_config = {
+		.type  = GFX_BUFFER_VERTEX,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.size  = sizeof(vertices),
+		.data  = vertices,
+	};
+	if (ret == 0 && gfx_buffer_init(&vb, &gfx, &buffer_config) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize triangle vertex buffer");
 		ret = 1;
 	}
 	const char *triangle_src = "vs_in 0 VertexIn {\n"

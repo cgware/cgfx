@@ -373,6 +373,12 @@ typedef struct D3D11_BUFFER_DESC_s {
 	UINT StructureByteStride;
 } D3D11_BUFFER_DESC;
 
+typedef struct D3D11_SUBRESOURCE_DATA_s {
+	const void *pSysMem;
+	UINT SysMemPitch;
+	UINT SysMemSlicePitch;
+} D3D11_SUBRESOURCE_DATA;
+
 /**
  * @brief Creates a buffer (vertex buffer, index buffer, or shader-constant buffer).
  * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createbuffer
@@ -391,8 +397,9 @@ typedef struct DXGI_SAMPLE_DESC_s {
 } DXGI_SAMPLE_DESC;
 
 typedef enum D3D11_USAGE_e {
-	D3D11_USAGE_DEFAULT = 0,
-	D3D11_USAGE_STAGING = 3,
+	D3D11_USAGE_DEFAULT   = 0,
+	D3D11_USAGE_IMMUTABLE = 1,
+	D3D11_USAGE_STAGING   = 3,
 } D3D11_USAGE_t;
 typedef UINT D3D11_USAGE;
 

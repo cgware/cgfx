@@ -1,14 +1,33 @@
 #include "gfx_driver.h"
 
+static int gfx_buffer_config_valid(const gfx_buffer_config_t *config)
+{
+	if (config == NULL || (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX) ||
+	    (config->usage != GFX_BUFFER_USAGE_DYNAMIC && config->usage != GFX_BUFFER_USAGE_STATIC) ||
+	    (config->data != NULL && config->size == 0)) {
+		return 0;
+	}
+	if (config->usage == GFX_BUFFER_USAGE_STATIC && (config->data == NULL || config->size == 0)) {
+		return 0;
+	}
+	return 1;
+}
+
 gfx_buffer_t *gfx_buffer_init(gfx_buffer_t *buf, gfx_t *gfx, const gfx_buffer_config_t *config)
 {
-	if (buf == NULL || gfx == NULL || gfx->drv == NULL || gfx->drv->buffer_init == NULL) {
+	if (buf == NULL || gfx == NULL || gfx->drv == NULL || gfx->drv->buffer_init == NULL || !gfx_buffer_config_valid(config)) {
 		return NULL;
 	}
 
-	buf->gfx  = gfx;
-	buf->type = config != NULL ? config->type : GFX_BUFFER_UNKNOWN;
+	buf->gfx   = gfx;
+	buf->type  = config->type;
+	buf->usage = config->usage;
+	buf->size  = config->size;
 	if (gfx->drv->buffer_init(buf, config)) {
+		buf->gfx   = NULL;
+		buf->type  = GFX_BUFFER_UNKNOWN;
+		buf->usage = GFX_BUFFER_USAGE_DYNAMIC;
+		buf->size  = 0;
 		return NULL;
 	}
 
@@ -27,7 +46,7 @@ void gfx_buffer_free(gfx_buffer_t *buf)
 int gfx_buffer_set_data(gfx_buffer_t *buf, const void *data, size_t size)
 {
 	if (buf == NULL || buf->gfx == NULL || buf->gfx->drv == NULL || buf->gfx->drv->buffer_set_data == NULL || data == NULL ||
-	    size == 0) {
+	    size == 0 || buf->usage == GFX_BUFFER_USAGE_STATIC) {
 		return 1;
 	}
 

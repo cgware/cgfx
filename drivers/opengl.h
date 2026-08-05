@@ -77,6 +77,7 @@ typedef enum glBufferTarget_e {
 } glBufferTarget_t;
 
 typedef enum glBufferUsage_e {
+	GL_STATIC_DRAW	= 0x88E4,
 	GL_DYNAMIC_DRAW = 0x88E8,
 } glBufferUsage_t;
 

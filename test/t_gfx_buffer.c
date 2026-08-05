@@ -79,7 +79,7 @@ TEST(gfx_buffer_init_null_buffer)
 		.drv = &t_gfx_buffer_driver,
 	};
 
-	EXPECT_NULL(gfx_buffer_init(NULL, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(NULL, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	END;
 }
@@ -90,7 +90,7 @@ TEST(gfx_buffer_init_null_gfx)
 
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	END;
 }
@@ -102,7 +102,7 @@ TEST(gfx_buffer_init_null_driver)
 	gfx_t gfx	    = {0};
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	END;
 }
@@ -119,7 +119,7 @@ TEST(gfx_buffer_init_null_driver_callback)
 	};
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
 
 	END;
 }
@@ -132,7 +132,7 @@ TEST(gfx_buffer_init_success)
 	gfx_t gfx = {
 		.drv = &t_gfx_buffer_driver,
 	};
-	gfx_buffer_config_t config = {.type = GFX_BUFFER_VERTEX};
+	gfx_buffer_config_t config = {.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC};
 	gfx_buffer_t buffer	   = {0};
 
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &config), &buffer);
@@ -156,7 +156,26 @@ TEST(gfx_buffer_init_returns_driver_failure)
 	};
 	gfx_buffer_t buffer = {0};
 
-	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}));
+	EXPECT_NULL(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}));
+
+	END;
+}
+
+TEST(gfx_buffer_init_rejects_static_without_data)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_buffer_driver,
+	};
+	gfx_buffer_t buffer = {0};
+
+	EXPECT_NULL(gfx_buffer_init(
+		&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_STATIC, .size = sizeof(int)}));
+	EXPECT_NULL(gfx_buffer_init(
+		&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_STATIC, .data = &(int){1}}));
+	EXPECT_EQ(t_gfx_buffer_init_calls, 0);
 
 	END;
 }
@@ -279,6 +298,27 @@ TEST(gfx_buffer_set_data_returns_driver_result)
 	END;
 }
 
+TEST(gfx_buffer_set_data_rejects_static)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_buffer_driver,
+	};
+	int data	    = 1;
+	gfx_buffer_t buffer = {
+		.gfx   = &gfx,
+		.usage = GFX_BUFFER_USAGE_STATIC,
+		.data  = (void *)0x5678,
+	};
+
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, &data, sizeof(data)), 1);
+	EXPECT_EQ(t_gfx_buffer_set_data_calls, 0);
+
+	END;
+}
+
 TEST(gfx_buffer_bind_returns_driver_result)
 {
 	START;
@@ -358,6 +398,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_init_null_driver_callback);
 	RUN(gfx_buffer_init_success);
 	RUN(gfx_buffer_init_returns_driver_failure);
+	RUN(gfx_buffer_init_rejects_static_without_data);
 	RUN(gfx_buffer_free_null_buffer);
 	RUN(gfx_buffer_free_null_gfx);
 	RUN(gfx_buffer_free_calls_driver);
@@ -366,6 +407,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_set_data_zero_size);
 	RUN(gfx_buffer_set_data_calls_driver);
 	RUN(gfx_buffer_set_data_returns_driver_result);
+	RUN(gfx_buffer_set_data_rejects_static);
 	RUN(gfx_buffer_bind_rejects_invalid_args);
 	RUN(gfx_buffer_bind_rejects_unknown_buffer_type_after_driver_bind);
 	RUN(gfx_buffer_bind_returns_driver_result);

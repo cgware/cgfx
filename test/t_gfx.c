@@ -442,7 +442,8 @@ TEST(gfx_frame_requires_bound_pipeline_and_buffer)
 	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
 
 	gfx_buffer_t buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &buffer);
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
 	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
 	EXPECT_EQ(t_buffer_bind_calls, 1);
 	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
@@ -499,11 +500,15 @@ TEST(gfx_draw_indexed_requires_bound_vertex_and_index_buffers)
 
 	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 1);
 	gfx_buffer_t vertex_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX}), &vertex_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&vertex_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&vertex_buffer);
 	EXPECT_EQ(gfx_buffer_bind(&frame, &vertex_buffer), 0);
 	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 1);
 	gfx_buffer_t index_buffer = {0};
-	EXPECT_PTR(gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX}), &index_buffer);
+	EXPECT_PTR(
+		gfx_buffer_init(&index_buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		&index_buffer);
 	EXPECT_EQ(gfx_buffer_bind(&frame, &index_buffer), 0);
 	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 0);
 	EXPECT_EQ(t_draw_indexed_calls, 1);
