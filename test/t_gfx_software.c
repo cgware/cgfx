@@ -583,7 +583,8 @@ TEST(gfx_software_buffer_init_static_alloc_failure)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
 	t_gfx_software_alloc_count = 0;
-	gfx_t gfx		   = {
+
+	gfx_t gfx = {
 		.drv   = drv,
 		.alloc = {.alloc = t_gfx_software_alloc_fail_after_first, .realloc = alloc_realloc_std, .free = alloc_free_std},
 	};
@@ -641,7 +642,8 @@ TEST(gfx_software_buffer_set_data_rejects_invalid_storage)
 	char storage[1]			  = {0};
 	t_gfx_software_buffer_data_t data = {.buf = {.data = storage, .size = sizeof(storage), .used = sizeof(storage)}};
 	u32 values[2]			  = {1, 2};
-	gfx_buffer_t buffer		  = {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.size = sizeof(values),
 		.data = &data,

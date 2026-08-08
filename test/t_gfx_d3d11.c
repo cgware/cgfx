@@ -2754,7 +2754,8 @@ TEST(gfx_d3d11_buffer_set_data_rejects_unknown_type_direct)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.type = GFX_BUFFER_VERTEX};
 	gfx_vertex_2d_t vertices[3]		= {0};
-	gfx_buffer_t buffer			= {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.type = GFX_BUFFER_UNKNOWN,
 		.data = &driver_buffer,
@@ -2779,7 +2780,8 @@ TEST(gfx_d3d11_buffer_set_data_rejects_unknown_driver_type_direct)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {.type = GFX_BUFFER_UNKNOWN};
 	gfx_vertex_2d_t vertices[3]		= {0};
-	gfx_buffer_t buffer			= {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.type = GFX_BUFFER_VERTEX,
 		.data = &driver_buffer,
@@ -2805,7 +2807,8 @@ TEST(gfx_d3d11_buffer_set_data_rejects_oversized_direct)
 	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
 	t_gfx_d3d11_buffer_data_t driver_buffer = {0};
 	u8 data					= 1;
-	gfx_buffer_t buffer			= {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.type = GFX_BUFFER_VERTEX,
 		.data = &driver_buffer,

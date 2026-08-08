@@ -3062,7 +3062,8 @@ TEST(gfx_vulkan_buffer_set_data_rejects_unknown_type_direct)
 		.type = GFX_BUFFER_UNKNOWN,
 	};
 	gfx_vertex_2d_t vertices[3] = {0};
-	gfx_buffer_t buffer	    = {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.type = GFX_BUFFER_UNKNOWN,
 		.data = &driver_buffer,
@@ -3090,7 +3091,8 @@ TEST(gfx_vulkan_buffer_set_data_rejects_empty_storage_direct)
 		.type = GFX_BUFFER_VERTEX,
 	};
 	gfx_vertex_2d_t vertex = {0};
-	gfx_buffer_t buffer    = {
+
+	gfx_buffer_t buffer = {
 		.gfx  = &gfx,
 		.type = GFX_BUFFER_VERTEX,
 		.data = &driver_buffer,

@@ -3,6 +3,7 @@
 #include "log.h"
 #include "test.h"
 
+#include <stdio.h>
 #include <string.h>
 
 static int t_gfx_shader_compiler_alloc_count;
@@ -167,6 +168,48 @@ static int t_gfx_shader_compiler_realloc_fail(alloc_t *alloc, void **ptr, size_t
 	return 1;
 }
 
+static int t_gfx_shader_compiler_transpile_expr(gfx_shader_compiler_t *compiler, const char *expr)
+{
+	char source[1024] = {0};
+	int len		  = snprintf(source,
+			     sizeof(source),
+			     "vs_in 0 VertexIn {\n"
+				     "\tvec2f position : POSITION;\n"
+				     "\tvec4f color : COLOR0;\n"
+				     "}\n"
+				     "vs_out VertexOut {\n"
+				     "\tvec4f position : POSITION;\n"
+				     "\tvec4f color : COLOR0;\n"
+				     "}\n"
+				     "fs_in FragmentIn {\n"
+				     "\tvec4f color : COLOR0;\n"
+				     "}\n"
+				     "fs_out FragmentOut {\n"
+				     "\tvec4f color : COLOR0;\n"
+				     "}\n"
+				     "VertexOut vertex(VertexIn input) {\n"
+				     "\tVertexOut output;\n"
+				     "\tvec2f pos = %s;\n"
+				     "\toutput.position = vec4f(pos.x, pos.y, 0.0f, 1.0f);\n"
+				     "\toutput.color = input.color;\n"
+				     "\treturn output;\n"
+				     "}\n"
+				     "FragmentOut fragment(FragmentIn input) {\n"
+				     "\tFragmentOut output;\n"
+				     "\toutput.color = input.color;\n"
+				     "\treturn output;\n"
+				     "}\n",
+			     expr);
+	if (len < 0 || (size_t)len >= sizeof(source)) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	gfx_shader_code_t shader = {0};
+	int ret = gfx_shader_compiler_transpile(compiler, strv_cstr(source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_GLSL, &shader);
+	gfx_shader_code_free(&shader);
+	return ret;
+}
+
 TEST(gfx_shader_compiler_init_null_compiler)
 {
 	START;
@@ -275,6 +318,26 @@ TEST(gfx_shader_compiler_transpile_failures)
 			  &compiler, strv_cstr(t_gfx_shader_compiler_source), GFX_SHADER_STAGE_VERTEX, (gfx_shader_language_t)99, &shader),
 		  1);
 	log_set_quiet(0, 0);
+
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
+TEST(gfx_shader_compiler_transpile_expression_operator_spacing)
+{
+	START;
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position+input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position +input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position+ input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position + input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position  +input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position+  input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position  +  input.position"), 0);
+	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "input.position    +    input.position"), 0);
 
 	gfx_shader_compiler_free(&compiler);
 	END;
@@ -603,6 +666,7 @@ STEST(gfx_shader_compiler)
 	RUN(gfx_shader_compiler_transpile_null_shader);
 	RUN(gfx_shader_compiler_transpile_null_compiler);
 	RUN(gfx_shader_compiler_transpile_failures);
+	RUN(gfx_shader_compiler_transpile_expression_operator_spacing);
 	RUN(gfx_shader_compiler_transpile_alloc_failure);
 	RUN(gfx_shader_compiler_transpile_outputs);
 	RUN(gfx_shader_compiler_transpile_extra_semantic);

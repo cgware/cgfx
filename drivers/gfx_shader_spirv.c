@@ -331,13 +331,14 @@ static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, cons
 static int gfx_shader_spv_emit_function(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage)
 {
 	const gfx_shader_function_ir_t *fn = stage == GFX_SHADER_STAGE_VERTEX ? &ir->vertex : &ir->fragment;
-	int ret				   = gfx_shader_spv_inst(code,
-								 GFX_SHADER_SPV_OP_FUNCTION,
-								 5,
-								 spv->void_id,
-								 spv->main_id,
-								 GFX_SHADER_SPV_FUNCTION_CONTROL_NONE,
-								 spv->function_type_id);
+
+	int ret = gfx_shader_spv_inst(code,
+				      GFX_SHADER_SPV_OP_FUNCTION,
+				      5,
+				      spv->void_id,
+				      spv->main_id,
+				      GFX_SHADER_SPV_FUNCTION_CONTROL_NONE,
+				      spv->function_type_id);
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LABEL, 2, spv->label_id);
 	for (u32 i = 0; i < fn->statement_count; i++) {
 		const gfx_shader_statement_ir_t *stmt = &fn->statements[i];

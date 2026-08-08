@@ -52,7 +52,7 @@ static const char *gfx_shader_input_ebnf =
 	"initialization = ' = ' expression\n"
 	"assignment_expression = lvalue ' ' assignment_operator ' ' expression ';' NL\n"
 	"function_call_statement = function_call ';' NL\n"
-	"expression = value (expression_operator value)*\n"
+	"expression = value (spaces expression_operator spaces value)*\n"
 	"value = float | int | function_call | lvalue\n"
 	"function_call = identifier '(' arguments? ')'\n"
 	"arguments = expression (', ' expression)*\n"
@@ -61,6 +61,7 @@ static const char *gfx_shader_input_ebnf =
 	"identifier = ALPHA (ALPHA | DIGIT | '_')*\n"
 	"int = DIGIT+\n"
 	"float = DIGIT+ '.' DIGIT+ 'f'\n"
+	"spaces = ' '*\n"
 	"expression_operator = '+' | '-' | '*' | '/' | '<' | '>' | '==' | '>=' | '<='\n"
 	"assignment_operator = '=' | '+=' | '-=' | '*=' | '/='\n";
 
