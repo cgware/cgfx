@@ -77,7 +77,8 @@ static int gfx_none_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_f
 
 static int gfx_none_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
 {
-	if (buffer == NULL || config == NULL || (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX)) {
+	if (buffer == NULL || config == NULL ||
+	    (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX && config->type != GFX_BUFFER_UNIFORM)) {
 		return 1;
 	}
 	return 0;
@@ -100,6 +101,16 @@ static int gfx_none_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 {
 	(void)frame;
 	(void)buffer;
+	return 0;
+}
+
+static int gfx_none_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	(void)bindings;
+	(void)binding_count;
+	if (frame == NULL) {
+		return 1;
+	}
 	return 0;
 }
 
@@ -183,6 +194,7 @@ static gfx_driver_t gfx_none = {
 	.buffer_free		= gfx_none_buffer_free,
 	.buffer_set_data	= gfx_none_buffer_set_data,
 	.buffer_bind		= gfx_none_buffer_bind,
+	.bind_resources		= gfx_none_bind_resources,
 	.shader_init		= gfx_none_shader_init,
 	.shader_free		= gfx_none_shader_free,
 	.pipeline_init		= gfx_none_pipeline_init,

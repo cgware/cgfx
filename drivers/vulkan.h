@@ -43,6 +43,10 @@ typedef enum VkStructureType_e {
 	VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO	    = 27,
 	VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO		    = 28,
 	VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO		    = 30,
+	VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO	    = 32,
+	VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO		    = 33,
+	VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO		    = 34,
+	VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET			    = 35,
 	VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO		    = 37,
 	VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO		    = 38,
 	VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO		    = 39,
@@ -271,6 +275,7 @@ typedef enum VkFormat_e {
 	VK_FORMAT_B8G8R8A8_UNORM      = 44,
 	VK_FORMAT_B8G8R8A8_SRGB	      = 50,
 	VK_FORMAT_R32G32_SFLOAT	      = 103,
+	VK_FORMAT_R32G32B32_SFLOAT    = 106,
 	VK_FORMAT_R32G32B32A32_SFLOAT = 109,
 	VK_FORMAT_MAX_ENUM	      = 0x7FFFFFFF
 } VkFormat;
@@ -714,6 +719,7 @@ typedef u64 VkBuffer;
 typedef VkFlags VkBufferCreateFlags;
 
 typedef enum VkBufferUsageFlagBits_e {
+	VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT = 0x00000010,
 	VK_BUFFER_USAGE_INDEX_BUFFER_BIT   = 0x00000040,
 	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT  = 0x00000080,
 	VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
@@ -1110,6 +1116,57 @@ typedef void (*PFN_vkDestroyFramebuffer)(VkDevice device, VkFramebuffer framebuf
 
 /**
  * @}
+ * @defgroup vulkan_descriptorsetlayout DescriptorSetLayout
+ * @ingroup vulkan
+ * @{
+ */
+
+typedef u64 VkDescriptorSetLayout;
+
+typedef VkFlags VkDescriptorSetLayoutCreateFlags;
+
+typedef enum VkDescriptorType_e {
+	VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER = 6,
+} VkDescriptorType;
+
+typedef VkFlags VkShaderStageFlags;
+
+typedef struct VkDescriptorSetLayoutBinding_s {
+	u32 binding;
+	VkDescriptorType descriptorType;
+	u32 descriptorCount;
+	VkShaderStageFlags stageFlags;
+	const void *pImmutableSamplers;
+} VkDescriptorSetLayoutBinding;
+
+typedef struct VkDescriptorSetLayoutCreateInfo_s {
+	VkStructureType sType;
+	const void *pNext;
+	VkDescriptorSetLayoutCreateFlags flags;
+	u32 bindingCount;
+	const VkDescriptorSetLayoutBinding *pBindings;
+} VkDescriptorSetLayoutCreateInfo;
+
+/**
+ * @brief Create a new descriptor set layout
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pSetLayout must be freed using PFN_vkDestroyDescriptorSetLayout()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorSetLayout.html
+ */
+typedef VkResult (*PFN_vkCreateDescriptorSetLayout)(VkDevice device, const VkDescriptorSetLayoutCreateInfo *pCreateInfo,
+						    const VkAllocationCallbacks *pAllocator, VkDescriptorSetLayout *pSetLayout);
+
+/**
+ * @brief Destroy a descriptor set layout object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] descriptorSetLayout created by PFN_vkCreateDescriptorSetLayout()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyDescriptorSetLayout.html
+ */
+typedef void (*PFN_vkDestroyDescriptorSetLayout)(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
+						 const VkAllocationCallbacks *pAllocator);
+
+/**
+ * @}
  * @defgroup vulkan_pipelinelayout PipelineLayout
  * @ingroup vulkan
  * @{
@@ -1118,10 +1175,6 @@ typedef void (*PFN_vkDestroyFramebuffer)(VkDevice device, VkFramebuffer framebuf
 typedef u64 VkPipelineLayout;
 
 typedef VkFlags VkPipelineLayoutCreateFlags;
-
-typedef u64 VkDescriptorSetLayout;
-
-typedef VkFlags VkShaderStageFlags;
 
 typedef struct VkPushConstantRange_s {
 	VkShaderStageFlags stageFlags;
@@ -1475,6 +1528,100 @@ typedef void (*PFN_vkDestroyPipeline)(VkDevice device, VkPipeline pipeline, cons
 
 /**
  * @}
+ * @defgroup vulkan_descriptorpool DescriptorPool
+ * @ingroup vulkan
+ * @{
+ */
+
+typedef u64 VkDescriptorPool;
+
+typedef VkFlags VkDescriptorPoolCreateFlags;
+
+typedef struct VkDescriptorPoolSize_s {
+	VkDescriptorType type;
+	u32 descriptorCount;
+} VkDescriptorPoolSize;
+
+typedef struct VkDescriptorPoolCreateInfo_s {
+	VkStructureType sType;
+	const void *pNext;
+	VkDescriptorPoolCreateFlags flags;
+	u32 maxSets;
+	u32 poolSizeCount;
+	const VkDescriptorPoolSize *pPoolSizes;
+} VkDescriptorPoolCreateInfo;
+
+/**
+ * @brief Creates a descriptor pool object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pDescriptorPool must be freed using PFN_vkDestroyDescriptorPool()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateDescriptorPool.html
+ */
+typedef VkResult (*PFN_vkCreateDescriptorPool)(VkDevice device, const VkDescriptorPoolCreateInfo *pCreateInfo,
+					       const VkAllocationCallbacks *pAllocator, VkDescriptorPool *pDescriptorPool);
+
+/**
+ * @brief Destroy a descriptor set layout object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] descriptorSetLayout created by PFN_vkCreateDescriptorPool()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroyDescriptorPool.html
+ */
+typedef void (*PFN_vkDestroyDescriptorPool)(VkDevice device, VkDescriptorPool descriptorPool, const VkAllocationCallbacks *pAllocator);
+
+/**
+ * @}
+ * @defgroup vulkan_descriptorset DescriptorSet
+ * @ingroup vulkan
+ * @{
+ */
+
+typedef u64 VkDescriptorSet;
+
+typedef struct VkDescriptorSetAllocateInfo_s {
+	VkStructureType sType;
+	const void *pNext;
+	VkDescriptorPool descriptorPool;
+	u32 descriptorSetCount;
+	const VkDescriptorSetLayout *pSetLayouts;
+} VkDescriptorSetAllocateInfo;
+
+/**
+ * @brief Allocate one or more descriptor sets
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkAllocateDescriptorSets.html
+ */
+typedef VkResult (*PFN_vkAllocateDescriptorSets)(VkDevice device, const VkDescriptorSetAllocateInfo *pAllocateInfo,
+						 VkDescriptorSet *pDescriptorSets);
+
+typedef struct VkDescriptorBufferInfo_s {
+	VkBuffer buffer;
+	VkDeviceSize offset;
+	VkDeviceSize range;
+} VkDescriptorBufferInfo;
+
+typedef struct VkWriteDescriptorSet_s {
+	VkStructureType sType;
+	const void *pNext;
+	VkDescriptorSet dstSet;
+	u32 dstBinding;
+	u32 dstArrayElement;
+	u32 descriptorCount;
+	VkDescriptorType descriptorType;
+	const void *pImageInfo;
+	const VkDescriptorBufferInfo *pBufferInfo;
+	const void *pTexelBufferView;
+} VkWriteDescriptorSet;
+
+/**
+ * @brief Update the contents of a descriptor set object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkUpdateDescriptorSets.html
+ */
+typedef void (*PFN_vkUpdateDescriptorSets)(VkDevice device, u32 descriptorWriteCount, const VkWriteDescriptorSet *pDescriptorWrites,
+					   u32 descriptorCopyCount, const void *pDescriptorCopies);
+
+/**
+ * @}
  * @defgroup vulkan_commandbuffer CommandBuffer
  * @ingroup vulkan
  * @{
@@ -1691,6 +1838,14 @@ typedef enum VkIndexType_e {
  * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBindIndexBuffer.html
  */
 typedef void (*PFN_vkCmdBindIndexBuffer)(VkCommandBuffer commandBuffer, VkBuffer buffer, VkDeviceSize offset, VkIndexType indexType);
+
+/**
+ * @brief Binds descriptor sets to a command buffer
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdBindDescriptorSets.html
+ */
+typedef void (*PFN_vkCmdBindDescriptorSets)(VkCommandBuffer commandBuffer, VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+					    u32 firstSet, u32 descriptorSetCount, const VkDescriptorSet *pDescriptorSets,
+					    u32 dynamicOffsetCount, const u32 *pDynamicOffsets);
 
 /**
  * @brief Set the viewport dynamically for a command buffer

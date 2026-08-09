@@ -34,6 +34,7 @@ typedef struct gfx_driver_s {
 	void (*buffer_free)(gfx_buffer_t *buffer);
 	int (*buffer_set_data)(gfx_buffer_t *buffer, const void *data, size_t size);
 	int (*buffer_bind)(gfx_frame_t *frame, const gfx_buffer_t *buffer);
+	int (*bind_resources)(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count);
 	int (*shader_init)(gfx_shader_t *shader, const gfx_shader_config_t *config);
 	void (*shader_free)(gfx_shader_t *shader);
 	int (*pipeline_init)(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config);

@@ -12,6 +12,7 @@ typedef struct gfx_shader_member_s {
 
 typedef struct gfx_shader_struct_ir_s {
 	int present;
+	u32 slot;
 	strv_t name;
 	gfx_shader_member_t members[16];
 	u32 member_count;
@@ -23,6 +24,25 @@ typedef enum gfx_shader_statement_kind_e {
 	GFX_SHADER_STMT_RETURN,
 } gfx_shader_statement_kind_t;
 
+typedef enum gfx_shader_expr_kind_e {
+	GFX_SHADER_EXPR_NONE,
+	GFX_SHADER_EXPR_INT,
+	GFX_SHADER_EXPR_FLOAT,
+	GFX_SHADER_EXPR_LVALUE,
+	GFX_SHADER_EXPR_CALL,
+	GFX_SHADER_EXPR_BINARY,
+} gfx_shader_expr_kind_t;
+
+typedef struct gfx_shader_expr_ir_s {
+	gfx_shader_expr_kind_t kind;
+	strv_t text;
+	strv_t op;
+	u32 left;
+	u32 right;
+	u32 args[8];
+	u32 arg_count;
+} gfx_shader_expr_ir_t;
+
 typedef struct gfx_shader_statement_ir_s {
 	gfx_shader_statement_kind_t kind;
 	strv_t type;
@@ -30,6 +50,9 @@ typedef struct gfx_shader_statement_ir_s {
 	strv_t lhs;
 	strv_t op;
 	strv_t expr;
+	gfx_shader_expr_ir_t expr_nodes[64];
+	u32 expr_count;
+	u32 expr_root;
 	int has_init;
 } gfx_shader_statement_ir_t;
 
@@ -46,6 +69,8 @@ typedef struct gfx_shader_ir_s {
 	gfx_shader_struct_ir_t vs_out;
 	gfx_shader_struct_ir_t fs_in;
 	gfx_shader_struct_ir_t fs_out;
+	gfx_shader_struct_ir_t buffers[16];
+	u32 buffer_count;
 	gfx_shader_function_ir_t vertex;
 	gfx_shader_function_ir_t fragment;
 } gfx_shader_ir_t;
@@ -64,6 +89,7 @@ int gfx_shader_text_finish(buf_t *text, gfx_shader_code_t *shader);
 const gfx_shader_member_t *gfx_shader_struct_member(const gfx_shader_struct_ir_t *ir, strv_t name);
 
 int gfx_shader_strv_prefix(strv_t str, strv_t prefix);
+int gfx_shader_compiler_ir(gfx_shader_compiler_t *compiler, strv_t source, gfx_shader_ir_t *ir);
 
 #define GFX_SHADER_DRIVER_TYPE 0x534844
 

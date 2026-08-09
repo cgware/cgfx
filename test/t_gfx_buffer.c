@@ -7,11 +7,15 @@ static int t_gfx_buffer_init_calls;
 static int t_gfx_buffer_free_calls;
 static int t_gfx_buffer_set_data_calls;
 static int t_gfx_buffer_bind_calls;
+static int t_gfx_buffer_bind_resources_calls;
 static int t_gfx_buffer_init_ret;
 static int t_gfx_buffer_set_data_ret;
 static int t_gfx_buffer_bind_ret;
+static int t_gfx_buffer_bind_resources_ret;
 static const gfx_buffer_config_t *t_gfx_buffer_config;
 static gfx_buffer_t *t_gfx_buffer;
+static const gfx_resource_binding_t *t_gfx_resource_bindings;
+static u32 t_gfx_resource_binding_count;
 static const void *t_gfx_buffer_data;
 static size_t t_gfx_buffer_size;
 
@@ -47,6 +51,15 @@ static int t_gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 	return t_gfx_buffer_bind_ret;
 }
 
+static int t_gfx_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	(void)frame;
+	t_gfx_buffer_bind_resources_calls++;
+	t_gfx_resource_bindings	     = bindings;
+	t_gfx_resource_binding_count = binding_count;
+	return t_gfx_buffer_bind_resources_ret;
+}
+
 static gfx_driver_t t_gfx_buffer_driver = {
 	.name		 = "test-buffer",
 	.api		 = GFX_API_OPENGL,
@@ -54,21 +67,26 @@ static gfx_driver_t t_gfx_buffer_driver = {
 	.buffer_free	 = t_gfx_buffer_free,
 	.buffer_set_data = t_gfx_buffer_set_data,
 	.buffer_bind	 = t_gfx_buffer_bind,
+	.bind_resources	 = t_gfx_bind_resources,
 };
 
 static void t_gfx_buffer_reset(void)
 {
-	t_gfx_buffer_init_calls	    = 0;
-	t_gfx_buffer_free_calls	    = 0;
-	t_gfx_buffer_set_data_calls = 0;
-	t_gfx_buffer_bind_calls	    = 0;
-	t_gfx_buffer_init_ret	    = 0;
-	t_gfx_buffer_set_data_ret   = 0;
-	t_gfx_buffer_bind_ret	    = 0;
-	t_gfx_buffer_config	    = NULL;
-	t_gfx_buffer		    = NULL;
-	t_gfx_buffer_data	    = NULL;
-	t_gfx_buffer_size	    = 0;
+	t_gfx_buffer_init_calls		  = 0;
+	t_gfx_buffer_free_calls		  = 0;
+	t_gfx_buffer_set_data_calls	  = 0;
+	t_gfx_buffer_bind_calls		  = 0;
+	t_gfx_buffer_bind_resources_calls = 0;
+	t_gfx_buffer_init_ret		  = 0;
+	t_gfx_buffer_set_data_ret	  = 0;
+	t_gfx_buffer_bind_ret		  = 0;
+	t_gfx_buffer_bind_resources_ret	  = 0;
+	t_gfx_buffer_config		  = NULL;
+	t_gfx_buffer			  = NULL;
+	t_gfx_resource_bindings		  = NULL;
+	t_gfx_resource_binding_count	  = 0;
+	t_gfx_buffer_data		  = NULL;
+	t_gfx_buffer_size		  = 0;
 }
 
 TEST(gfx_buffer_init_null_buffer)
@@ -138,6 +156,25 @@ TEST(gfx_buffer_init_success)
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &config), &buffer);
 	EXPECT_PTR(buffer.gfx, &gfx);
 	EXPECT_PTR(buffer.data, (void *)0x5678);
+	EXPECT_EQ(t_gfx_buffer_init_calls, 1);
+	EXPECT_PTR(t_gfx_buffer_config, &config);
+
+	END;
+}
+
+TEST(gfx_buffer_init_uniform_success)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx = {
+		.drv = &t_gfx_buffer_driver,
+	};
+	gfx_buffer_config_t config = {.type = GFX_BUFFER_UNIFORM, .usage = GFX_BUFFER_USAGE_DYNAMIC};
+	gfx_buffer_t buffer	   = {0};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &config), &buffer);
+	EXPECT_EQ(buffer.type, GFX_BUFFER_UNIFORM);
 	EXPECT_EQ(t_gfx_buffer_init_calls, 1);
 	EXPECT_PTR(t_gfx_buffer_config, &config);
 
@@ -357,6 +394,49 @@ TEST(gfx_buffer_bind_rejects_unknown_buffer_type_after_driver_bind)
 	END;
 }
 
+TEST(gfx_bind_resources_does_not_set_vertex_or_index)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx			  = {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline		  = {.gfx = &gfx};
+	gfx_frame_t frame		  = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer		  = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(t_gfx_buffer_bind_resources_calls, 1);
+	EXPECT_PTR(frame.resource_bindings, bindings);
+	EXPECT_EQ(frame.resource_binding_count, 1);
+	EXPECT_NULL(frame.vertex_buffer);
+	EXPECT_NULL(frame.index_buffer);
+
+	END;
+}
+
+TEST(gfx_buffer_bind_uniform_buffer_does_not_set_vertex_or_index)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx		= {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline = {.gfx = &gfx};
+	gfx_frame_t frame	= {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer	= {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx.frame		= &frame;
+
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(t_gfx_buffer_bind_calls, 1);
+	EXPECT_NULL(frame.vertex_buffer);
+	EXPECT_NULL(frame.index_buffer);
+
+	END;
+}
+
 TEST(gfx_buffer_bind_rejects_invalid_args)
 {
 	START;
@@ -388,6 +468,99 @@ TEST(gfx_buffer_bind_rejects_invalid_args)
 	END;
 }
 
+TEST(gfx_bind_resources_calls_driver)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx			  = {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline		  = {.gfx = &gfx};
+	gfx_frame_t frame		  = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer		  = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(t_gfx_buffer_bind_resources_calls, 1);
+	EXPECT_PTR(t_gfx_resource_bindings, bindings);
+	EXPECT_EQ(t_gfx_resource_binding_count, 1);
+
+	END;
+}
+
+TEST(gfx_bind_resources_rejects_invalid_args)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	gfx_t gfx		    = {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline	    = {.gfx = &gfx};
+	gfx_frame_t frame	    = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer	    = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx_buffer_t vertex_buffer  = {.gfx = &gfx, .type = GFX_BUFFER_VERTEX, .data = (void *)0x5678};
+	gfx_buffer_t foreign_buffer = {.gfx = &(gfx_t){.drv = &t_gfx_buffer_driver}, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx_driver_t drv	    = t_gfx_buffer_driver;
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+	gfx_resource_binding_t foreign_binding	    = {.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &foreign_buffer};
+	gfx_resource_binding_t vertex_binding	    = {.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &vertex_buffer};
+	gfx_resource_binding_t duplicate_bindings[] = {
+		{.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+		{.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_bind_resources(NULL, bindings, 1), 1);
+	EXPECT_EQ(gfx_bind_resources(&(gfx_frame_t){0}, bindings, 1), 1);
+	gfx.frame = NULL;
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 1);
+	gfx.frame    = &frame;
+	frame.active = 0;
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 1);
+	frame.active   = 1;
+	frame.pipeline = NULL;
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 1);
+	frame.pipeline = &pipeline;
+	EXPECT_EQ(gfx_bind_resources(&frame, NULL, 1), 1);
+	EXPECT_EQ(gfx_bind_resources(&frame, &foreign_binding, 1), 1);
+	EXPECT_EQ(gfx_bind_resources(&frame, &vertex_binding, 1), 1);
+	EXPECT_EQ(gfx_bind_resources(&frame, &(gfx_resource_binding_t){.binding = 0, .type = GFX_RESOURCE_UNKNOWN, .buffer = &buffer}, 1),
+		  1);
+	EXPECT_EQ(gfx_bind_resources(&frame, duplicate_bindings, 2), 1);
+	EXPECT_EQ(gfx_bind_resources(&frame, NULL, 0), 0);
+	drv.bind_resources = NULL;
+	gfx.drv		   = &drv;
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 1);
+	EXPECT_EQ(t_gfx_buffer_bind_resources_calls, 1);
+
+	END;
+}
+
+TEST(gfx_bind_resources_returns_driver_result)
+{
+	START;
+
+	t_gfx_buffer_reset();
+	t_gfx_buffer_bind_resources_ret	  = 1;
+	gfx_t gfx			  = {.drv = &t_gfx_buffer_driver};
+	gfx_pipeline_t pipeline		  = {.gfx = &gfx};
+	gfx_frame_t frame		  = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	gfx_buffer_t buffer		  = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = (void *)0x5678};
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 4, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+	gfx.frame = &frame;
+
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 1);
+	EXPECT_EQ(t_gfx_buffer_bind_resources_calls, 1);
+	EXPECT_NULL(frame.resource_bindings);
+
+	END;
+}
+
 STEST(gfx_buffer)
 {
 	SSTART;
@@ -397,6 +570,7 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_init_null_driver);
 	RUN(gfx_buffer_init_null_driver_callback);
 	RUN(gfx_buffer_init_success);
+	RUN(gfx_buffer_init_uniform_success);
 	RUN(gfx_buffer_init_returns_driver_failure);
 	RUN(gfx_buffer_init_rejects_static_without_data);
 	RUN(gfx_buffer_free_null_buffer);
@@ -410,7 +584,12 @@ STEST(gfx_buffer)
 	RUN(gfx_buffer_set_data_rejects_static);
 	RUN(gfx_buffer_bind_rejects_invalid_args);
 	RUN(gfx_buffer_bind_rejects_unknown_buffer_type_after_driver_bind);
+	RUN(gfx_bind_resources_does_not_set_vertex_or_index);
+	RUN(gfx_buffer_bind_uniform_buffer_does_not_set_vertex_or_index);
 	RUN(gfx_buffer_bind_returns_driver_result);
+	RUN(gfx_bind_resources_calls_driver);
+	RUN(gfx_bind_resources_rejects_invalid_args);
+	RUN(gfx_bind_resources_returns_driver_result);
 
 	SEND;
 }

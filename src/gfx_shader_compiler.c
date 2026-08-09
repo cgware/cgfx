@@ -204,7 +204,8 @@ static int gfx_shader_compile_grammar(estx_t *estx, gfx_shader_rules_t *rules, a
 	    estx_find_rule(estx, STRV("vs_out_struct"), &rules->vs_out_struct) ||
 	    estx_find_rule(estx, STRV("fs_in_struct"), &rules->fs_in_struct) ||
 	    estx_find_rule(estx, STRV("fs_out_struct"), &rules->fs_out_struct) ||
-	    estx_find_rule(estx, STRV("struct_mem"), &rules->struct_mem) ||
+	    estx_find_rule(estx, STRV("buffer_struct"), &rules->buffer_struct) ||
+	    estx_find_rule(estx, STRV("buffer_mem"), &rules->buffer_mem) || estx_find_rule(estx, STRV("struct_mem"), &rules->struct_mem) ||
 	    estx_find_rule(estx, STRV("function_definition"), &rules->function_definition) ||
 	    estx_find_rule(estx, STRV("function_header"), &rules->function_header) ||
 	    estx_find_rule(estx, STRV("statement"), &rules->statement) ||
@@ -215,7 +216,7 @@ static int gfx_shader_compile_grammar(estx_t *estx, gfx_shader_rules_t *rules, a
 	    estx_find_rule(estx, STRV("assignment_operator"), &rules->assignment_operator) ||
 	    estx_find_rule(estx, STRV("expression"), &rules->expression) || estx_find_rule(estx, STRV("lvalue"), &rules->lvalue) ||
 	    estx_find_rule(estx, STRV("type_name"), &rules->type_name) || estx_find_rule(estx, STRV("identifier"), &rules->identifier) ||
-	    estx_find_rule(estx, STRV("semantic"), &rules->semantic)) {
+	    estx_find_rule(estx, STRV("int"), &rules->int_value) || estx_find_rule(estx, STRV("semantic"), &rules->semantic)) {
 		return gfx_shader_compile_grammar_cleanup( // LCOV_EXCL_LINE
 			1,
 			estx,
@@ -325,8 +326,24 @@ static int gfx_shader_child_text(const eprs_t *eprs, const lex_t *lex, eprs_node
 	return gfx_shader_node_text(eprs, lex, node, out);
 }
 
-static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
-				   gfx_shader_struct_ir_t *ir)
+static int gfx_shader_parse_u32(strv_t str, u32 *out)
+{
+	u32 value = 0;
+	if (out == NULL || str.data == NULL || str.len == 0) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	for (size_t i = 0; i < str.len; i++) {
+		if (str.data[i] < '0' || str.data[i] > '9' || value > (U32_MAX - (u32)(str.data[i] - '0')) / 10u) {
+			return 1;
+		}
+		value = value * 10u + (u32)(str.data[i] - '0');
+	}
+	*out = value;
+	return 0;
+}
+
+static int gfx_shader_parse_struct_members(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
+					   estx_node_t member_rule, int semantic, gfx_shader_struct_ir_t *ir)
 {
 	if (ir == NULL || gfx_shader_child_text(eprs, lex, node, rules->identifier, 0, &ir->name)) {
 		return 1; // LCOV_EXCL_LINE
@@ -340,7 +357,7 @@ static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const g
 	{
 		(void)data;
 		eprs_node_t member_node = 0;
-		if (eprs_get_rule(eprs, child, rules->struct_mem, &member_node) || ir->member_count >= 16) {
+		if (eprs_get_rule(eprs, child, member_rule, &member_node) || ir->member_count >= 16) {
 			continue;
 		}
 
@@ -350,15 +367,197 @@ static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const g
 			return 1; // LCOV_EXCL_LINE
 		}
 
-		eprs_node_t semantic = 0;
-		if (gfx_shader_child_rule(eprs, member_node, rules->semantic, 0, &semantic) == 0 &&
-		    gfx_shader_child_text(eprs, lex, semantic, rules->identifier, 0, &member->semantic)) {
+		eprs_node_t semantic_node = 0;
+		if (semantic && gfx_shader_child_rule(eprs, member_node, rules->semantic, 0, &semantic_node) == 0 &&
+		    gfx_shader_child_text(eprs, lex, semantic_node, rules->identifier, 0, &member->semantic)) {
 			return 1; // LCOV_EXCL_LINE
 		}
 		ir->member_count++;
 	}
 
 	return ir->member_count == 0;
+}
+
+static int gfx_shader_parse_struct(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
+				   gfx_shader_struct_ir_t *ir)
+{
+	return gfx_shader_parse_struct_members(eprs, lex, rules, node, rules->struct_mem, 1, ir);
+}
+
+static int gfx_shader_parse_buffer(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
+				   gfx_shader_struct_ir_t *ir)
+{
+	strv_t slot = STRV_NULL;
+	if (gfx_shader_child_text(eprs, lex, node, rules->int_value, 0, &slot) || gfx_shader_parse_u32(slot, &ir->slot)) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	return gfx_shader_parse_struct_members(eprs, lex, rules, node, rules->buffer_mem, 0, ir);
+}
+
+static void gfx_shader_expr_skip_spaces(strv_t expr, size_t *pos)
+{
+	while (*pos < expr.len && expr.data[*pos] == ' ') {
+		(*pos)++;
+	}
+}
+
+static int gfx_shader_expr_ident_start(char c)
+{
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+static int gfx_shader_expr_ident_char(char c)
+{
+	return gfx_shader_expr_ident_start(c) || (c >= '0' && c <= '9');
+}
+
+static int gfx_shader_expr_add(gfx_shader_statement_ir_t *stmt, gfx_shader_expr_kind_t kind, u32 *out)
+{
+	if (stmt == NULL || out == NULL || stmt->expr_count >= 64) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	*out		       = stmt->expr_count++;
+	stmt->expr_nodes[*out] = (gfx_shader_expr_ir_t){.kind = kind};
+	return 0;
+}
+
+static int gfx_shader_parse_expr_node(gfx_shader_statement_ir_t *stmt, strv_t expr, size_t *pos, u32 *out);
+
+static int gfx_shader_parse_expr_primary(gfx_shader_statement_ir_t *stmt, strv_t expr, size_t *pos, u32 *out)
+{
+	gfx_shader_expr_skip_spaces(expr, pos);
+	if (*pos >= expr.len) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	if ((expr.data[*pos] >= '0' && expr.data[*pos] <= '9')) {
+		size_t start = *pos;
+		while (*pos < expr.len && expr.data[*pos] >= '0' && expr.data[*pos] <= '9') {
+			(*pos)++;
+		}
+		gfx_shader_expr_kind_t kind = GFX_SHADER_EXPR_INT;
+		if (*pos < expr.len && expr.data[*pos] == '.') {
+			kind = GFX_SHADER_EXPR_FLOAT;
+			(*pos)++;
+			while (*pos < expr.len && expr.data[*pos] >= '0' && expr.data[*pos] <= '9') {
+				(*pos)++;
+			}
+			if (*pos < expr.len && expr.data[*pos] == 'f') {
+				(*pos)++;
+			}
+		}
+		if (gfx_shader_expr_add(stmt, kind, out)) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		stmt->expr_nodes[*out].text = STRVN(&expr.data[start], *pos - start);
+		return 0;
+	}
+	if (!gfx_shader_expr_ident_start(expr.data[*pos])) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	size_t start = *pos;
+	(*pos)++;
+	while (*pos < expr.len && (gfx_shader_expr_ident_char(expr.data[*pos]) || expr.data[*pos] == '.')) {
+		(*pos)++;
+	}
+	strv_t name = STRVN(&expr.data[start], *pos - start);
+	gfx_shader_expr_skip_spaces(expr, pos);
+	if (*pos < expr.len && expr.data[*pos] == '(') {
+		if (gfx_shader_expr_add(stmt, GFX_SHADER_EXPR_CALL, out)) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		u32 call_node			 = *out;
+		stmt->expr_nodes[call_node].text = name;
+		(*pos)++;
+		gfx_shader_expr_skip_spaces(expr, pos);
+		if (*pos < expr.len && expr.data[*pos] == ')') {
+			(*pos)++;
+			return 0;
+		}
+		while (*pos < expr.len) {
+			u32 arg_count = stmt->expr_nodes[call_node].arg_count;
+			if (arg_count >= 8 || gfx_shader_parse_expr_node(stmt, expr, pos, &stmt->expr_nodes[call_node].args[arg_count])) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			stmt->expr_nodes[call_node].arg_count++;
+			gfx_shader_expr_skip_spaces(expr, pos);
+			if (*pos < expr.len && expr.data[*pos] == ',') {
+				(*pos)++;
+				continue;
+			}
+			if (*pos < expr.len && expr.data[*pos] == ')') {
+				(*pos)++;
+				return 0;
+			}
+			return 1; // LCOV_EXCL_LINE
+		}
+		return 1; // LCOV_EXCL_LINE
+	}
+	if (gfx_shader_expr_add(stmt, GFX_SHADER_EXPR_LVALUE, out)) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	stmt->expr_nodes[*out].text = name;
+	return 0;
+}
+
+static int gfx_shader_parse_expr_operator(strv_t expr, size_t *pos, strv_t *op)
+{
+	gfx_shader_expr_skip_spaces(expr, pos);
+	if (*pos >= expr.len) {
+		return 1;
+	}
+	if (*pos + 1 < expr.len &&
+	    ((expr.data[*pos] == '=' && expr.data[*pos + 1] == '=') || (expr.data[*pos] == '>' && expr.data[*pos + 1] == '=') ||
+	     (expr.data[*pos] == '<' && expr.data[*pos + 1] == '='))) {
+		*op = STRVN(&expr.data[*pos], 2);
+		*pos += 2;
+		return 0;
+	}
+	if (expr.data[*pos] == '+' || expr.data[*pos] == '-' || expr.data[*pos] == '*' || expr.data[*pos] == '/' ||
+	    expr.data[*pos] == '<' || expr.data[*pos] == '>') {
+		*op = STRVN(&expr.data[*pos], 1);
+		(*pos)++;
+		return 0;
+	}
+	return 1;
+}
+
+static int gfx_shader_parse_expr_node(gfx_shader_statement_ir_t *stmt, strv_t expr, size_t *pos, u32 *out)
+{
+	u32 left = 0;
+	if (gfx_shader_parse_expr_primary(stmt, expr, pos, &left)) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	for (;;) {
+		size_t op_pos = *pos;
+		strv_t op     = STRV_NULL;
+		if (gfx_shader_parse_expr_operator(expr, &op_pos, &op)) {
+			*out = left;
+			return 0;
+		}
+		u32 right = 0;
+		if (gfx_shader_parse_expr_primary(stmt, expr, &op_pos, &right)) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		u32 binary = 0;
+		if (gfx_shader_expr_add(stmt, GFX_SHADER_EXPR_BINARY, &binary)) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		stmt->expr_nodes[binary].op    = op;
+		stmt->expr_nodes[binary].left  = left;
+		stmt->expr_nodes[binary].right = right;
+		left			       = binary;
+		*pos			       = op_pos;
+	}
+}
+
+static int gfx_shader_parse_expr(gfx_shader_statement_ir_t *stmt, strv_t expr)
+{
+	size_t pos = 0;
+	if (gfx_shader_parse_expr_node(stmt, expr, &pos, &stmt->expr_root)) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	gfx_shader_expr_skip_spaces(expr, &pos);
+	return pos != expr.len;
 }
 
 static int gfx_shader_parse_statement(const eprs_t *eprs, const lex_t *lex, const gfx_shader_rules_t *rules, eprs_node_t node,
@@ -374,7 +573,8 @@ static int gfx_shader_parse_statement(const eprs_t *eprs, const lex_t *lex, cons
 		eprs_node_t init = 0;
 		if (gfx_shader_child_rule(eprs, child, rules->initialization, 0, &init) == 0) {
 			stmt->has_init = 1;
-			return gfx_shader_child_text(eprs, lex, init, rules->expression, 0, &stmt->expr);
+			return gfx_shader_child_text(eprs, lex, init, rules->expression, 0, &stmt->expr) ||
+			       gfx_shader_parse_expr(stmt, stmt->expr);
 		}
 		return 0;
 	}
@@ -382,11 +582,13 @@ static int gfx_shader_parse_statement(const eprs_t *eprs, const lex_t *lex, cons
 		*stmt = (gfx_shader_statement_ir_t){.kind = GFX_SHADER_STMT_ASSIGN};
 		return gfx_shader_child_text(eprs, lex, child, rules->lvalue, 0, &stmt->lhs) ||
 		       gfx_shader_child_text(eprs, lex, child, rules->assignment_operator, 0, &stmt->op) ||
-		       gfx_shader_child_text(eprs, lex, child, rules->expression, 0, &stmt->expr);
+		       gfx_shader_child_text(eprs, lex, child, rules->expression, 0, &stmt->expr) ||
+		       gfx_shader_parse_expr(stmt, stmt->expr);
 	}
 	if (eprs_get_rule(eprs, node, rules->return_statement, &child) == 0) {
 		*stmt = (gfx_shader_statement_ir_t){.kind = GFX_SHADER_STMT_RETURN};
-		return gfx_shader_child_text(eprs, lex, child, rules->expression, 0, &stmt->expr);
+		return gfx_shader_child_text(eprs, lex, child, rules->expression, 0, &stmt->expr) ||
+		       gfx_shader_parse_expr(stmt, stmt->expr);
 	}
 	return 1; // LCOV_EXCL_LINE
 }
@@ -460,6 +662,11 @@ static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_s
 			if (gfx_shader_parse_struct(eprs, lex, rules, node, &ir->fs_out)) {
 				return 1; // LCOV_EXCL_LINE
 			}
+		} else if (eprs_get_rule(eprs, item, rules->buffer_struct, &node) == 0) {
+			if (ir->buffer_count >= 16 || gfx_shader_parse_buffer(eprs, lex, rules, node, &ir->buffers[ir->buffer_count])) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			ir->buffer_count++;
 		} else if (eprs_get_rule(eprs, item, rules->function_definition, &node) == 0) {
 			if (gfx_shader_parse_function(eprs, lex, rules, node, ir)) {
 				return 1; // LCOV_EXCL_LINE
@@ -468,6 +675,37 @@ static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_s
 	}
 
 	return 0;
+}
+
+static int gfx_shader_type_supported(strv_t type)
+{
+	return strv_eq(type, STRV("vec2f")) || strv_eq(type, STRV("vec4f")) || strv_eq(type, STRV("mat4f"));
+}
+
+static int gfx_shader_struct_types_supported(const gfx_shader_struct_ir_t *ir)
+{
+	if (ir == NULL || !ir->present) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	for (u32 i = 0; i < ir->member_count; i++) {
+		if (!gfx_shader_type_supported(ir->members[i].type)) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int gfx_shader_buffers_supported(const gfx_shader_ir_t *ir)
+{
+	if (ir == NULL) {
+		return 0; // LCOV_EXCL_LINE
+	}
+	for (u32 i = 0; i < ir->buffer_count; i++) {
+		if (!gfx_shader_struct_types_supported(&ir->buffers[i])) {
+			return 0;
+		}
+	}
+	return 1;
 }
 
 static int gfx_shader_struct_has_semantic(const gfx_shader_struct_ir_t *ir, strv_t semantic, strv_t type)
@@ -487,7 +725,9 @@ static int gfx_shader_struct_has_semantic(const gfx_shader_struct_ir_t *ir, strv
 static int gfx_shader_ir_supported(const gfx_shader_ir_t *ir)
 {
 	return ir != NULL && ir->vs_in.present && ir->vs_out.present && ir->fs_in.present && ir->fs_out.present && ir->vertex.present &&
-	       ir->fragment.present && gfx_shader_struct_has_semantic(&ir->vs_in, STRV("POSITION"), STRV("vec2f")) &&
+	       ir->fragment.present && gfx_shader_buffers_supported(ir) &&
+	       (gfx_shader_struct_has_semantic(&ir->vs_in, STRV("POSITION"), STRV("vec2f")) ||
+		gfx_shader_struct_has_semantic(&ir->vs_in, STRV("POSITION"), STRV("vec3f"))) &&
 	       gfx_shader_struct_has_semantic(&ir->vs_in, STRV("COLOR0"), STRV("vec4f")) &&
 	       gfx_shader_struct_has_semantic(&ir->vs_out, STRV("POSITION"), STRV("vec4f")) &&
 	       gfx_shader_struct_has_semantic(&ir->vs_out, STRV("COLOR0"), STRV("vec4f")) &&
@@ -558,6 +798,13 @@ static int gfx_shader_compiler_emit(gfx_shader_compiler_t *compiler, const eprs_
 			  gfx_shader_stage_name(stage),
 			  gfx_shader_language_name(language));
 	} else {
+		shader->buffer_count = ir.buffer_count;
+		for (u32 i = 0; i < ir.buffer_count; i++) {
+			shader->buffers[i] = (gfx_shader_buffer_binding_t){
+				.slot = ir.buffers[i].slot,
+				.name = ir.buffers[i].name,
+			};
+		}
 		log_info("cgfx",
 			 "gfx_shader",
 			 NULL,
@@ -609,6 +856,45 @@ int gfx_shader_compiler_transpile(gfx_shader_compiler_t *compiler, strv_t source
 		gfx_shader_code_free(shader);
 	}
 	return ret;
+}
+
+int gfx_shader_compiler_ir(gfx_shader_compiler_t *compiler, strv_t source, gfx_shader_ir_t *ir)
+{
+	if (ir == NULL) {
+		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: output IR is null");
+		return 1;
+	}
+
+	*ir = (gfx_shader_ir_t){0};
+
+	lex_t lex	 = {0};
+	eprs_t eprs	 = {0};
+	eprs_node_t root = 0;
+
+	if (compiler == NULL) {
+		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: shader compiler is null");
+		return 1;
+	}
+
+	if (gfx_shader_parse_source(source, &compiler->estx, &compiler->rules, compiler->alloc, &lex, &eprs, &root)) {
+		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: source parsing failed");
+		return 1;
+	}
+
+	int ret = gfx_shader_build_ir(&eprs, &lex, &compiler->rules, root, ir);
+	eprs_free(&eprs);
+	lex_free(&lex);
+	if (ret) {										       // LCOV_EXCL_LINE
+		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: IR build failed"); // LCOV_EXCL_LINE
+		*ir = (gfx_shader_ir_t){0};							       // LCOV_EXCL_LINE
+		return 1;									       // LCOV_EXCL_LINE
+	}
+	if (!gfx_shader_ir_supported(ir)) {
+		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: IR is not supported by current backends");
+		*ir = (gfx_shader_ir_t){0};
+		return 1;
+	}
+	return 0;
 }
 
 void gfx_shader_code_free(gfx_shader_code_t *shader)

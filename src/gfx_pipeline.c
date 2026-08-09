@@ -40,8 +40,10 @@ int gfx_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 		return 1;
 	}
 
-	frame->pipeline	     = pipeline;
-	frame->vertex_buffer = NULL;
-	frame->index_buffer  = NULL;
+	frame->pipeline		      = pipeline;
+	frame->vertex_buffer	      = NULL;
+	frame->index_buffer	      = NULL;
+	frame->resource_bindings      = NULL;
+	frame->resource_binding_count = 0;
 	return 0;
 }

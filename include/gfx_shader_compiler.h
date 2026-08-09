@@ -15,11 +15,18 @@ typedef enum gfx_shader_language_e {
 	GFX_SHADER_LANGUAGE_SPIRV,
 } gfx_shader_language_t;
 
+typedef struct gfx_shader_buffer_binding_s {
+	u32 slot;
+	strv_t name;
+} gfx_shader_buffer_binding_t;
+
 typedef struct gfx_shader_code_s {
 	gfx_shader_stage_t stage;
 	gfx_shader_language_t language;
 	const char *text;
 	buf_t code;
+	gfx_shader_buffer_binding_t buffers[16];
+	u32 buffer_count;
 } gfx_shader_code_t;
 
 typedef struct gfx_shader_rules_s {
@@ -29,6 +36,8 @@ typedef struct gfx_shader_rules_s {
 	estx_node_t vs_out_struct;
 	estx_node_t fs_in_struct;
 	estx_node_t fs_out_struct;
+	estx_node_t buffer_struct;
+	estx_node_t buffer_mem;
 	estx_node_t struct_mem;
 	estx_node_t function_definition;
 	estx_node_t function_header;
@@ -42,6 +51,7 @@ typedef struct gfx_shader_rules_s {
 	estx_node_t lvalue;
 	estx_node_t type_name;
 	estx_node_t identifier;
+	estx_node_t int_value;
 	estx_node_t semantic;
 } gfx_shader_rules_t;
 

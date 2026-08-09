@@ -20,6 +20,7 @@ enum {
 	GFX_SHADER_SPV_OP_TYPE_INT	      = 21,
 	GFX_SHADER_SPV_OP_TYPE_FLOAT	      = 22,
 	GFX_SHADER_SPV_OP_TYPE_VECTOR	      = 23,
+	GFX_SHADER_SPV_OP_TYPE_MATRIX	      = 24,
 	GFX_SHADER_SPV_OP_TYPE_STRUCT	      = 30,
 	GFX_SHADER_SPV_OP_TYPE_POINTER	      = 32,
 	GFX_SHADER_SPV_OP_TYPE_FUNCTION	      = 33,
@@ -35,6 +36,8 @@ enum {
 	GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT = 80,
 	GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT   = 81,
 	GFX_SHADER_SPV_OP_F_NEGATE	      = 127,
+	GFX_SHADER_SPV_OP_MATRIX_TIMES_VECTOR = 145,
+	GFX_SHADER_SPV_OP_MATRIX_TIMES_MATRIX = 146,
 	GFX_SHADER_SPV_OP_LABEL		      = 248,
 	GFX_SHADER_SPV_OP_RETURN	      = 253,
 };
@@ -49,15 +52,22 @@ enum {
 	GFX_SHADER_SPV_SOURCE_GLSL		   = 2,
 	GFX_SHADER_SPV_SOURCE_VERSION		   = 450,
 	GFX_SHADER_SPV_DECORATION_BLOCK		   = 2,
+	GFX_SHADER_SPV_DECORATION_COL_MAJOR	   = 5,
+	GFX_SHADER_SPV_DECORATION_MATRIX_STRIDE	   = 7,
 	GFX_SHADER_SPV_DECORATION_BUILT_IN	   = 11,
 	GFX_SHADER_SPV_DECORATION_LOCATION	   = 30,
+	GFX_SHADER_SPV_DECORATION_BINDING	   = 33,
+	GFX_SHADER_SPV_DECORATION_DESCRIPTOR_SET   = 34,
+	GFX_SHADER_SPV_DECORATION_OFFSET	   = 35,
 	GFX_SHADER_SPV_BUILT_IN_POSITION	   = 0,
 	GFX_SHADER_SPV_STORAGE_INPUT		   = 1,
+	GFX_SHADER_SPV_STORAGE_UNIFORM		   = 2,
 	GFX_SHADER_SPV_STORAGE_OUTPUT		   = 3,
 	GFX_SHADER_SPV_FUNCTION_CONTROL_NONE	   = 0,
 	GFX_SHADER_SPV_WIDTH_32			   = 32,
 	GFX_SHADER_SPV_SIGNED			   = 1,
 	GFX_SHADER_SPV_VEC2			   = 2,
+	GFX_SHADER_SPV_VEC3			   = 3,
 	GFX_SHADER_SPV_VEC4			   = 4,
 };
 
@@ -113,7 +123,9 @@ typedef struct gfx_shader_spv_s {
 	u32 label_id;
 	u32 float_id;
 	u32 vec2_id;
+	u32 vec3_id;
 	u32 vec4_id;
+	u32 mat4_id;
 	u32 int_id;
 	u32 int_zero_id;
 	u32 float_zero_id;
@@ -122,6 +134,13 @@ typedef struct gfx_shader_spv_s {
 	u32 ptr_output_gl_per_vertex_id;
 	u32 gl_per_vertex_var_id;
 	u32 ptr_output_position_id;
+	u32 uniform_block_id;
+	u32 ptr_uniform_block_id;
+	u32 uniform_var_id;
+	u32 ptr_uniform_mat4_id;
+	u32 uniform_slot;
+	const gfx_shader_struct_ir_t *uniform_block;
+	u32 int_ids[16];
 	gfx_shader_spv_var_t inputs[16];
 	u32 input_count;
 	gfx_shader_spv_var_t outputs[16];
@@ -149,10 +168,47 @@ static u32 gfx_shader_spv_type_id(const gfx_shader_spv_t *spv, strv_t type)
 	if (strv_eq(type, STRV("vec2f"))) {
 		return spv->vec2_id;
 	}
+	if (strv_eq(type, STRV("vec3f"))) {
+		return spv->vec3_id;
+	}
 	if (strv_eq(type, STRV("vec4f"))) {
 		return spv->vec4_id;
 	}
+	if (strv_eq(type, STRV("mat4f"))) {
+		return spv->mat4_id;
+	}
 	return 0;
+}
+
+static const gfx_shader_struct_ir_t *gfx_shader_spv_uniform_block(const gfx_shader_ir_t *ir)
+{
+	if (ir == NULL) {
+		return NULL; // LCOV_EXCL_LINE
+	}
+	for (u32 i = 0; i < ir->buffer_count; i++) {
+		for (u32 m = 0; m < ir->buffers[i].member_count; m++) {
+			if (strv_eq(ir->buffers[i].members[m].type, STRV("mat4f"))) {
+				return &ir->buffers[i];
+			}
+		}
+	}
+	return NULL;
+}
+
+static const gfx_shader_member_t *gfx_shader_spv_uniform_member(const gfx_shader_spv_t *spv, strv_t name, u32 *index)
+{
+	if (spv == NULL || spv->uniform_block == NULL) {
+		return NULL;
+	}
+	for (u32 i = 0; i < spv->uniform_block->member_count; i++) {
+		if (strv_eq(spv->uniform_block->members[i].name, name)) {
+			if (index != NULL) {
+				*index = i;
+			}
+			return &spv->uniform_block->members[i];
+		}
+	}
+	return NULL;
 }
 
 static const gfx_shader_member_t *gfx_shader_spv_lhs_member(const gfx_shader_struct_ir_t *ir, strv_t lhs)
@@ -216,6 +272,31 @@ static int gfx_shader_spv_emit_decorations(buf_t *code, const gfx_shader_spv_t *
 					   GFX_SHADER_SPV_BUILT_IN_POSITION);
 		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_DECORATE, 3, spv->gl_per_vertex_id, GFX_SHADER_SPV_DECORATION_BLOCK);
 	}
+	if (spv->uniform_var_id != 0) {
+		for (u32 i = 0; i < spv->uniform_block->member_count; i++) {
+			ret |= gfx_shader_spv_inst(code,
+						   GFX_SHADER_SPV_OP_MEMBER_DECORATE,
+						   5,
+						   spv->uniform_block_id,
+						   i,
+						   GFX_SHADER_SPV_DECORATION_OFFSET,
+						   64 * i);
+			ret |= gfx_shader_spv_inst(
+				code, GFX_SHADER_SPV_OP_MEMBER_DECORATE, 4, spv->uniform_block_id, i, GFX_SHADER_SPV_DECORATION_COL_MAJOR);
+			ret |= gfx_shader_spv_inst(code,
+						   GFX_SHADER_SPV_OP_MEMBER_DECORATE,
+						   5,
+						   spv->uniform_block_id,
+						   i,
+						   GFX_SHADER_SPV_DECORATION_MATRIX_STRIDE,
+						   16);
+		}
+		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_DECORATE, 3, spv->uniform_block_id, GFX_SHADER_SPV_DECORATION_BLOCK);
+		ret |= gfx_shader_spv_inst(
+			code, GFX_SHADER_SPV_OP_DECORATE, 4, spv->uniform_var_id, GFX_SHADER_SPV_DECORATION_DESCRIPTOR_SET, 0);
+		ret |= gfx_shader_spv_inst(
+			code, GFX_SHADER_SPV_OP_DECORATE, 4, spv->uniform_var_id, GFX_SHADER_SPV_DECORATION_BINDING, spv->uniform_slot);
+	}
 	for (u32 i = 0; i < spv->output_count; i++) {
 		ret |= gfx_shader_spv_inst(code,
 					   GFX_SHADER_SPV_OP_DECORATE,
@@ -242,7 +323,30 @@ static int gfx_shader_spv_emit_types(buf_t *code, const gfx_shader_spv_t *spv, g
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_FUNCTION, 3, spv->function_type_id, spv->void_id);
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_FLOAT, 3, spv->float_id, GFX_SHADER_SPV_WIDTH_32);
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_VECTOR, 4, spv->vec2_id, spv->float_id, GFX_SHADER_SPV_VEC2);
+	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_VECTOR, 4, spv->vec3_id, spv->float_id, GFX_SHADER_SPV_VEC3);
 	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_VECTOR, 4, spv->vec4_id, spv->float_id, GFX_SHADER_SPV_VEC4);
+	ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_MATRIX, 4, spv->mat4_id, spv->vec4_id, GFX_SHADER_SPV_VEC4);
+	if (spv->uniform_var_id != 0) {
+		ret |= gfx_shader_spv_inst_begin(code, GFX_SHADER_SPV_OP_TYPE_STRUCT, 2 + spv->uniform_block->member_count);
+		ret |= gfx_shader_spv_write(code, spv->uniform_block_id);
+		for (u32 i = 0; i < spv->uniform_block->member_count; i++) {
+			ret |= gfx_shader_spv_write(code, spv->mat4_id);
+		}
+		ret |= gfx_shader_spv_inst(code,
+					   GFX_SHADER_SPV_OP_TYPE_POINTER,
+					   4,
+					   spv->ptr_uniform_block_id,
+					   GFX_SHADER_SPV_STORAGE_UNIFORM,
+					   spv->uniform_block_id);
+		ret |= gfx_shader_spv_inst(
+			code, GFX_SHADER_SPV_OP_TYPE_POINTER, 4, spv->ptr_uniform_mat4_id, GFX_SHADER_SPV_STORAGE_UNIFORM, spv->mat4_id);
+		ret |= gfx_shader_spv_inst(code,
+					   GFX_SHADER_SPV_OP_VARIABLE,
+					   4,
+					   spv->ptr_uniform_block_id,
+					   spv->uniform_var_id,
+					   GFX_SHADER_SPV_STORAGE_UNIFORM);
+	}
 	if (stage == GFX_SHADER_STAGE_VERTEX) {
 		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_TYPE_STRUCT, 3, spv->gl_per_vertex_id, spv->vec4_id);
 		ret |= gfx_shader_spv_inst(code,
@@ -260,6 +364,11 @@ static int gfx_shader_spv_emit_types(buf_t *code, const gfx_shader_spv_t *spv, g
 		ret |= gfx_shader_spv_inst(
 			code, GFX_SHADER_SPV_OP_TYPE_INT, 4, spv->int_id, GFX_SHADER_SPV_WIDTH_32, GFX_SHADER_SPV_SIGNED);
 		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->int_id, spv->int_zero_id, GFX_SHADER_SPV_WORD_ZERO);
+		if (spv->uniform_block != NULL) {
+			for (u32 i = 1; i < spv->uniform_block->member_count && i < 16; i++) {
+				ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->int_id, spv->int_ids[i], i);
+			}
+		}
 		ret |= gfx_shader_spv_inst(
 			code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->float_id, spv->float_zero_id, GFX_SHADER_SPV_WORD_ZERO);
 		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->float_id, spv->float_one_id, GFX_SHADER_SPV_FLOAT_ONE);
@@ -328,6 +437,190 @@ static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, cons
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_STORE, 3, ptr, pos);
 }
 
+typedef enum gfx_shader_spv_expr_type_e {
+	GFX_SHADER_SPV_EXPR_FLOAT,
+	GFX_SHADER_SPV_EXPR_VEC2,
+	GFX_SHADER_SPV_EXPR_VEC3,
+	GFX_SHADER_SPV_EXPR_VEC4,
+	GFX_SHADER_SPV_EXPR_MAT4,
+} gfx_shader_spv_expr_type_t;
+
+typedef struct gfx_shader_spv_expr_s {
+	u32 id;
+	gfx_shader_spv_expr_type_t type;
+} gfx_shader_spv_expr_t;
+
+static const gfx_shader_spv_var_t *gfx_shader_spv_find_var_name(const gfx_shader_spv_var_t *vars, u32 count, strv_t name)
+{
+	for (u32 i = 0; i < count; i++) {
+		if (vars[i].member != NULL && strv_eq(vars[i].member->name, name)) {
+			return &vars[i];
+		}
+	}
+	return NULL;
+}
+
+static strv_t gfx_shader_spv_base_name(strv_t name, strv_t *suffix)
+{
+	for (size_t i = 0; i < name.len; i++) {
+		if (name.data[i] == '.') {
+			if (suffix != NULL) {
+				*suffix = STRVN(&name.data[i], name.len - i);
+			}
+			return STRVN(name.data, i);
+		}
+	}
+	if (suffix != NULL) {
+		*suffix = STRV_NULL;
+	}
+	return name;
+}
+
+static int gfx_shader_spv_emit_expr(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_statement_ir_t *stmt, u32 node_id,
+				    gfx_shader_spv_expr_t *out)
+{
+	if (stmt == NULL || node_id >= stmt->expr_count || out == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	const gfx_shader_expr_ir_t *node = &stmt->expr_nodes[node_id];
+	if (node->kind == GFX_SHADER_EXPR_FLOAT) {
+		if (strv_eq(node->text, STRV("0.0f"))) {
+			*out = (gfx_shader_spv_expr_t){.id = spv->float_zero_id, .type = GFX_SHADER_SPV_EXPR_FLOAT};
+			return 0;
+		}
+		if (strv_eq(node->text, STRV("1.0f"))) {
+			*out = (gfx_shader_spv_expr_t){.id = spv->float_one_id, .type = GFX_SHADER_SPV_EXPR_FLOAT};
+			return 0;
+		}
+		return 1;
+	}
+	if (node->kind == GFX_SHADER_EXPR_LVALUE) {
+		if (gfx_shader_strv_prefix(node->text, STRV("input."))) {
+			strv_t suffix = STRV_NULL;
+			strv_t name   = STRVN(node->text.data + STRV("input.").len, node->text.len - STRV("input.").len);
+			strv_t base   = gfx_shader_spv_base_name(name, &suffix);
+			const gfx_shader_spv_var_t *input = gfx_shader_spv_find_var_name(spv->inputs, spv->input_count, base);
+			if (input == NULL) {
+				return 1;
+			}
+			u32 loaded = gfx_shader_spv_id(spv);
+			if (gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LOAD, 4, input->type_id, loaded, input->var_id)) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			if (suffix.len == 0) {
+				*out = (gfx_shader_spv_expr_t){
+					.id   = loaded,
+					.type = input->type_id == spv->vec2_id	 ? GFX_SHADER_SPV_EXPR_VEC2
+						: input->type_id == spv->vec3_id ? GFX_SHADER_SPV_EXPR_VEC3
+										 : GFX_SHADER_SPV_EXPR_VEC4,
+				};
+				return 0;
+			}
+			if ((strv_eq(suffix, STRV(".x")) || strv_eq(suffix, STRV(".y")) || strv_eq(suffix, STRV(".z"))) &&
+			    (input->type_id == spv->vec2_id || input->type_id == spv->vec3_id)) {
+				u32 value = gfx_shader_spv_id(spv);
+				u32 index = strv_eq(suffix, STRV(".x")) ? 0 : strv_eq(suffix, STRV(".y")) ? 1 : 2;
+				if (index == 2 && input->type_id != spv->vec3_id) {
+					return 1;
+				}
+				if (gfx_shader_spv_inst(
+					    code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, value, loaded, index)) {
+					return 1; // LCOV_EXCL_LINE
+				}
+				*out = (gfx_shader_spv_expr_t){.id = value, .type = GFX_SHADER_SPV_EXPR_FLOAT};
+				return 0;
+			}
+			return 1;
+		}
+		u32 member = 0;
+		if (gfx_shader_spv_uniform_member(spv, node->text, &member) != NULL) {
+			u32 ptr = gfx_shader_spv_id(spv);
+			u32 mat = gfx_shader_spv_id(spv);
+			u32 idx = member == 0 ? spv->int_zero_id : spv->int_ids[member];
+			if (gfx_shader_spv_inst(
+				    code, GFX_SHADER_SPV_OP_ACCESS_CHAIN, 5, spv->ptr_uniform_mat4_id, ptr, spv->uniform_var_id, idx) ||
+			    gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LOAD, 4, spv->mat4_id, mat, ptr)) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			*out = (gfx_shader_spv_expr_t){.id = mat, .type = GFX_SHADER_SPV_EXPR_MAT4};
+			return 0;
+		}
+		return 1;
+	}
+	if (node->kind == GFX_SHADER_EXPR_CALL && strv_eq(node->text, STRV("vec4f")) && node->arg_count == 4) {
+		gfx_shader_spv_expr_t args[4] = {0};
+		for (u32 i = 0; i < 4; i++) {
+			if (gfx_shader_spv_emit_expr(code, spv, stmt, node->args[i], &args[i]) ||
+			    args[i].type != GFX_SHADER_SPV_EXPR_FLOAT) {
+				return 1;
+			}
+		}
+		u32 vec = gfx_shader_spv_id(spv);
+		if (gfx_shader_spv_inst(code,
+					GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT,
+					7,
+					spv->vec4_id,
+					vec,
+					args[0].id,
+					args[1].id,
+					args[2].id,
+					args[3].id)) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		*out = (gfx_shader_spv_expr_t){.id = vec, .type = GFX_SHADER_SPV_EXPR_VEC4};
+		return 0;
+	}
+	if (node->kind == GFX_SHADER_EXPR_BINARY && strv_eq(node->op, STRV("*"))) {
+		gfx_shader_spv_expr_t left  = {0};
+		gfx_shader_spv_expr_t right = {0};
+		if (gfx_shader_spv_emit_expr(code, spv, stmt, node->left, &left) ||
+		    gfx_shader_spv_emit_expr(code, spv, stmt, node->right, &right)) {
+			return 1;
+		}
+		u32 value = gfx_shader_spv_id(spv);
+		if (left.type == GFX_SHADER_SPV_EXPR_MAT4 && right.type == GFX_SHADER_SPV_EXPR_MAT4) {
+			if (gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_MATRIX_TIMES_MATRIX, 5, spv->mat4_id, value, left.id, right.id)) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			*out = (gfx_shader_spv_expr_t){.id = value, .type = GFX_SHADER_SPV_EXPR_MAT4};
+			return 0;
+		}
+		if (left.type == GFX_SHADER_SPV_EXPR_MAT4 && right.type == GFX_SHADER_SPV_EXPR_VEC4) {
+			if (gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_MATRIX_TIMES_VECTOR, 5, spv->vec4_id, value, left.id, right.id)) {
+				return 1; // LCOV_EXCL_LINE
+			}
+			*out = (gfx_shader_spv_expr_t){.id = value, .type = GFX_SHADER_SPV_EXPR_VEC4};
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int gfx_shader_spv_store_position(buf_t *code, gfx_shader_spv_t *spv, u32 value)
+{
+	u32 x	  = gfx_shader_spv_id(spv);
+	u32 y	  = gfx_shader_spv_id(spv);
+	u32 z	  = gfx_shader_spv_id(spv);
+	u32 w	  = gfx_shader_spv_id(spv);
+	u32 neg_y = gfx_shader_spv_id(spv);
+	u32 pos	  = gfx_shader_spv_id(spv);
+	u32 ptr	  = gfx_shader_spv_id(spv);
+	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, x, value, 0) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, y, value, 1) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, z, value, 2) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, w, value, 3) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_NEGATE, 4, spv->float_id, neg_y, y) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT, 7, spv->vec4_id, pos, x, neg_y, z, w) ||
+	       gfx_shader_spv_inst(code,
+				   GFX_SHADER_SPV_OP_ACCESS_CHAIN,
+				   5,
+				   spv->ptr_output_position_id,
+				   ptr,
+				   spv->gl_per_vertex_var_id,
+				   spv->int_zero_id) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_STORE, 3, ptr, pos);
+}
+
 static int gfx_shader_spv_emit_function(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage)
 {
 	const gfx_shader_function_ir_t *fn = stage == GFX_SHADER_STAGE_VERTEX ? &ir->vertex : &ir->fragment;
@@ -352,10 +645,18 @@ static int gfx_shader_spv_emit_function(buf_t *code, gfx_shader_spv_t *spv, cons
 		}
 		if (stage == GFX_SHADER_STAGE_VERTEX && strv_eq(lhs->semantic, STRV("POSITION"))) {
 			const gfx_shader_spv_var_t *input = gfx_shader_spv_find_var(spv->inputs, spv->input_count, lhs->semantic);
-			if (input == NULL || !strv_eq(input->member->type, STRV("vec2f"))) {
+			if (input == NULL) {
 				return 1; // LCOV_EXCL_LINE
 			}
-			ret |= gfx_shader_spv_emit_position(code, spv, input);
+			gfx_shader_spv_expr_t expr = {0};
+			if (gfx_shader_spv_emit_expr(code, spv, stmt, stmt->expr_root, &expr) == 0 &&
+			    expr.type == GFX_SHADER_SPV_EXPR_VEC4) {
+				ret |= gfx_shader_spv_store_position(code, spv, expr.id);
+			} else if (strv_eq(input->member->type, STRV("vec2f"))) {
+				ret |= gfx_shader_spv_emit_position(code, spv, input);
+			} else {
+				return 1;
+			}
 		} else {
 			const gfx_shader_spv_var_t *input  = gfx_shader_spv_find_var(spv->inputs, spv->input_count, lhs->semantic);
 			const gfx_shader_spv_var_t *output = gfx_shader_spv_find_var(spv->outputs, spv->output_count, lhs->semantic);
@@ -395,6 +696,14 @@ static int gfx_shader_spv_add_var(gfx_shader_spv_t *spv, gfx_shader_spv_var_t *v
 
 static int gfx_shader_spirv_build(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage)
 {
+	spv->uniform_block = gfx_shader_spv_uniform_block(ir);
+	if (spv->uniform_block != NULL) {
+		spv->uniform_block_id	  = gfx_shader_spv_id(spv);
+		spv->ptr_uniform_block_id = gfx_shader_spv_id(spv);
+		spv->uniform_var_id	  = gfx_shader_spv_id(spv);
+		spv->ptr_uniform_mat4_id  = gfx_shader_spv_id(spv);
+		spv->uniform_slot	  = spv->uniform_block->slot;
+	}
 	if (stage == GFX_SHADER_STAGE_VERTEX) {
 		spv->int_id			 = gfx_shader_spv_id(spv);
 		spv->int_zero_id		 = gfx_shader_spv_id(spv);
@@ -404,6 +713,12 @@ static int gfx_shader_spirv_build(buf_t *code, gfx_shader_spv_t *spv, const gfx_
 		spv->ptr_output_gl_per_vertex_id = gfx_shader_spv_id(spv);
 		spv->gl_per_vertex_var_id	 = gfx_shader_spv_id(spv);
 		spv->ptr_output_position_id	 = gfx_shader_spv_id(spv);
+		if (spv->uniform_block != NULL) {
+			spv->int_ids[0] = spv->int_zero_id;
+			for (u32 i = 1; i < spv->uniform_block->member_count && i < 16; i++) {
+				spv->int_ids[i] = gfx_shader_spv_id(spv);
+			}
+		}
 		for (u32 i = 0; i < ir->vs_in.member_count; i++) {
 			if (gfx_shader_spv_add_var(spv,
 						   spv->inputs,
@@ -462,7 +777,9 @@ static int gfx_shader_spirv_emit(const gfx_shader_ir_t *ir, gfx_shader_stage_t s
 	spv.label_id	     = gfx_shader_spv_id(&spv);
 	spv.float_id	     = gfx_shader_spv_id(&spv);
 	spv.vec2_id	     = gfx_shader_spv_id(&spv);
+	spv.vec3_id	     = gfx_shader_spv_id(&spv);
 	spv.vec4_id	     = gfx_shader_spv_id(&spv);
+	spv.mat4_id	     = gfx_shader_spv_id(&spv);
 
 	if (gfx_shader_spirv_build(&code, &spv, ir, stage)) {
 		buf_free(&code);

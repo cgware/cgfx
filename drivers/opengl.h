@@ -74,6 +74,7 @@ typedef enum glInternalFormat_e {
 typedef enum glBufferTarget_e {
 	GL_ARRAY_BUFFER		= 0x8892,
 	GL_ELEMENT_ARRAY_BUFFER = 0x8893,
+	GL_UNIFORM_BUFFER	= 0x8A11,
 } glBufferTarget_t;
 
 typedef enum glBufferUsage_e {
@@ -85,6 +86,8 @@ typedef enum glShaderType_e {
 	GL_FRAGMENT_SHADER = 0x8B30,
 	GL_VERTEX_SHADER   = 0x8B31,
 } glShaderType_t;
+
+#define GL_INVALID_INDEX 0xFFFFFFFFu
 
 typedef enum glParameterName_e {
 	GL_COMPILE_STATUS = 0x8B81,
@@ -305,6 +308,20 @@ typedef void (*PFN_glGetProgramInfoLog)(GLuint program, GLsizei maxLength, GLsiz
 typedef void (*PFN_glUseProgram)(GLuint program);
 
 /**
+ * @brief Retrieve the index of a named uniform block
+ * @param[in] program created by PFN_glCreateProgram()
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glGetUniformBlockIndex.xhtml
+ */
+typedef GLuint (*PFN_glGetUniformBlockIndex)(GLuint program, const GLchar *uniformBlockName);
+
+/**
+ * @brief Assign a binding point to an active uniform block
+ * @param[in] program created by PFN_glCreateProgram()
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glUniformBlockBinding.xhtml
+ */
+typedef void (*PFN_glUniformBlockBinding)(GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding);
+
+/**
  * @}
  * @defgroup opengl_buffer Buffer
  * @ingroup opengl
@@ -331,6 +348,13 @@ typedef void (*PFN_glDeleteBuffers)(GLsizei n, const GLuint *buffers);
  * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindBuffer.xhtml
  */
 typedef void (*PFN_glBindBuffer)(GLenum target, GLuint buffer);
+
+/**
+ * @brief Bind a buffer object to an indexed buffer target
+ * @param[in] buffer created by PFN_glGenBuffers()
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindBufferBase.xhtml
+ */
+typedef void (*PFN_glBindBufferBase)(GLenum target, GLuint index, GLuint buffer);
 
 /**
  * @brief Creates and initializes a buffer object's data store

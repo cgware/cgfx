@@ -36,9 +36,12 @@ typedef struct gfx_opengl_s {
 	PFN_glGetProgramiv GetProgramiv;
 	PFN_glGetProgramInfoLog GetProgramInfoLog;
 	PFN_glDeleteProgram DeleteProgram;
+	PFN_glGetUniformBlockIndex GetUniformBlockIndex;
+	PFN_glUniformBlockBinding UniformBlockBinding;
 	PFN_glGenBuffers GenBuffers;
 	PFN_glDeleteBuffers DeleteBuffers;
 	PFN_glBindBuffer BindBuffer;
+	PFN_glBindBufferBase BindBufferBase;
 	PFN_glBufferData BufferData;
 	PFN_glUseProgram UseProgram;
 	PFN_glEnableVertexAttribArray EnableVertexAttribArray;
@@ -67,8 +70,15 @@ typedef struct gfx_opengl_buffer_s {
 	unsigned int target;
 } gfx_opengl_buffer_t;
 
+typedef struct gfx_opengl_uniform_block_s {
+	u32 slot;
+	char name[64];
+} gfx_opengl_uniform_block_t;
+
 typedef struct gfx_opengl_shader_s {
 	unsigned int shader;
+	gfx_opengl_uniform_block_t uniform_blocks[16];
+	u32 uniform_block_count;
 } gfx_opengl_shader_t;
 
 typedef struct gfx_opengl_pipeline_s {
@@ -177,11 +187,13 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	    LOAD_GL(gfx, opengl, surface, DeleteShader) || LOAD_GL(gfx, opengl, surface, CreateProgram) ||
 	    LOAD_GL(gfx, opengl, surface, AttachShader) || LOAD_GL(gfx, opengl, surface, LinkProgram) ||
 	    LOAD_GL(gfx, opengl, surface, GetProgramiv) || LOAD_GL(gfx, opengl, surface, DeleteProgram) ||
+	    LOAD_GL(gfx, opengl, surface, GetUniformBlockIndex) || LOAD_GL(gfx, opengl, surface, UniformBlockBinding) ||
 	    LOAD_GL(gfx, opengl, surface, GenBuffers) || LOAD_GL(gfx, opengl, surface, DeleteBuffers) ||
-	    LOAD_GL(gfx, opengl, surface, BindBuffer) || LOAD_GL(gfx, opengl, surface, BufferData) ||
-	    LOAD_GL(gfx, opengl, surface, UseProgram) || LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) ||
-	    LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, VertexAttribPointer) ||
-	    LOAD_GL(gfx, opengl, surface, DrawArrays) || LOAD_GL(gfx, opengl, surface, DrawElements)) {
+	    LOAD_GL(gfx, opengl, surface, BindBuffer) || LOAD_GL(gfx, opengl, surface, BindBufferBase) ||
+	    LOAD_GL(gfx, opengl, surface, BufferData) || LOAD_GL(gfx, opengl, surface, UseProgram) ||
+	    LOAD_GL(gfx, opengl, surface, EnableVertexAttribArray) || LOAD_GL(gfx, opengl, surface, DisableVertexAttribArray) ||
+	    LOAD_GL(gfx, opengl, surface, VertexAttribPointer) || LOAD_GL(gfx, opengl, surface, DrawArrays) ||
+	    LOAD_GL(gfx, opengl, surface, DrawElements)) {
 		return 1;
 	}
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetShaderInfoLog);
@@ -769,6 +781,10 @@ static int gfx_opengl_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_
 		gl_buffer->target = GL_ELEMENT_ARRAY_BUFFER;
 		break;
 	}
+	case GFX_BUFFER_UNIFORM: {
+		gl_buffer->target = GL_UNIFORM_BUFFER;
+		break;
+	}
 	default: {
 		log_error("cgfx", "gfx_opengl", NULL, "unsupported buffer type: %d", config->type);
 		gfx_opengl_buffer_free(buffer);
@@ -833,6 +849,9 @@ static int gfx_opengl_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 	gfx_opengl_pipeline_t *gl_pipeline = frame->pipeline->data;
 
 	opengl->BindBuffer(gl_buffer->target, gl_buffer->buffer);
+	if (buffer->type == GFX_BUFFER_UNIFORM) {
+		return 0;
+	}
 	size_t offset = 0;
 	for (size_t i = 0; i < gl_pipeline->input_layout_size / sizeof(gfx_layout_t); i++) {
 		opengl->EnableVertexAttribArray(gl_pipeline->input_layout[i].index);
@@ -845,6 +864,53 @@ static int gfx_opengl_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 		offset += sizeof(float) * gl_pipeline->input_layout[i].count;
 	}
 
+	return 0;
+}
+
+static int gfx_opengl_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->pipeline == NULL || (bindings == NULL && binding_count != 0)) {
+		return 1;
+	}
+
+	gfx_opengl_t *opengl = frame->gfx->data;
+	if (gfx_opengl_make_current(opengl, "bind uniform buffer") || opengl->BindBufferBase == NULL) {
+		return 1;
+	}
+
+	for (u32 i = 0; i < binding_count; i++) {
+		const gfx_resource_binding_t *binding = &bindings[i];
+		if (binding->type != GFX_RESOURCE_UNIFORM_BUFFER || binding->buffer == NULL || binding->buffer->gfx != frame->gfx ||
+		    binding->buffer->type != GFX_BUFFER_UNIFORM || binding->buffer->data == NULL) {
+			return 1;
+		}
+		gfx_opengl_buffer_t *gl_buffer = binding->buffer->data;
+		if (gl_buffer->target != GL_UNIFORM_BUFFER) {
+			return 1;
+		}
+		opengl->BindBufferBase(GL_UNIFORM_BUFFER, binding->binding, gl_buffer->buffer);
+	}
+	return 0;
+}
+
+static int gfx_opengl_shader_copy_uniform_blocks(gfx_opengl_shader_t *gl_shader, const gfx_shader_code_t *shader_code)
+{
+	if (gl_shader == NULL || shader_code == NULL || shader_code->buffer_count > 16) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	gl_shader->uniform_block_count = shader_code->buffer_count;
+	for (u32 i = 0; i < shader_code->buffer_count; i++) {
+		if (shader_code->buffers[i].name.data == NULL ||
+		    shader_code->buffers[i].name.len >= sizeof(gl_shader->uniform_blocks[i].name)) {
+			log_error("cgfx", "gfx_opengl", NULL, "uniform block name is too long");
+			return 1;
+		}
+		gl_shader->uniform_blocks[i].slot = shader_code->buffers[i].slot;
+		for (size_t c = 0; c < shader_code->buffers[i].name.len; c++) {
+			gl_shader->uniform_blocks[i].name[c] = shader_code->buffers[i].name.data[c];
+		}
+		gl_shader->uniform_blocks[i].name[shader_code->buffers[i].name.len] = 0;
+	}
 	return 0;
 }
 
@@ -901,6 +967,11 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 		gfx_opengl_shader_free(shader);
 		return 1;
 	}
+	if (gfx_opengl_shader_copy_uniform_blocks(gl_shader, &shader_code)) {
+		gfx_shader_code_free(&shader_code);
+		gfx_opengl_shader_free(shader);
+		return 1;
+	}
 
 	unsigned int type;
 	switch (config->stage) {
@@ -930,6 +1001,16 @@ static int gfx_opengl_shader_init(gfx_shader_t *shader, const gfx_shader_config_
 	gfx_shader_code_free(&shader_code);
 
 	return 0;
+}
+
+static void gfx_opengl_pipeline_bind_uniform_blocks(gfx_opengl_t *opengl, unsigned int program, const gfx_opengl_shader_t *shader)
+{
+	for (u32 i = 0; i < shader->uniform_block_count; i++) {
+		unsigned int index = opengl->GetUniformBlockIndex(program, shader->uniform_blocks[i].name);
+		if (index != GL_INVALID_INDEX) {
+			opengl->UniformBlockBinding(program, index, shader->uniform_blocks[i].slot);
+		}
+	}
 }
 
 static void gfx_opengl_pipeline_free(gfx_pipeline_t *pipeline)
@@ -1018,6 +1099,9 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		gfx_opengl_pipeline_free(pipeline);
 		return 1;
 	}
+
+	gfx_opengl_pipeline_bind_uniform_blocks(opengl, gl_pipeline->program, vs);
+	gfx_opengl_pipeline_bind_uniform_blocks(opengl, gl_pipeline->program, fs);
 
 	return 0;
 }
@@ -1117,6 +1201,7 @@ static gfx_driver_t gfx_opengl = {
 	.buffer_free		= gfx_opengl_buffer_free,
 	.buffer_set_data	= gfx_opengl_buffer_set_data,
 	.buffer_bind		= gfx_opengl_buffer_bind,
+	.bind_resources		= gfx_opengl_bind_resources,
 	.shader_init		= gfx_opengl_shader_init,
 	.shader_free		= gfx_opengl_shader_free,
 	.pipeline_init		= gfx_opengl_pipeline_init,

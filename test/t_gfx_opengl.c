@@ -32,6 +32,8 @@ static int t_gl_attach_shader_calls;
 static int t_gl_link_program_calls;
 static int t_gl_get_program_iv_calls;
 static int t_gl_delete_program_calls;
+static int t_gl_get_uniform_block_index_calls;
+static int t_gl_uniform_block_binding_calls;
 static int t_gl_gen_buffers_calls;
 static int t_gl_delete_buffers_calls;
 static int t_gl_bind_buffer_calls;
@@ -61,6 +63,8 @@ static int t_gl_viewport_height;
 static int t_gl_read_pixels_y;
 static unsigned int t_gl_shader_type;
 static unsigned int t_gl_program;
+static unsigned int t_gl_uniform_block_index;
+static unsigned int t_gl_uniform_block_binding;
 static unsigned int t_gl_buffer;
 static unsigned int t_gl_buffer_target;
 static unsigned int t_gl_draw_mode;
@@ -87,6 +91,7 @@ static int t_gl_program_status;
 static int t_gl_shader_fail_call;
 static unsigned int t_gl_create_shader_ret;
 static unsigned int t_gl_create_program_ret;
+static unsigned int t_gl_get_uniform_block_index_ret;
 static unsigned int t_gl_gen_buffer_ret;
 static int t_surface_make_current_ret;
 static gfx_shader_compiler_t t_gfx_opengl_compiler;
@@ -94,11 +99,74 @@ static int t_gfx_opengl_compiler_initialized;
 static gfx_surface_t t_gfx_opengl_surface;
 static gfx_render_pass_t *t_gfx_opengl_active_render_pass;
 
+static const char *t_gfx_opengl_uniform_shader_source = "vs_in 0 VertexIn {\n"
+							"\tvec2f position : POSITION;\n"
+							"\tvec4f color : COLOR0;\n"
+							"}\n"
+							"vs_out VertexOut {\n"
+							"\tvec4f position : POSITION;\n"
+							"\tvec4f color : COLOR0;\n"
+							"}\n"
+							"fs_in FragmentIn {\n"
+							"\tvec4f color : COLOR0;\n"
+							"}\n"
+							"fs_out FragmentOut {\n"
+							"\tvec4f color : COLOR0;\n"
+							"}\n"
+							"buffer 3 Camera {\n"
+							"\tmat4f mvp;\n"
+							"}\n"
+							"VertexOut vertex(VertexIn input) {\n"
+							"\tVertexOut output;\n"
+							"\toutput.position = mvp * vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+							"\toutput.color = input.color;\n"
+							"\treturn output;\n"
+							"}\n"
+							"FragmentOut fragment(FragmentIn input) {\n"
+							"\tFragmentOut output;\n"
+							"\toutput.color = input.color;\n"
+							"\treturn output;\n"
+							"}\n";
+
 typedef struct t_gfx_opengl_data_s {
 	void *gl_lib;
 	const gfx_target_t *target;
 	const gfx_framebuffer_t *framebuffer;
 	gfx_surface_t *surface;
+	PFN_glClearColor ClearColor;
+	PFN_glClear Clear;
+	PFN_glGenFramebuffers GenFramebuffers;
+	PFN_glDeleteFramebuffers DeleteFramebuffers;
+	PFN_glBindFramebuffer BindFramebuffer;
+	PFN_glCheckFramebufferStatus CheckFramebufferStatus;
+	PFN_glFramebufferTexture2D FramebufferTexture2D;
+	PFN_glGenTextures GenTextures;
+	PFN_glDeleteTextures DeleteTextures;
+	PFN_glBindTexture BindTexture;
+	PFN_glTexParameteri TexParameteri;
+	PFN_glTexImage2D TexImage2D;
+	PFN_glViewport Viewport;
+	PFN_glReadPixels ReadPixels;
+	PFN_glGetError GetError;
+	PFN_glGetString GetString;
+	PFN_glCreateShader CreateShader;
+	PFN_glShaderSource ShaderSource;
+	PFN_glCompileShader CompileShader;
+	PFN_glGetShaderiv GetShaderiv;
+	PFN_glGetShaderInfoLog GetShaderInfoLog;
+	PFN_glDeleteShader DeleteShader;
+	PFN_glCreateProgram CreateProgram;
+	PFN_glAttachShader AttachShader;
+	PFN_glLinkProgram LinkProgram;
+	PFN_glGetProgramiv GetProgramiv;
+	PFN_glGetProgramInfoLog GetProgramInfoLog;
+	PFN_glDeleteProgram DeleteProgram;
+	PFN_glGetUniformBlockIndex GetUniformBlockIndex;
+	PFN_glUniformBlockBinding UniformBlockBinding;
+	PFN_glGenBuffers GenBuffers;
+	PFN_glDeleteBuffers DeleteBuffers;
+	PFN_glBindBuffer BindBuffer;
+	PFN_glBindBufferBase BindBufferBase;
 } t_gfx_opengl_data_t;
 
 typedef struct t_gfx_opengl_target_data_s {
@@ -379,6 +447,22 @@ static void t_glDeleteProgram(unsigned int program)
 	t_gl_program = program;
 }
 
+static unsigned int t_glGetUniformBlockIndex(unsigned int program, const char *name)
+{
+	(void)program;
+	(void)name;
+	t_gl_get_uniform_block_index_calls++;
+	return t_gl_get_uniform_block_index_ret;
+}
+
+static void t_glUniformBlockBinding(unsigned int program, unsigned int index, unsigned int binding)
+{
+	t_gl_uniform_block_binding_calls++;
+	t_gl_program		   = program;
+	t_gl_uniform_block_index   = index;
+	t_gl_uniform_block_binding = binding;
+}
+
 static void t_glGenBuffers(int count, unsigned int *buffers)
 {
 	t_gl_gen_buffers_calls++;
@@ -396,6 +480,14 @@ static void t_glDeleteBuffers(int count, const unsigned int *buffers)
 
 static void t_glBindBuffer(unsigned int target, unsigned int buffer)
 {
+	t_gl_bind_buffer_calls++;
+	t_gl_buffer_target = target;
+	t_gl_buffer	   = buffer;
+}
+
+static void t_glBindBufferBase(unsigned int target, unsigned int index, unsigned int buffer)
+{
+	(void)index;
 	t_gl_bind_buffer_calls++;
 	t_gl_buffer_target = target;
 	t_gl_buffer	   = buffer;
@@ -517,6 +609,12 @@ static void *t_gfx_opengl_surface_symbol(strv_t name)
 	if (strv_eq(name, STRV("glDeleteProgram"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteProgram);
 	}
+	if (strv_eq(name, STRV("glGetUniformBlockIndex"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetUniformBlockIndex);
+	}
+	if (strv_eq(name, STRV("glUniformBlockBinding"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glUniformBlockBinding);
+	}
 	if (strv_eq(name, STRV("glGenBuffers"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenBuffers);
 	}
@@ -525,6 +623,9 @@ static void *t_gfx_opengl_surface_symbol(strv_t name)
 	}
 	if (strv_eq(name, STRV("glBindBuffer"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindBuffer);
+	}
+	if (strv_eq(name, STRV("glBindBufferBase"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindBufferBase);
 	}
 	if (strv_eq(name, STRV("glBufferData"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBufferData);
@@ -628,6 +729,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_link_program_calls		       = 0;
 	t_gl_get_program_iv_calls	       = 0;
 	t_gl_delete_program_calls	       = 0;
+	t_gl_get_uniform_block_index_calls     = 0;
+	t_gl_uniform_block_binding_calls       = 0;
 	t_gl_gen_buffers_calls		       = 0;
 	t_gl_delete_buffers_calls	       = 0;
 	t_gl_bind_buffer_calls		       = 0;
@@ -657,6 +760,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_read_pixels_y		       = 0;
 	t_gl_shader_type		       = 0;
 	t_gl_program			       = 0;
+	t_gl_uniform_block_index	       = 0;
+	t_gl_uniform_block_binding	       = 0;
 	t_gl_buffer			       = 0;
 	t_gl_buffer_target		       = 0;
 	t_gl_draw_mode			       = 0;
@@ -683,6 +788,7 @@ static void t_gfx_opengl_reset(void)
 	t_gl_shader_fail_call		       = 0;
 	t_gl_create_shader_ret		       = 30;
 	t_gl_create_program_ret		       = 40;
+	t_gl_get_uniform_block_index_ret       = 5;
 	t_gl_gen_buffer_ret		       = 55;
 	t_surface_make_current_ret	       = 1;
 
@@ -730,9 +836,12 @@ static void t_gfx_opengl_gl_symbols(proc_t *proc, strv_t lib)
 		proc_setdlsym(proc, lib, STRV("glGetProgramInfoLog"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetProgramInfoLog));
 	}
 	proc_setdlsym(proc, lib, STRV("glDeleteProgram"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteProgram));
+	proc_setdlsym(proc, lib, STRV("glGetUniformBlockIndex"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGetUniformBlockIndex));
+	proc_setdlsym(proc, lib, STRV("glUniformBlockBinding"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glUniformBlockBinding));
 	proc_setdlsym(proc, lib, STRV("glGenBuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glGenBuffers));
 	proc_setdlsym(proc, lib, STRV("glDeleteBuffers"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDeleteBuffers));
 	proc_setdlsym(proc, lib, STRV("glBindBuffer"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindBuffer));
+	proc_setdlsym(proc, lib, STRV("glBindBufferBase"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBindBufferBase));
 	proc_setdlsym(proc, lib, STRV("glBufferData"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glBufferData));
 	proc_setdlsym(proc, lib, STRV("glUseProgram"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glUseProgram));
 	proc_setdlsym(
@@ -874,6 +983,19 @@ static int t_gfx_opengl_shader_stage(gfx_t *gfx, gfx_shader_t *shader, gfx_shade
 static int t_gfx_opengl_shader(gfx_t *gfx, gfx_shader_t *shader)
 {
 	return t_gfx_opengl_shader_stage(gfx, shader, GFX_SHADER_STAGE_VERTEX);
+}
+
+static int t_gfx_opengl_uniform_shader(gfx_t *gfx, gfx_shader_t *shader)
+{
+	if (!t_gfx_opengl_compiler_initialized) {
+		return 1;
+	}
+	gfx_shader_config_t config = {
+		.compiler = &t_gfx_opengl_compiler,
+		.source	  = strv_cstr(t_gfx_opengl_uniform_shader_source),
+		.stage	  = GFX_SHADER_STAGE_VERTEX,
+	};
+	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
 static gfx_target_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height, size_t stride)
@@ -1362,6 +1484,34 @@ TEST(gfx_opengl_buffer_init_index_buffer)
 	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_INDEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
 		   &buffer);
 	EXPECT_EQ(t_gl_gen_buffers_calls, 1);
+
+	gfx_buffer_free(&buffer);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_buffer_init_uniform_buffer)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_buffer_t buffer = {0};
+	float data[14]	    = {1.0f};
+
+	EXPECT_PTR(gfx_buffer_init(&buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_UNIFORM,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(data),
+					   .data  = data,
+				   }),
+		   &buffer);
+	EXPECT_EQ(t_gl_buffer_target, GL_UNIFORM_BUFFER);
+	EXPECT_EQ(t_gl_buffer_usage, GL_STATIC_DRAW);
 
 	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
@@ -1860,6 +2010,57 @@ TEST(gfx_opengl_shader_init_transpile_failure)
 	END;
 }
 
+TEST(gfx_opengl_shader_init_rejects_long_uniform_block_name)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	const char *source		  = "vs_in 0 VertexIn {\n"
+					    "\tvec2f position : POSITION;\n"
+					    "\tvec4f color : COLOR0;\n"
+					    "}\n"
+					    "vs_out VertexOut {\n"
+					    "\tvec4f position : POSITION;\n"
+					    "\tvec4f color : COLOR0;\n"
+					    "}\n"
+					    "fs_in FragmentIn {\n"
+					    "\tvec4f color : COLOR0;\n"
+					    "}\n"
+					    "fs_out FragmentOut {\n"
+					    "\tvec4f color : COLOR0;\n"
+					    "}\n"
+					    "buffer 0 UniformBlockNameThatIsLongerThanSixtyThreeCharactersForOpenGLCopy {\n"
+					    "\tmat4f mvp;\n"
+					    "}\n"
+					    "VertexOut vertex(VertexIn input) {\n"
+					    "\tVertexOut output;\n"
+					    "\toutput.position = mvp * vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+					    "\toutput.color = input.color;\n"
+					    "\treturn output;\n"
+					    "}\n"
+					    "FragmentOut fragment(FragmentIn input) {\n"
+					    "\tFragmentOut output;\n"
+					    "\toutput.color = input.color;\n"
+					    "\treturn output;\n"
+					    "}\n";
+	gfx_shader_t shader		  = {0};
+	gfx_shader_config_t shader_config = {
+		.compiler = &t_gfx_opengl_compiler,
+		.source	  = strv_cstr(source),
+		.stage	  = GFX_SHADER_STAGE_VERTEX,
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_shader_init(&shader, &gfx, &shader_config));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_shader_init_unsupported_stage)
 {
 	START;
@@ -2001,6 +2202,44 @@ TEST(gfx_opengl_pipeline_init_success)
 	EXPECT_EQ(t_gl_attach_shader_calls, 2);
 	EXPECT_EQ(t_gl_link_program_calls, 1);
 	EXPECT_EQ(t_gl_get_program_iv_calls, 1);
+
+	gfx_pipeline_free(&pipeline);
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_init_binds_uniform_blocks)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	EXPECT_EQ(t_gfx_opengl_uniform_shader(&gfx, &vs), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	t_gfx_opengl_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config	= t_gfx_opengl_pipeline_config(vs, fs);
+
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	EXPECT_EQ(t_gl_get_uniform_block_index_calls, 1);
+	EXPECT_EQ(t_gl_uniform_block_binding_calls, 1);
+	EXPECT_EQ(t_gl_uniform_block_index, t_gl_get_uniform_block_index_ret);
+	EXPECT_EQ(t_gl_uniform_block_binding, 3);
 
 	gfx_pipeline_free(&pipeline);
 	t_gfx_opengl_active_render_pass = NULL;
@@ -2479,6 +2718,116 @@ TEST(gfx_opengl_buffer_bind_make_current_failure)
 	EXPECT_EQ(t_gl_bind_buffer_calls, 0);
 
 	t_surface_make_current_ret = 1;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_uniform_buffer_bind_skips_attributes)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass		     = {.gfx = &gfx, .data = &render_pass};
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {
+		.program	   = 99,
+		.input_layout	   = t_gfx_opengl_input_layout,
+		.input_layout_size = sizeof(t_gfx_opengl_input_layout),
+		.stride		   = sizeof(gfx_vertex_2d_t),
+	};
+	t_gfx_opengl_buffer_data_t driver_buffer = {.buffer = 77, .target = GL_UNIFORM_BUFFER};
+
+	gfx_pipeline_t pipeline = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.data	     = &driver_pipeline,
+	};
+	gfx_buffer_t buffer = {
+		.gfx  = &gfx,
+		.type = GFX_BUFFER_UNIFORM,
+		.data = &driver_buffer,
+	};
+	gfx_frame_t frame = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.pipeline    = &pipeline,
+		.active	     = 1,
+	};
+
+	EXPECT_EQ(gfx.drv->buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 1);
+	EXPECT_EQ(t_gl_buffer_target, GL_UNIFORM_BUFFER);
+	EXPECT_EQ(t_gl_buffer, 77);
+	EXPECT_EQ(t_gl_enable_vertex_attrib_array_calls, 0);
+	EXPECT_EQ(t_gl_vertex_attrib_pointer_calls, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_bind_resources_calls_bind_buffer_base)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+	t_gfx_opengl_buffer_data_t driver_buffer     = {.buffer = 77, .target = GL_UNIFORM_BUFFER};
+	gfx_pipeline_t pipeline			     = {.gfx = &gfx, .data = &driver_pipeline};
+	gfx_buffer_t buffer			     = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = &driver_buffer};
+	gfx_resource_binding_t bindings[]	     = {{.binding = 3, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer}};
+	gfx_frame_t frame			     = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(t_gl_bind_buffer_calls, 1);
+	EXPECT_EQ(t_gl_buffer_target, GL_UNIFORM_BUFFER);
+	EXPECT_EQ(t_gl_buffer, 77);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_bind_resources_rejects_invalid_args)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+	t_gfx_opengl_buffer_data_t driver_buffer     = {.buffer = 77, .target = GL_UNIFORM_BUFFER};
+	t_gfx_opengl_buffer_data_t vertex_buffer     = {.buffer = 88, .target = GL_ARRAY_BUFFER};
+	t_gfx_opengl_buffer_data_t wrong_target	     = {.buffer = 99, .target = GL_ARRAY_BUFFER};
+	gfx_pipeline_t pipeline			     = {.gfx = &gfx, .data = &driver_pipeline};
+	gfx_buffer_t buffer			     = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = &driver_buffer};
+	gfx_buffer_t wrong			     = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM, .data = &wrong_target};
+	gfx_buffer_t vertex			     = {.gfx = &gfx, .type = GFX_BUFFER_VERTEX, .data = &vertex_buffer};
+	gfx_resource_binding_t bindings[]	     = {{.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer}};
+	gfx_resource_binding_t wrong_binding	     = {.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &wrong};
+	gfx_resource_binding_t vertex_binding	     = {.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &vertex};
+	gfx_frame_t frame			     = {.gfx = &gfx, .pipeline = &pipeline, .active = 1};
+	PFN_glBindBufferBase saved		     = ((t_gfx_opengl_data_t *)gfx.data)->BindBufferBase;
+
+	EXPECT_EQ(gfx.drv->bind_resources(NULL, bindings, 1), 1);
+	EXPECT_EQ(gfx.drv->bind_resources(&(gfx_frame_t){.gfx = &gfx}, bindings, 1), 1);
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, NULL, 1), 1);
+	EXPECT_EQ(gfx.drv->bind_resources(&frame,
+					  &(gfx_resource_binding_t){.binding = 0,
+								    .type    = GFX_RESOURCE_UNIFORM_BUFFER,
+								    .buffer  = &(gfx_buffer_t){.gfx = &gfx}},
+					  1),
+		  1);
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, &wrong_binding, 1), 1);
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, &vertex_binding, 1), 1);
+	((t_gfx_opengl_data_t *)gfx.data)->BindBufferBase = NULL;
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, bindings, 1), 1);
+	((t_gfx_opengl_data_t *)gfx.data)->BindBufferBase = saved;
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3715,6 +4064,7 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_buffer_init_alloc_failure);
 	RUN(gfx_opengl_buffer_init_create_buffer_failure);
 	RUN(gfx_opengl_buffer_init_index_buffer);
+	RUN(gfx_opengl_buffer_init_uniform_buffer);
 	RUN(gfx_opengl_buffer_init_unsupported_type);
 	RUN(gfx_opengl_buffer_init_rejects_invalid_direct);
 	RUN(gfx_opengl_buffer_init_static_uploads_data);
@@ -3736,6 +4086,7 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_shader_init_compile_failure_without_info_log);
 	RUN(gfx_opengl_shader_init_alloc_failure);
 	RUN(gfx_opengl_shader_init_transpile_failure);
+	RUN(gfx_opengl_shader_init_rejects_long_uniform_block_name);
 	RUN(gfx_opengl_shader_init_unsupported_stage);
 	RUN(gfx_opengl_pipeline_init_alloc_failure);
 	RUN(gfx_opengl_pipeline_init_null_config);
@@ -3752,11 +4103,15 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_pipeline_init_rejects_large_layout_stride_direct);
 	RUN(gfx_opengl_pipeline_init_link_failure_without_info_log);
 	RUN(gfx_opengl_pipeline_init_unsupported_input_layout);
+	RUN(gfx_opengl_pipeline_init_binds_uniform_blocks);
 	RUN(gfx_opengl_end_null_frame);
 	RUN(gfx_opengl_pipeline_bind_uses_program);
 	RUN(gfx_opengl_pipeline_bind_make_current_failure);
 	RUN(gfx_opengl_buffer_bind_sets_attributes);
 	RUN(gfx_opengl_buffer_bind_make_current_failure);
+	RUN(gfx_opengl_uniform_buffer_bind_skips_attributes);
+	RUN(gfx_opengl_bind_resources_calls_bind_buffer_base);
+	RUN(gfx_opengl_bind_resources_rejects_invalid_args);
 	RUN(gfx_opengl_draw_calls_gl);
 	RUN(gfx_opengl_draw_indexed_calls_gl);
 	RUN(gfx_opengl_draw_indexed_null_data);

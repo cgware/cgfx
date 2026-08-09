@@ -640,6 +640,10 @@ static int gfx_d3d11_buffer_flags(gfx_buffer_type_t type, UINT *flags)
 		*flags |= D3D11_BIND_INDEX_BUFFER;
 		break;
 	}
+	case GFX_BUFFER_UNIFORM: {
+		*flags |= D3D11_BIND_CONSTANT_BUFFER;
+		break;
+	}
 	default: {
 		return 1;
 	}
@@ -669,8 +673,12 @@ static int gfx_d3d11_buffer_create(gfx_buffer_t *buffer, gfx_d3d11_buffer_t *d3d
 		return 1;
 	}
 
+	size_t byte_width = d3d_buffer->type == GFX_BUFFER_UNIFORM ? (size + 15u) & ~(size_t)15u : size;
+	if (byte_width > (size_t)U32_MAX) {
+		return 1; // LCOV_EXCL_LINE
+	}
 	D3D11_BUFFER_DESC desc = {
-		.ByteWidth = (UINT)size,
+		.ByteWidth = (UINT)byte_width,
 		.Usage	   = buffer->usage == GFX_BUFFER_USAGE_STATIC ? D3D11_USAGE_IMMUTABLE : D3D11_USAGE_DEFAULT,
 		.BindFlags = flags,
 	};
@@ -760,7 +768,7 @@ static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 	gfx_d3d11_t *d3d11		   = buffer->gfx->data;
 	gfx_d3d11_buffer_t *d3d_buffer	   = buffer->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = frame->pipeline->data;
-	if (d3d_buffer->buffer == NULL || d3d_pipeline->stride == 0) {
+	if (d3d_buffer->buffer == NULL) {
 		return 1;
 	}
 
@@ -771,6 +779,9 @@ static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 
 	switch (buffer->type) {
 	case GFX_BUFFER_VERTEX: {
+		if (d3d_pipeline->stride == 0) {
+			return 1;
+		}
 		if (context->IASetVertexBuffers == NULL) {
 			return 1;
 		}
@@ -784,12 +795,44 @@ static int gfx_d3d11_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer)
 		context->IASetIndexBuffer(d3d11->context, d3d_buffer->buffer, DXGI_FORMAT_R32_UINT, 0);
 		break;
 	}
+	case GFX_BUFFER_UNIFORM: {
+		break;
+	}
 	default: {
 		log_error("cgfx", "gfx_d3d11", NULL, "unsupported buffer type: %d", buffer->type);
 		return 1;
 	}
 	}
 
+	return 0;
+}
+
+static int gfx_d3d11_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->pipeline == NULL || frame->gfx->data == NULL ||
+	    (bindings == NULL && binding_count != 0)) {
+		return 1;
+	}
+
+	gfx_d3d11_t *d3d11		   = frame->gfx->data;
+	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
+	if (context->VSSetConstantBuffers == NULL || context->PSSetConstantBuffers == NULL) {
+		return 1;
+	}
+	for (u32 i = 0; i < binding_count; i++) {
+		const gfx_resource_binding_t *binding = &bindings[i];
+		if (binding->type != GFX_RESOURCE_UNIFORM_BUFFER || binding->buffer == NULL || binding->buffer->gfx != frame->gfx ||
+		    binding->buffer->type != GFX_BUFFER_UNIFORM || binding->buffer->data == NULL) {
+			return 1;
+		}
+		gfx_d3d11_buffer_t *d3d_buffer = binding->buffer->data;
+		if (d3d_buffer->buffer == NULL || d3d_buffer->type != GFX_BUFFER_UNIFORM) {
+			return 1;
+		}
+		ID3D11Buffer *buffers[1] = {d3d_buffer->buffer};
+		context->VSSetConstantBuffers(d3d11->context, binding->binding, 1, buffers);
+		context->PSSetConstantBuffers(d3d11->context, binding->binding, 1, buffers);
+	}
 	return 0;
 }
 
@@ -976,6 +1019,8 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 
 		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
 			elements[i].Format = DXGI_FORMAT_R32G32_FLOAT;
+		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 3) {
+			elements[i].Format = DXGI_FORMAT_R32G32B32_FLOAT;
 		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 4) {
 			elements[i].Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
 		} else {
@@ -1097,6 +1142,7 @@ static gfx_driver_t gfx_d3d11 = {
 	.buffer_free		= gfx_d3d11_buffer_free,
 	.buffer_set_data	= gfx_d3d11_buffer_set_data,
 	.buffer_bind		= gfx_d3d11_buffer_bind,
+	.bind_resources		= gfx_d3d11_bind_resources,
 	.shader_init		= gfx_d3d11_shader_init,
 	.shader_free		= gfx_d3d11_shader_free,
 	.pipeline_init		= gfx_d3d11_pipeline_init,

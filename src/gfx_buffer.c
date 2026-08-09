@@ -2,7 +2,8 @@
 
 static int gfx_buffer_config_valid(const gfx_buffer_config_t *config)
 {
-	if (config == NULL || (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX) ||
+	if (config == NULL ||
+	    (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX && config->type != GFX_BUFFER_UNIFORM) ||
 	    (config->usage != GFX_BUFFER_USAGE_DYNAMIC && config->usage != GFX_BUFFER_USAGE_STATIC) ||
 	    (config->data != NULL && config->size == 0)) {
 		return 0;
@@ -71,8 +72,61 @@ int gfx_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buf)
 	case GFX_BUFFER_INDEX:
 		frame->index_buffer = buf;
 		break;
+	case GFX_BUFFER_UNIFORM:
+		break;
 	default:
 		return 1;
 	}
+	return 0;
+}
+
+static int gfx_resource_binding_valid(gfx_t *gfx, const gfx_resource_binding_t *binding)
+{
+	if (gfx == NULL || binding == NULL) {
+		return 0; // LCOV_EXCL_LINE
+	}
+	switch (binding->type) {
+	case GFX_RESOURCE_UNIFORM_BUFFER:
+		return binding->buffer != NULL && binding->buffer->gfx == gfx && binding->buffer->type == GFX_BUFFER_UNIFORM;
+	default:
+		return 0;
+	}
+}
+
+static int gfx_resource_bindings_valid(gfx_t *gfx, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (binding_count == 0) {
+		return 1;
+	}
+	if (bindings == NULL) {
+		return 0;
+	}
+	for (u32 i = 0; i < binding_count; i++) {
+		if (!gfx_resource_binding_valid(gfx, &bindings[i])) {
+			return 0;
+		}
+		for (u32 j = i + 1; j < binding_count; j++) {
+			if (bindings[i].type == bindings[j].type && bindings[i].binding == bindings[j].binding) {
+				return 0;
+			}
+		}
+	}
+	return 1;
+}
+
+int gfx_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->frame != frame || !frame->active || frame->pipeline == NULL ||
+	    frame->gfx->drv == NULL || frame->gfx->drv->bind_resources == NULL ||
+	    !gfx_resource_bindings_valid(frame->gfx, bindings, binding_count)) {
+		return 1;
+	}
+
+	if (frame->gfx->drv->bind_resources(frame, bindings, binding_count)) {
+		return 1;
+	}
+
+	frame->resource_bindings      = bindings;
+	frame->resource_binding_count = binding_count;
 	return 0;
 }

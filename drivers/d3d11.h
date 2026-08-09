@@ -229,6 +229,20 @@ typedef void (*PFN_IASetVertexBuffers)(ID3D11DeviceContext *This, UINT StartSlot
  */
 typedef void (*PFN_IASetIndexBuffer)(ID3D11DeviceContext *This, ID3D11Buffer *pIndexBuffer, UINT Format, UINT Offset);
 
+/**
+ * @brief Sets the constant buffers used by the vertex shader pipeline stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetconstantbuffers
+ */
+typedef void (*PFN_VSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
+					 ID3D11Buffer *const *ppConstantBuffers);
+
+/**
+ * @brief Sets the constant buffers used by the pixel shader pipeline stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-pssetconstantbuffers
+ */
+typedef void (*PFN_PSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
+					 ID3D11Buffer *const *ppConstantBuffers);
+
 typedef enum D3D11_PRIMITIVE_TOPOLOGY_e {
 	D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
 } D3D11_PRIMITIVE_TOPOLOGY_t;
@@ -289,7 +303,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	void (*GetPrivateData)(void);
 	void (*SetPrivateData)(void);
 	void (*SetPrivateDataInterface)(void);
-	void (*unused_07)(void);
+	PFN_VSSetConstantBuffers VSSetConstantBuffers;
 	void (*unused_08)(void);
 	PFN_PSSetShader PSSetShader;
 	void (*unused_10)(void);
@@ -298,7 +312,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	PFN_Draw Draw;
 	PFN_Map Map;
 	PFN_Unmap Unmap;
-	void (*unused_16)(void);
+	PFN_PSSetConstantBuffers PSSetConstantBuffers;
 	PFN_IASetInputLayout IASetInputLayout;
 	PFN_IASetVertexBuffers IASetVertexBuffers;
 	PFN_IASetIndexBuffer IASetIndexBuffer;
@@ -404,9 +418,10 @@ typedef enum D3D11_USAGE_e {
 typedef UINT D3D11_USAGE;
 
 typedef enum D3D11_BIND_FLAG_e {
-	D3D11_BIND_VERTEX_BUFFER = 0x00000001,
-	D3D11_BIND_INDEX_BUFFER	 = 0x00000002,
-	D3D11_BIND_RENDER_TARGET = 0x00000020,
+	D3D11_BIND_VERTEX_BUFFER   = 0x00000001,
+	D3D11_BIND_INDEX_BUFFER	   = 0x00000002,
+	D3D11_BIND_CONSTANT_BUFFER = 0x00000004,
+	D3D11_BIND_RENDER_TARGET   = 0x00000020,
 } D3D11_BIND_FLAG_t;
 typedef UINT D3D11_BIND_FLAG;
 
@@ -468,6 +483,7 @@ typedef HRESULT (*PFN_CreateDepthStencilView)(void);
 typedef enum DXGI_FORMAT_e {
 	DXGI_FORMAT_UNKNOWN	       = 0,
 	DXGI_FORMAT_R32G32B32A32_FLOAT = 2,
+	DXGI_FORMAT_R32G32B32_FLOAT    = 6,
 	DXGI_FORMAT_R32G32_FLOAT       = 16,
 	DXGI_FORMAT_R8G8B8A8_UNORM     = 28,
 	DXGI_FORMAT_R32_UINT	       = 42,

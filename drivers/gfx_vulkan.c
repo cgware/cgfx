@@ -6,7 +6,17 @@
 
 enum {
 	GFX_VULKAN_MAX_SWAPCHAIN_IMAGES = 8,
+	GFX_VULKAN_MAX_UNIFORM_BINDINGS = 16,
+	GFX_VULKAN_MAX_DESCRIPTOR_SETS	= 64,
 };
+
+typedef struct gfx_vulkan_buffer_resource_s {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+	VkDeviceSize size;
+	VkDeviceSize memory_size;
+	int memory_coherent;
+} gfx_vulkan_buffer_resource_t;
 
 typedef struct gfx_vulkan_frame_s {
 	VkImage image;
@@ -87,6 +97,12 @@ typedef struct gfx_vulkan_s {
 	PFN_vkDestroyFramebuffer DestroyFramebuffer;
 	PFN_vkCreatePipelineLayout CreatePipelineLayout;
 	PFN_vkDestroyPipelineLayout DestroyPipelineLayout;
+	PFN_vkCreateDescriptorSetLayout CreateDescriptorSetLayout;
+	PFN_vkDestroyDescriptorSetLayout DestroyDescriptorSetLayout;
+	PFN_vkCreateDescriptorPool CreateDescriptorPool;
+	PFN_vkDestroyDescriptorPool DestroyDescriptorPool;
+	PFN_vkAllocateDescriptorSets AllocateDescriptorSets;
+	PFN_vkUpdateDescriptorSets UpdateDescriptorSets;
 	PFN_vkCreateGraphicsPipelines CreateGraphicsPipelines;
 	PFN_vkDestroyPipeline DestroyPipeline;
 	PFN_vkCmdBeginRenderPass CmdBeginRenderPass;
@@ -94,6 +110,7 @@ typedef struct gfx_vulkan_s {
 	PFN_vkCmdBindPipeline CmdBindPipeline;
 	PFN_vkCmdBindVertexBuffers CmdBindVertexBuffers;
 	PFN_vkCmdBindIndexBuffer CmdBindIndexBuffer;
+	PFN_vkCmdBindDescriptorSets CmdBindDescriptorSets;
 	PFN_vkCmdSetViewport CmdSetViewport;
 	PFN_vkCmdSetScissor CmdSetScissor;
 	PFN_vkCmdDraw CmdDraw;
@@ -148,6 +165,10 @@ typedef struct gfx_vulkan_shader_s {
 } gfx_vulkan_shader_t;
 
 typedef struct gfx_vulkan_pipeline_s {
+	VkDescriptorSetLayout descriptor_set_layout;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet descriptor_sets[GFX_VULKAN_MAX_DESCRIPTOR_SETS];
+	u32 descriptor_set_index;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
 } gfx_vulkan_pipeline_t;
@@ -461,11 +482,14 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 	    LOAD_VK_DEV(vulkan, DestroyImageView) || LOAD_VK_DEV(vulkan, CreateShaderModule) || LOAD_VK_DEV(vulkan, DestroyShaderModule) ||
 	    LOAD_VK_DEV(vulkan, CreateRenderPass) || LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) ||
 	    LOAD_VK_DEV(vulkan, DestroyFramebuffer) || LOAD_VK_DEV(vulkan, CreatePipelineLayout) ||
-	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
+	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateDescriptorSetLayout) ||
+	    LOAD_VK_DEV(vulkan, DestroyDescriptorSetLayout) || LOAD_VK_DEV(vulkan, CreateDescriptorPool) ||
+	    LOAD_VK_DEV(vulkan, DestroyDescriptorPool) || LOAD_VK_DEV(vulkan, AllocateDescriptorSets) ||
+	    LOAD_VK_DEV(vulkan, UpdateDescriptorSets) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
 	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) || LOAD_VK_DEV(vulkan, CmdEndRenderPass) ||
 	    LOAD_VK_DEV(vulkan, CmdBindPipeline) || LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdBindIndexBuffer) ||
-	    LOAD_VK_DEV(vulkan, CmdSetViewport) || LOAD_VK_DEV(vulkan, CmdSetScissor) || LOAD_VK_DEV(vulkan, CmdDraw) ||
-	    LOAD_VK_DEV(vulkan, CmdDrawIndexed) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
+	    LOAD_VK_DEV(vulkan, CmdBindDescriptorSets) || LOAD_VK_DEV(vulkan, CmdSetViewport) || LOAD_VK_DEV(vulkan, CmdSetScissor) ||
+	    LOAD_VK_DEV(vulkan, CmdDraw) || LOAD_VK_DEV(vulkan, CmdDrawIndexed) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
 		return 1;
 	}
 	if (vulkan->swapchain_enabled && (LOAD_VK_DEV(vulkan, CreateSwapchainKHR) || LOAD_VK_DEV(vulkan, DestroySwapchainKHR) ||
@@ -1634,6 +1658,25 @@ static int gfx_vulkan_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx
 	return 0;
 }
 
+static void gfx_vulkan_buffer_resource_free(gfx_vulkan_t *vulkan, gfx_vulkan_buffer_resource_t *resource)
+{
+	if (vulkan == NULL || resource == NULL) {
+		return; // LCOV_EXCL_LINE
+	}
+
+	if (resource->buffer != 0) {
+		vulkan->DestroyBuffer(vulkan->device, resource->buffer, NULL);
+		resource->buffer = 0;
+	}
+	if (resource->memory != 0) {
+		vulkan->FreeMemory(vulkan->device, resource->memory, NULL);
+		resource->memory = 0;
+	}
+	resource->size		  = 0;
+	resource->memory_size	  = 0;
+	resource->memory_coherent = 0;
+}
+
 static void gfx_vulkan_buffer_resources_free(gfx_vulkan_t *vulkan, gfx_vulkan_buffer_t *vk_buffer)
 {
 	if (vulkan == NULL || vk_buffer == NULL) {
@@ -1682,6 +1725,10 @@ static int gfx_vulkan_buffer_usage(gfx_buffer_type_t type, VkFlags *usage)
 		*usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
 		break;
 	}
+	case GFX_BUFFER_UNIFORM: {
+		*usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		break;
+	}
 	default: {
 		return 1;
 	}
@@ -1689,9 +1736,10 @@ static int gfx_vulkan_buffer_usage(gfx_buffer_type_t type, VkFlags *usage)
 	return 0;
 }
 
-static int gfx_vulkan_buffer_allocate(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer, VkDeviceSize size)
+static int gfx_vulkan_buffer_create_resource(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer, VkDeviceSize size,
+					     gfx_vulkan_buffer_resource_t *resource)
 {
-	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || vk_buffer == NULL || size == 0) {
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || vk_buffer == NULL || resource == NULL || size == 0) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
@@ -1703,25 +1751,23 @@ static int gfx_vulkan_buffer_allocate(gfx_buffer_t *buffer, gfx_vulkan_buffer_t 
 		return 1;
 	}
 
-	gfx_vulkan_buffer_t next = {
-		.type = vk_buffer->type,
-	};
+	*resource		  = (gfx_vulkan_buffer_resource_t){0};
 	VkBufferCreateInfo create = {
 		.sType	     = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
 		.size	     = size,
 		.usage	     = usage,
 		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
-	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &create, NULL, &next.buffer))) {
+	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &create, NULL, &resource->buffer))) {
 		return 1;
 	}
 
 	VkMemoryRequirements req = {0};
-	vulkan->GetBufferMemoryRequirements(vulkan->device, next.buffer, &req);
+	vulkan->GetBufferMemoryRequirements(vulkan->device, resource->buffer, &req);
 
 	u32 memory_type = 0;
-	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &next.memory_coherent)) {
-		gfx_vulkan_buffer_resources_free(vulkan, &next);
+	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &resource->memory_coherent)) {
+		gfx_vulkan_buffer_resource_free(vulkan, resource);
 		return 1;
 	}
 
@@ -1730,25 +1776,46 @@ static int gfx_vulkan_buffer_allocate(gfx_buffer_t *buffer, gfx_vulkan_buffer_t 
 		.allocationSize	 = req.size,
 		.memoryTypeIndex = memory_type,
 	};
-	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &next.memory))) {
-		gfx_vulkan_buffer_resources_free(vulkan, &next);
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &resource->memory))) {
+		gfx_vulkan_buffer_resource_free(vulkan, resource);
 		return 1;
 	}
-	next.size	 = size;
-	next.memory_size = req.size;
+	resource->size	      = size;
+	resource->memory_size = req.size;
 
-	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, next.buffer, next.memory, 0))) {
-		gfx_vulkan_buffer_resources_free(vulkan, &next);
+	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, resource->buffer, resource->memory, 0))) {
+		gfx_vulkan_buffer_resource_free(vulkan, resource);
+		return 1;
+	}
+
+	return 0;
+}
+
+static void gfx_vulkan_buffer_use_resource(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer,
+					   const gfx_vulkan_buffer_resource_t *resource)
+{
+	vk_buffer->buffer	   = resource->buffer;
+	vk_buffer->memory	   = resource->memory;
+	vk_buffer->size		   = resource->size;
+	vk_buffer->memory_size	   = resource->memory_size;
+	vk_buffer->memory_coherent = resource->memory_coherent;
+	buffer->size		   = (size_t)resource->size;
+}
+
+static int gfx_vulkan_buffer_allocate(gfx_buffer_t *buffer, gfx_vulkan_buffer_t *vk_buffer, VkDeviceSize size)
+{
+	if (buffer == NULL || buffer->gfx == NULL || buffer->gfx->data == NULL || vk_buffer == NULL || size == 0) {
+		return 1; // LCOV_EXCL_LINE
+	}
+
+	gfx_vulkan_t *vulkan		  = buffer->gfx->data;
+	gfx_vulkan_buffer_resource_t next = {0};
+	if (gfx_vulkan_buffer_create_resource(buffer, vk_buffer, size, &next)) {
 		return 1;
 	}
 
 	gfx_vulkan_buffer_resources_free(vulkan, vk_buffer);
-	vk_buffer->buffer	   = next.buffer;
-	vk_buffer->memory	   = next.memory;
-	vk_buffer->size		   = next.size;
-	vk_buffer->memory_size	   = next.memory_size;
-	vk_buffer->memory_coherent = next.memory_coherent;
-	buffer->size		   = size;
+	gfx_vulkan_buffer_use_resource(buffer, vk_buffer, &next);
 
 	return 0;
 }
@@ -1857,12 +1924,71 @@ static int gfx_vulkan_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buffer
 		vulkan->CmdBindIndexBuffer(vulkan->command_buffer, vk_buffer->buffer, 0, VK_INDEX_TYPE_UINT32);
 		break;
 	}
+	case GFX_BUFFER_UNIFORM: {
+		break;
+	}
 	default: {
 		log_error("cgfx", "gfx_vulkan", NULL, "unsupported buffer type: %d", buffer->type);
 		return 1;
 	}
 	}
 
+	return 0;
+}
+
+static int gfx_vulkan_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || frame->pipeline == NULL || frame->pipeline->data == NULL ||
+	    (bindings == NULL && binding_count != 0)) {
+		return 1;
+	}
+
+	gfx_vulkan_pipeline_t *vk_pipeline = frame->pipeline->data;
+	if (vk_pipeline == NULL || vk_pipeline->descriptor_sets[0] == 0 || vk_pipeline->pipeline_layout == 0) {
+		return 1;
+	}
+	if (vk_pipeline->descriptor_set_index >= GFX_VULKAN_MAX_DESCRIPTOR_SETS) {
+		log_error("cgfx", "gfx_vulkan", NULL, "too many uniform binds in one pipeline bind");
+		return 1;
+	}
+
+	gfx_vulkan_t *vulkan	       = frame->gfx->data;
+	VkDescriptorSet descriptor_set = vk_pipeline->descriptor_sets[vk_pipeline->descriptor_set_index];
+
+	VkDescriptorBufferInfo buffer_infos[GFX_VULKAN_MAX_UNIFORM_BINDINGS] = {0};
+	VkWriteDescriptorSet writes[GFX_VULKAN_MAX_UNIFORM_BINDINGS]	     = {0};
+	u32 write_count							     = 0;
+	for (u32 i = 0; i < binding_count; i++) {
+		const gfx_resource_binding_t *binding = &bindings[i];
+		if (binding->type != GFX_RESOURCE_UNIFORM_BUFFER || binding->buffer == NULL ||
+		    binding->binding >= GFX_VULKAN_MAX_UNIFORM_BINDINGS || write_count >= GFX_VULKAN_MAX_UNIFORM_BINDINGS ||
+		    binding->buffer->gfx != frame->gfx || binding->buffer->type != GFX_BUFFER_UNIFORM || binding->buffer->data == NULL) {
+			return 1;
+		}
+		gfx_vulkan_buffer_t *vk_buffer = binding->buffer->data;
+		if (vk_buffer->buffer == 0 || vk_buffer->size == 0) {
+			return 1;
+		}
+
+		buffer_infos[write_count] = (VkDescriptorBufferInfo){
+			.buffer = vk_buffer->buffer,
+			.offset = 0,
+			.range	= vk_buffer->size,
+		};
+		writes[write_count] = (VkWriteDescriptorSet){
+			.sType		 = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+			.dstSet		 = descriptor_set,
+			.dstBinding	 = binding->binding,
+			.descriptorCount = 1,
+			.descriptorType	 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.pBufferInfo	 = &buffer_infos[write_count],
+		};
+		write_count++;
+	}
+	vulkan->UpdateDescriptorSets(vulkan->device, write_count, writes, 0, NULL);
+	vulkan->CmdBindDescriptorSets(
+		vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline->pipeline_layout, 0, 1, &descriptor_set, 0, NULL);
+	vk_pipeline->descriptor_set_index++;
 	return 0;
 }
 
@@ -1937,6 +2063,14 @@ static void gfx_vulkan_pipeline_free(gfx_pipeline_t *pipeline)
 		vulkan->DestroyPipelineLayout(vulkan->device, vk_pipeline->pipeline_layout, NULL);
 		vk_pipeline->pipeline_layout = 0;
 	}
+	if (vk_pipeline->descriptor_pool != 0) {
+		vulkan->DestroyDescriptorPool(vulkan->device, vk_pipeline->descriptor_pool, NULL);
+		vk_pipeline->descriptor_pool = 0;
+	}
+	if (vk_pipeline->descriptor_set_layout != 0) {
+		vulkan->DestroyDescriptorSetLayout(vulkan->device, vk_pipeline->descriptor_set_layout, NULL);
+		vk_pipeline->descriptor_set_layout = 0;
+	}
 	alloc_free(&pipeline->gfx->alloc, vk_pipeline, sizeof(gfx_vulkan_pipeline_t));
 	pipeline->data = NULL;
 }
@@ -1960,8 +2094,59 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	*vk_pipeline   = (gfx_vulkan_pipeline_t){0};
 	pipeline->data = vk_pipeline;
 
+	VkDescriptorSetLayoutBinding bindings[GFX_VULKAN_MAX_UNIFORM_BINDINGS] = {0};
+	for (u32 i = 0; i < GFX_VULKAN_MAX_UNIFORM_BINDINGS; i++) {
+		bindings[i] = (VkDescriptorSetLayoutBinding){
+			.binding	 = i,
+			.descriptorType	 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			.descriptorCount = 1,
+			.stageFlags	 = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+		};
+	}
+	VkDescriptorSetLayoutCreateInfo set_layout = {
+		.sType	      = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+		.bindingCount = GFX_VULKAN_MAX_UNIFORM_BINDINGS,
+		.pBindings    = bindings,
+	};
+	if (!vk_ok(vulkan->CreateDescriptorSetLayout(vulkan->device, &set_layout, NULL, &vk_pipeline->descriptor_set_layout))) {
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
+	}
+
+	VkDescriptorPoolSize pool_size = {
+		.type		 = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+		.descriptorCount = GFX_VULKAN_MAX_DESCRIPTOR_SETS * GFX_VULKAN_MAX_UNIFORM_BINDINGS,
+	};
+	VkDescriptorPoolCreateInfo pool = {
+		.sType	       = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+		.maxSets       = GFX_VULKAN_MAX_DESCRIPTOR_SETS,
+		.poolSizeCount = 1,
+		.pPoolSizes    = &pool_size,
+	};
+	if (!vk_ok(vulkan->CreateDescriptorPool(vulkan->device, &pool, NULL, &vk_pipeline->descriptor_pool))) {
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
+	}
+
+	VkDescriptorSetLayout set_layouts[GFX_VULKAN_MAX_DESCRIPTOR_SETS] = {0};
+	for (u32 i = 0; i < GFX_VULKAN_MAX_DESCRIPTOR_SETS; i++) {
+		set_layouts[i] = vk_pipeline->descriptor_set_layout;
+	}
+	VkDescriptorSetAllocateInfo set_alloc = {
+		.sType		    = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+		.descriptorPool	    = vk_pipeline->descriptor_pool,
+		.descriptorSetCount = GFX_VULKAN_MAX_DESCRIPTOR_SETS,
+		.pSetLayouts	    = set_layouts,
+	};
+	if (!vk_ok(vulkan->AllocateDescriptorSets(vulkan->device, &set_alloc, vk_pipeline->descriptor_sets))) {
+		gfx_vulkan_pipeline_free(pipeline);
+		return 1;
+	}
+
 	VkPipelineLayoutCreateInfo layout = {
-		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.sType		= VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 1,
+		.pSetLayouts	= &vk_pipeline->descriptor_set_layout,
 	};
 	if (!vk_ok(vulkan->CreatePipelineLayout(vulkan->device, &layout, NULL, &vk_pipeline->pipeline_layout))) {
 		gfx_vulkan_pipeline_free(pipeline);
@@ -2016,6 +2201,8 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 
 		if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 2) {
 			attributes[i].format = VK_FORMAT_R32G32_SFLOAT;
+		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 3) {
+			attributes[i].format = VK_FORMAT_R32G32B32_SFLOAT;
 		} else if (config->input_layout[i].type == GFX_VALUE_FLOAT32 && config->input_layout[i].count == 4) {
 			attributes[i].format = VK_FORMAT_R32G32B32A32_SFLOAT;
 		} else {
@@ -2123,6 +2310,7 @@ static int gfx_vulkan_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pi
 	gfx_vulkan_t *vulkan		   = pipeline->gfx->data;
 	gfx_vulkan_pipeline_t *vk_pipeline = pipeline->data;
 
+	vk_pipeline->descriptor_set_index = 0;
 	vulkan->CmdBindPipeline(vulkan->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vk_pipeline->pipeline);
 
 	return 0;
@@ -2315,6 +2503,7 @@ static gfx_driver_t gfx_vulkan = {
 	.buffer_free		= gfx_vulkan_buffer_free,
 	.buffer_set_data	= gfx_vulkan_buffer_set_data,
 	.buffer_bind		= gfx_vulkan_buffer_bind,
+	.bind_resources		= gfx_vulkan_bind_resources,
 	.shader_init		= gfx_vulkan_shader_init,
 	.shader_free		= gfx_vulkan_shader_free,
 	.pipeline_init		= gfx_vulkan_pipeline_init,

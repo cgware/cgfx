@@ -1,5 +1,6 @@
 #include "gfx_driver.h"
 
+#include "cmath.h"
 #include "log.h"
 #include "test.h"
 
@@ -22,6 +23,93 @@ typedef struct t_gfx_software_surface_target_data_s {
 typedef struct t_gfx_software_buffer_data_s {
 	buf_t buf;
 } t_gfx_software_buffer_data_t;
+
+typedef struct t_gfx_software_vertex_3d_s {
+	float x;
+	float y;
+	float z;
+	float r;
+	float g;
+	float b;
+	float a;
+} t_gfx_software_vertex_3d_t;
+
+typedef struct t_gfx_software_transform_s {
+	mat4f_t model;
+	mat4f_t view;
+	mat4f_t projection;
+	vec4f_t tint;
+} t_gfx_software_transform_t;
+
+static const char *t_gfx_software_shader_source =
+	"vs_in 0 VertexIn {\n"
+	"\tvec3f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"vs_out VertexOut {\n"
+	"\tvec4f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"fs_in FragmentIn {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"fs_out FragmentOut {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"buffer 0 Transform {\n"
+	"\tmat4f model;\n"
+	"\tmat4f view;\n"
+	"\tmat4f projection;\n"
+	"\tvec4f tint;\n"
+	"}\n"
+	"VertexOut vertex(VertexIn input) {\n"
+	"\tVertexOut output;\n"
+	"\toutput.position = projection * view * model * vec4f(input.position.x, input.position.y, input.position.z, 1.0f);\n"
+	"\toutput.color = tint;\n"
+	"\treturn output;\n"
+	"}\n"
+	"FragmentOut fragment(FragmentIn input) {\n"
+	"\tFragmentOut output;\n"
+	"\toutput.color = input.color;\n"
+	"\treturn output;\n"
+	"}\n";
+
+static const char *t_gfx_software_color_shader_source =
+	"vs_in 0 VertexIn {\n"
+	"\tvec2f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"vs_out VertexOut {\n"
+	"\tvec4f position : POSITION;\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"fs_in FragmentIn {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"fs_out FragmentOut {\n"
+	"\tvec4f color : COLOR0;\n"
+	"}\n"
+	"VertexOut vertex(VertexIn input) {\n"
+	"\tVertexOut output;\n"
+	"\toutput.position = vec4f(input.position.x, input.position.y, input.color.z, input.color.w);\n"
+	"\toutput.color = input.color;\n"
+	"\treturn output;\n"
+	"}\n"
+	"FragmentOut fragment(FragmentIn input) {\n"
+	"\tFragmentOut output;\n"
+	"\toutput.color = input.color;\n"
+	"\treturn output;\n"
+	"}\n";
+
+static const gfx_layout_t t_gfx_software_layout_3d[] = {
+	{.index = 0, .semantic = "POSITION", .count = 3, .type = GFX_VALUE_FLOAT32},
+	{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+};
+
+static const gfx_layout_t t_gfx_software_layout_2d[] = {
+	{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+	{.index = 1, .semantic = "COLOR0", .count = 4, .type = GFX_VALUE_FLOAT32},
+};
 
 static int t_gfx_software_surface_present(gfx_surface_t *surface, gfx_present_mode_t present_mode)
 {
@@ -145,6 +233,112 @@ static void t_gfx_software_scene_free(gfx_t *gfx, gfx_target_t *target, gfx_rend
 	gfx_render_pass_free(render_pass);
 	gfx_target_free(target);
 	gfx_free(gfx);
+}
+
+static int t_gfx_software_draw_source(const char *source, int indexed, int use_uniform)
+{
+	u8 pixels[256]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	int ret			      = 1;
+	if (t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32)) {
+		return 1;
+	}
+
+	gfx_shader_compiler_t compiler	   = {0};
+	gfx_shader_t shader		   = {0};
+	gfx_pipeline_t pipeline		   = {0};
+	gfx_buffer_t vertex_buffer	   = {0};
+	gfx_buffer_t index_buffer	   = {0};
+	gfx_buffer_t uniform_buffer	   = {0};
+	gfx_resource_binding_t bindings[1] = {0};
+
+	if (gfx_shader_compiler_init(&compiler, ALLOC_STD) == NULL ||
+	    gfx_shader_init(&shader,
+			    &gfx,
+			    &(gfx_shader_config_t){
+				    .compiler = &compiler,
+				    .source   = strv_cstr(source),
+				    .stage    = GFX_SHADER_STAGE_VERTEX,
+			    }) == NULL ||
+	    gfx_pipeline_init(&pipeline,
+			      &gfx,
+			      &(gfx_pipeline_config_t){
+				      .render_pass	 = &render_pass,
+				      .vs		 = shader,
+				      .fs		 = shader,
+				      .input_layout	 = t_gfx_software_layout_2d,
+				      .input_layout_size = sizeof(t_gfx_software_layout_2d),
+			      }) == NULL) {
+		goto cleanup;
+	}
+
+	gfx_vertex_2d_t vertices[] = {
+		{.x = -0.8f, .y = -0.8f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.8f, .y = -0.8f, .g = 1.0f, .a = 1.0f},
+		{.x = -0.8f, .y = 0.8f, .b = 1.0f, .a = 1.0f},
+	};
+	if (gfx_buffer_init(&vertex_buffer,
+			    &gfx,
+			    &(gfx_buffer_config_t){
+				    .type  = GFX_BUFFER_VERTEX,
+				    .usage = GFX_BUFFER_USAGE_STATIC,
+				    .size  = sizeof(vertices),
+				    .data  = vertices,
+			    }) == NULL) {
+		goto cleanup;
+	}
+	u32 indices[] = {0, 1, 2};
+	if (indexed && gfx_buffer_init(&index_buffer,
+				       &gfx,
+				       &(gfx_buffer_config_t){
+					       .type  = GFX_BUFFER_INDEX,
+					       .usage = GFX_BUFFER_USAGE_STATIC,
+					       .size  = sizeof(indices),
+					       .data  = indices,
+				       }) == NULL) {
+		goto cleanup;
+	}
+	if (use_uniform) {
+		t_gfx_software_transform_t transform = {
+			.model	    = mat4f_identity(),
+			.view	    = mat4f_identity(),
+			.projection = mat4f_identity(),
+			.tint	    = vec4f(1.0f, 0.5f, 0.25f, 1.0f),
+		};
+		if (gfx_buffer_init(&uniform_buffer,
+				    &gfx,
+				    &(gfx_buffer_config_t){
+					    .type  = GFX_BUFFER_UNIFORM,
+					    .usage = GFX_BUFFER_USAGE_STATIC,
+					    .size  = sizeof(transform),
+					    .data  = &transform,
+				    }) == NULL) {
+			goto cleanup;
+		}
+		bindings[0] = (gfx_resource_binding_t){.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &uniform_buffer};
+	}
+
+	gfx_frame_t frame = {0};
+	if (gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}) || gfx_pipeline_bind(&frame, &pipeline) ||
+	    gfx_buffer_bind(&frame, &vertex_buffer) || (use_uniform && gfx_bind_resources(&frame, bindings, 1)) ||
+	    (indexed && gfx_buffer_bind(&frame, &index_buffer))) {
+		goto cleanup;
+	}
+	ret = indexed ? gfx_draw_indexed(&frame, 3) : gfx_draw(&frame, 3, 0);
+	gfx_end(&frame);
+
+cleanup:
+	gfx_buffer_free(&uniform_buffer);
+	gfx_buffer_free(&index_buffer);
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_shader_compiler_free(&compiler);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	return ret;
 }
 
 TEST(gfx_software_driver_is_registered)
@@ -466,6 +660,355 @@ TEST(gfx_software_draw_indexed_triangle)
 	END;
 }
 
+TEST(gfx_software_draw_shader_pipeline_vec3_uniform)
+{
+	START;
+
+	u8 pixels[256]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32), 0);
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+	gfx_shader_t vertex = {0};
+	EXPECT_PTR(gfx_shader_init(&vertex,
+				   &gfx,
+				   &(gfx_shader_config_t){
+					   .compiler = &compiler,
+					   .source   = strv_cstr(t_gfx_software_shader_source),
+					   .stage    = GFX_SHADER_STAGE_VERTEX,
+				   }),
+		   &vertex);
+	gfx_shader_t fragment = {0};
+	EXPECT_PTR(gfx_shader_init(&fragment,
+				   &gfx,
+				   &(gfx_shader_config_t){
+					   .compiler = &compiler,
+					   .source   = strv_cstr(t_gfx_software_shader_source),
+					   .stage    = GFX_SHADER_STAGE_FRAGMENT,
+				   }),
+		   &fragment);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .vs		= vertex,
+					     .fs		= fragment,
+					     .input_layout	= t_gfx_software_layout_3d,
+					     .input_layout_size = sizeof(t_gfx_software_layout_3d),
+				     }),
+		   &pipeline);
+
+	t_gfx_software_vertex_3d_t vertices[] = {
+		{.x = -0.8f, .y = -0.8f, .z = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.8f, .y = -0.8f, .z = 0.0f, .g = 1.0f, .a = 1.0f},
+		{.x = -0.8f, .y = 0.8f, .z = 0.0f, .b = 1.0f, .a = 1.0f},
+	};
+	gfx_buffer_t vertex_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&vertex_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_VERTEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(vertices),
+					   .data  = vertices,
+				   }),
+		   &vertex_buffer);
+	u32 indices[]		  = {0, 1, 2};
+	gfx_buffer_t index_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&index_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_INDEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(indices),
+					   .data  = indices,
+				   }),
+		   &index_buffer);
+	t_gfx_software_transform_t transform = {
+		.model	    = mat4f_identity(),
+		.view	    = mat4f_identity(),
+		.projection = mat4f_identity(),
+		.tint	    = vec4f(1.0f, 0.5f, 0.25f, 1.0f),
+	};
+	gfx_buffer_t uniform_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&uniform_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_UNIFORM,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(transform),
+					   .data  = &transform,
+				   }),
+		   &uniform_buffer);
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &uniform_buffer},
+	};
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear = {0.0f, 0.0f, 0.0f, 1.0f}}), 0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &vertex_buffer), 0);
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &index_buffer), 0);
+	EXPECT_EQ(gfx_draw_indexed(&frame, 3), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	u8 readback[256] = {0};
+	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 32}), 0);
+	EXPECT_NE(readback[3], 0);
+
+	gfx_buffer_free(&uniform_buffer);
+	gfx_buffer_free(&index_buffer);
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&fragment);
+	gfx_shader_free(&vertex);
+	gfx_shader_compiler_free(&compiler);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	END;
+}
+
+TEST(gfx_software_shader_pipeline_uniform_failures)
+{
+	START;
+
+	u8 pixels[256]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32), 0);
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+	gfx_shader_t shader = {0};
+	EXPECT_PTR(gfx_shader_init(&shader,
+				   &gfx,
+				   &(gfx_shader_config_t){
+					   .compiler = &compiler,
+					   .source   = strv_cstr(t_gfx_software_shader_source),
+					   .stage    = GFX_SHADER_STAGE_VERTEX,
+				   }),
+		   &shader);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .vs		= shader,
+					     .fs		= shader,
+					     .input_layout	= t_gfx_software_layout_3d,
+					     .input_layout_size = sizeof(t_gfx_software_layout_3d),
+				     }),
+		   &pipeline);
+	t_gfx_software_vertex_3d_t vertices[] = {
+		{.x = -0.8f, .y = -0.8f, .z = 0.0f, .a = 1.0f},
+		{.x = 0.8f, .y = -0.8f, .z = 0.0f, .a = 1.0f},
+		{.x = -0.8f, .y = 0.8f, .z = 0.0f, .a = 1.0f},
+	};
+	gfx_buffer_t vertex_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&vertex_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_VERTEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(vertices),
+					   .data  = vertices,
+				   }),
+		   &vertex_buffer);
+	mat4f_t short_transform[2] = {mat4f_identity(), mat4f_identity()};
+	gfx_buffer_t short_uniform = {0};
+	EXPECT_PTR(gfx_buffer_init(&short_uniform,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_UNIFORM,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(short_transform),
+					   .data  = short_transform,
+				   }),
+		   &short_uniform);
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &short_uniform},
+	};
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &vertex_buffer), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 1);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	gfx_buffer_free(&short_uniform);
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_shader_compiler_free(&compiler);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	END;
+}
+
+TEST(gfx_software_shader_pipeline_color_components)
+{
+	START;
+
+	const char *vec2_uniform_padding = "vs_in 0 VertexIn {\n"
+					   "\tvec2f position : POSITION;\n"
+					   "\tvec4f color : COLOR0;\n"
+					   "}\n"
+					   "vs_out VertexOut {\n"
+					   "\tvec4f position : POSITION;\n"
+					   "\tvec4f color : COLOR0;\n"
+					   "}\n"
+					   "fs_in FragmentIn {\n"
+					   "\tvec4f color : COLOR0;\n"
+					   "}\n"
+					   "fs_out FragmentOut {\n"
+					   "\tvec4f color : COLOR0;\n"
+					   "}\n"
+					   "buffer 0 Transform {\n"
+					   "\tvec2f offset;\n"
+					   "\tvec4f tint;\n"
+					   "}\n"
+					   "VertexOut vertex(VertexIn input) {\n"
+					   "\tVertexOut output;\n"
+					   "\toutput.position = vec4f(input.position.x, input.position.y, 0.0f, 1.0f);\n"
+					   "\toutput.color = tint;\n"
+					   "\treturn output;\n"
+					   "}\n"
+					   "FragmentOut fragment(FragmentIn input) {\n"
+					   "\tFragmentOut output;\n"
+					   "\toutput.color = input.color;\n"
+					   "\treturn output;\n"
+					   "}\n";
+
+	EXPECT_EQ(t_gfx_software_draw_source(t_gfx_software_color_shader_source, 0, 0), 0);
+	EXPECT_EQ(t_gfx_software_draw_source(vec2_uniform_padding, 0, 1), 0);
+
+	END;
+}
+
+TEST(gfx_software_shader_pipeline_expression_failures)
+{
+	START;
+
+	const char *missing_uniform = "vs_in 0 VertexIn {\n"
+				      "\tvec2f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "vs_out VertexOut {\n"
+				      "\tvec4f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_in FragmentIn {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_out FragmentOut {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "VertexOut vertex(VertexIn input) {\n"
+				      "\tVertexOut output;\n"
+				      "\toutput.position = missing.x;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n"
+				      "FragmentOut fragment(FragmentIn input) {\n"
+				      "\tFragmentOut output;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n";
+	const char *bad_call	    = "vs_in 0 VertexIn {\n"
+				      "\tvec2f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "vs_out VertexOut {\n"
+				      "\tvec4f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_in FragmentIn {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_out FragmentOut {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "VertexOut vertex(VertexIn input) {\n"
+				      "\tVertexOut output;\n"
+				      "\toutput.position = vec2f(1.0f, 2.0f);\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n"
+				      "FragmentOut fragment(FragmentIn input) {\n"
+				      "\tFragmentOut output;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n";
+	const char *bad_arg	    = "vs_in 0 VertexIn {\n"
+				      "\tvec2f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "vs_out VertexOut {\n"
+				      "\tvec4f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_in FragmentIn {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_out FragmentOut {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "VertexOut vertex(VertexIn input) {\n"
+				      "\tVertexOut output;\n"
+				      "\toutput.position = vec4f(input.color, 0.0f, 0.0f, 1.0f);\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n"
+				      "FragmentOut fragment(FragmentIn input) {\n"
+				      "\tFragmentOut output;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n";
+	const char *bad_binary	    = "vs_in 0 VertexIn {\n"
+				      "\tvec2f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "vs_out VertexOut {\n"
+				      "\tvec4f position : POSITION;\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_in FragmentIn {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "fs_out FragmentOut {\n"
+				      "\tvec4f color : COLOR0;\n"
+				      "}\n"
+				      "VertexOut vertex(VertexIn input) {\n"
+				      "\tVertexOut output;\n"
+				      "\toutput.position = input.color * input.color;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n"
+				      "FragmentOut fragment(FragmentIn input) {\n"
+				      "\tFragmentOut output;\n"
+				      "\toutput.color = input.color;\n"
+				      "\treturn output;\n"
+				      "}\n";
+
+	EXPECT_EQ(t_gfx_software_draw_source(missing_uniform, 0, 0), 1);
+	EXPECT_EQ(t_gfx_software_draw_source(bad_call, 0, 0), 1);
+	EXPECT_EQ(t_gfx_software_draw_source(bad_arg, 0, 0), 1);
+	EXPECT_EQ(t_gfx_software_draw_source(bad_binary, 0, 0), 1);
+	EXPECT_EQ(t_gfx_software_draw_source(t_gfx_software_shader_source, 1, 0), 1);
+
+	END;
+}
+
 TEST(gfx_software_draw_buffer_failures)
 {
 	START;
@@ -655,6 +1198,212 @@ TEST(gfx_software_buffer_set_data_rejects_invalid_storage)
 	END;
 }
 
+TEST(gfx_software_bind_resources_uniform_buffer_success)
+{
+	START;
+
+	u8 pixels[16]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_target_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 2, 2, 8), 0);
+	gfx_shader_t shader = {0};
+	EXPECT_PTR(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("software")}), &shader);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass, .vs = shader, .fs = shader}),
+		   &pipeline);
+	float data[16]	    = {0};
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_UNIFORM,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(data),
+					   .data  = data,
+				   }),
+		   &buffer);
+	gfx_resource_binding_t bindings[] = {
+		{.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer},
+	};
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	END;
+}
+
+TEST(gfx_software_bind_resources_rejects_invalid_direct)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+
+	gfx_t gfx		       = {.drv = drv, .data = (void *)0x1234};
+	gfx_frame_t frame	       = {.gfx = &gfx};
+	gfx_buffer_t buffer	       = {.gfx = &gfx, .type = GFX_BUFFER_UNIFORM};
+	gfx_resource_binding_t binding = {.binding = 0, .type = GFX_RESOURCE_UNIFORM_BUFFER, .buffer = &buffer};
+
+	EXPECT_EQ(drv->bind_resources(NULL, NULL, 0), 1);
+	EXPECT_EQ(drv->bind_resources(&frame, &binding, 1), 1);
+
+	END;
+}
+
+TEST(gfx_software_shader_init_failures)
+{
+	START;
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+
+	t_gfx_software_alloc_count     = 0;
+	alloc_t alloc_fail_after_first = ALLOC_STD;
+	alloc_fail_after_first.alloc   = t_gfx_software_alloc_fail_after_first;
+	gfx_t gfx_fail_alloc	       = {0};
+	EXPECT_PTR(gfx_init(&gfx_fail_alloc, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, alloc_fail_after_first), &gfx_fail_alloc);
+	gfx_shader_t shader = {0};
+	log_set_quiet(0, 1);
+	EXPECT_PTR(gfx_shader_init(&shader,
+				   &gfx_fail_alloc,
+				   &(gfx_shader_config_t){
+					   .compiler = &compiler,
+					   .source   = strv_cstr(t_gfx_software_shader_source),
+					   .stage    = GFX_SHADER_STAGE_VERTEX,
+				   }),
+		   NULL);
+	log_set_quiet(0, 0);
+	gfx_free(&gfx_fail_alloc);
+
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	log_set_quiet(0, 1);
+	EXPECT_PTR(gfx_shader_init(&shader,
+				   &gfx,
+				   &(gfx_shader_config_t){
+					   .compiler = &compiler,
+					   .source   = STRV("not shader"),
+					   .stage    = GFX_SHADER_STAGE_VERTEX,
+				   }),
+		   NULL);
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
+TEST(gfx_software_pipeline_layout_failures)
+{
+	START;
+
+	gfx_t gfx		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .input_layout_size = sizeof(gfx_layout_t),
+				     }),
+		   NULL);
+
+	gfx_layout_t bad_type[] = {
+		{.semantic = "POSITION", .count = 2, .type = GFX_VALUE_UNKNOWN},
+		{.semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+	};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .input_layout	= bad_type,
+					     .input_layout_size = sizeof(bad_type),
+				     }),
+		   NULL);
+
+	gfx_layout_t null_semantic[] = {
+		{.semantic = NULL, .count = 2, .type = GFX_VALUE_FLOAT32},
+		{.semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+	};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .input_layout	= null_semantic,
+					     .input_layout_size = sizeof(null_semantic),
+				     }),
+		   NULL);
+
+	gfx_layout_t bad_count[] = {
+		{.semantic = "POSITION", .count = 5, .type = GFX_VALUE_FLOAT32},
+		{.semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
+	};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .input_layout	= bad_count,
+					     .input_layout_size = sizeof(bad_count),
+				     }),
+		   NULL);
+
+	gfx_layout_t missing_color[] = {
+		{.semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
+	};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .input_layout	= missing_color,
+					     .input_layout_size = sizeof(missing_color),
+				     }),
+		   NULL);
+
+	EXPECT_EQ(gfx.drv->pipeline_bind(&(gfx_frame_t){.gfx = &gfx}, &(gfx_pipeline_t){.gfx = &gfx}), 1);
+
+	gfx_render_pass_free(&render_pass);
+	gfx_free(&gfx);
+
+	t_gfx_software_alloc_count     = 0;
+	alloc_t alloc_fail_after_first = ALLOC_STD;
+	alloc_fail_after_first.alloc   = t_gfx_software_alloc_fail_after_first;
+	gfx_t gfx_fail_alloc	       = {0};
+	render_pass		       = (gfx_render_pass_t){0};
+	EXPECT_PTR(gfx_init(&gfx_fail_alloc, t_gfx_software_driver(), &(gfx_config_t){0}, NULL, alloc_fail_after_first), &gfx_fail_alloc);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx_fail_alloc,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx_fail_alloc, &(gfx_pipeline_config_t){.render_pass = &render_pass}), NULL);
+	gfx_render_pass_free(&render_pass);
+	gfx_free(&gfx_fail_alloc);
+
+	END;
+}
+
 TEST(gfx_software_draw_indexed_rejects_invalid_target)
 {
 	START;
@@ -819,6 +1568,54 @@ TEST(gfx_software_driver_direct_branches)
 	gfx.alloc = ALLOC_STD;
 	EXPECT_EQ(drv->draw(&(gfx_frame_t){.gfx = &gfx, .vertex_buffer = &(gfx_buffer_t){.gfx = &gfx, .data = (void *)1}}, 3, 0), 1);
 
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &(gfx_pipeline_config_t){.render_pass = &render_pass}), &pipeline);
+	gfx_vertex_2d_t vertices[3] = {0};
+	gfx_buffer_t vertex_buffer  = {0};
+	EXPECT_PTR(gfx_buffer_init(&vertex_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_VERTEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(vertices),
+					   .data  = vertices,
+				   }),
+		   &vertex_buffer);
+	u32 indices[3]		  = {0, 1, 2};
+	gfx_buffer_t index_buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&index_buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_INDEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(indices),
+					   .data  = indices,
+				   }),
+		   &index_buffer);
+	EXPECT_EQ(drv->draw(&(gfx_frame_t){.gfx = &gfx, .pipeline = &pipeline, .vertex_buffer = &vertex_buffer}, 3, 0), 1);
+	EXPECT_EQ(drv->draw_indexed(
+			  &(gfx_frame_t){
+				  .gfx		 = &gfx,
+				  .pipeline	 = &pipeline,
+				  .vertex_buffer = &vertex_buffer,
+				  .index_buffer	 = &index_buffer,
+			  },
+			  3),
+		  1);
+	gfx_buffer_free(&index_buffer);
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_render_pass_free(&render_pass);
+
 	gfx_free(&gfx);
 	END;
 }
@@ -837,6 +1634,9 @@ TEST(gfx_software_driver_callback_failures)
 	EXPECT_EQ(drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
 	EXPECT_EQ(drv->buffer_set_data(NULL, NULL, 0), 1);
 	EXPECT_EQ(drv->buffer_bind(NULL, NULL), 1);
+	EXPECT_EQ(drv->shader_init(NULL, &(gfx_shader_config_t){0}), 1);
+	EXPECT_EQ(drv->pipeline_init(NULL, &(gfx_pipeline_config_t){0}), 1);
+	drv->pipeline_free(&(gfx_pipeline_t){0});
 	EXPECT_EQ(drv->draw(NULL, 3, 0), 1);
 	EXPECT_EQ(drv->draw(&(gfx_frame_t){.gfx = &(gfx_t){.data = (void *)1}}, 2, 0), 1);
 	EXPECT_EQ(drv->end(NULL), 1);
@@ -856,12 +1656,20 @@ STEST(gfx_software)
 	RUN(gfx_software_swapchain_resize_rejects_invalid_direct);
 	RUN(gfx_software_draw_triangle);
 	RUN(gfx_software_draw_indexed_triangle);
+	RUN(gfx_software_draw_shader_pipeline_vec3_uniform);
+	RUN(gfx_software_shader_pipeline_uniform_failures);
+	RUN(gfx_software_shader_pipeline_color_components);
+	RUN(gfx_software_shader_pipeline_expression_failures);
 	RUN(gfx_software_draw_buffer_failures);
 	RUN(gfx_software_buffer_set_data_alloc_failure);
 	RUN(gfx_software_buffer_init_static_uploads_data);
 	RUN(gfx_software_buffer_init_static_alloc_failure);
 	RUN(gfx_software_buffer_set_data_resize_failure);
 	RUN(gfx_software_buffer_set_data_rejects_invalid_storage);
+	RUN(gfx_software_bind_resources_uniform_buffer_success);
+	RUN(gfx_software_bind_resources_rejects_invalid_direct);
+	RUN(gfx_software_shader_init_failures);
+	RUN(gfx_software_pipeline_layout_failures);
 	RUN(gfx_software_draw_indexed_rejects_invalid_target);
 	RUN(gfx_software_surface_pass_begin_and_draw_clips);
 	RUN(gfx_software_driver_direct_branches);

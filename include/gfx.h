@@ -128,6 +128,8 @@ struct gfx_frame_s {
 	const struct gfx_pipeline_s *pipeline;
 	const struct gfx_buffer_s *vertex_buffer;
 	const struct gfx_buffer_s *index_buffer;
+	const struct gfx_resource_binding_s *resource_bindings;
+	u32 resource_binding_count;
 	int active;
 	void *data;
 };

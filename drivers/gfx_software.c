@@ -1,11 +1,35 @@
 #include "gfx_driver.h"
+#include "gfx_shader_driver.h"
 
+#include "cmath.h"
 #include "log.h"
 #include "mem.h"
+
+enum {
+	GFX_SOFTWARE_MAX_ATTRIBUTES = 16,
+};
 
 typedef struct gfx_software_buffer_s {
 	buf_t buf;
 } gfx_software_buffer_t;
+
+typedef struct gfx_software_attribute_s {
+	size_t offset;
+	u32 count;
+} gfx_software_attribute_t;
+
+typedef struct gfx_software_shader_s {
+	gfx_shader_stage_t stage;
+	gfx_shader_ir_t ir;
+} gfx_software_shader_t;
+
+typedef struct gfx_software_pipeline_s {
+	gfx_shader_ir_t ir;
+	gfx_software_attribute_t position;
+	gfx_software_attribute_t color;
+	size_t stride;
+	int shader;
+} gfx_software_pipeline_t;
 
 typedef struct gfx_software_s {
 	gfx_target_t target;
@@ -19,6 +43,20 @@ typedef struct gfx_software_s {
 typedef struct gfx_software_surface_target_s {
 	gfx_surface_memory_t memory;
 } gfx_software_surface_target_t;
+
+typedef enum gfx_software_value_kind_e {
+	GFX_SOFTWARE_VALUE_NONE,
+	GFX_SOFTWARE_VALUE_FLOAT,
+	GFX_SOFTWARE_VALUE_VEC4,
+	GFX_SOFTWARE_VALUE_MAT4,
+} gfx_software_value_kind_t;
+
+typedef struct gfx_software_value_s {
+	gfx_software_value_kind_t kind;
+	float f;
+	vec4f_t v4;
+	mat4f_t m4;
+} gfx_software_value_t;
 
 static u8 color_u8(float value)
 {
@@ -51,6 +89,303 @@ static int surface_target_valid(const gfx_target_t *target)
 static int target_valid(const gfx_target_t *target)
 {
 	return target != NULL && (target->type == GFX_TARGET_MEMORY || target->type == GFX_TARGET_SWAPCHAIN) && memory_target_valid(target);
+}
+
+static int gfx_software_strv_suffix(strv_t str, strv_t suffix)
+{
+	return str.len >= suffix.len && mem_cmp(str.data + str.len - suffix.len, suffix.data, suffix.len) == 0;
+}
+
+static int gfx_software_layout_semantic(const gfx_layout_t *layout, strv_t semantic)
+{
+	if (layout == NULL || layout->semantic == NULL) {
+		return 0;
+	}
+	strv_t name = strv_cstr(layout->semantic);
+	if (strv_eq(name, semantic)) {
+		return 1;
+	}
+	return layout->semantic_index == 0 && semantic.len > 1 && semantic.data[semantic.len - 1] == '0' &&
+	       strv_eq(name, STRVN(semantic.data, semantic.len - 1));
+}
+
+static size_t gfx_software_type_size(strv_t type)
+{
+	if (strv_eq(type, STRV("mat4f"))) {
+		return sizeof(mat4f_t);
+	}
+	if (strv_eq(type, STRV("vec4f"))) {
+		return sizeof(vec4f_t);
+	}
+	if (strv_eq(type, STRV("vec3f"))) { // LCOV_EXCL_LINE
+		return sizeof(vec3f_t);	    // LCOV_EXCL_LINE
+	}
+	if (strv_eq(type, STRV("vec2f"))) {
+		return sizeof(vec2f_t);
+	}
+	return 0; // LCOV_EXCL_LINE
+}
+
+static int gfx_software_parse_float(strv_t text, float *out)
+{
+	if (out == NULL || text.data == NULL || text.len == 0) { // LCOV_EXCL_LINE
+		return 1;					 // LCOV_EXCL_LINE
+	}
+	float value = 0.0f;
+	size_t pos  = 0;
+	while (pos < text.len && text.data[pos] >= '0' && text.data[pos] <= '9') {
+		value = value * 10.0f + (float)(text.data[pos] - '0');
+		pos++;
+	}
+	if (pos < text.len && text.data[pos] == '.') {
+		float place = 0.1f;
+		pos++;
+		while (pos < text.len && text.data[pos] >= '0' && text.data[pos] <= '9') {
+			value += place * (float)(text.data[pos] - '0');
+			place *= 0.1f;
+			pos++;
+		}
+	}
+	if (pos < text.len && text.data[pos] == 'f') {
+		pos++;
+	}
+	if (pos != text.len) { // LCOV_EXCL_LINE
+		return 1;      // LCOV_EXCL_LINE
+	}
+	*out = value;
+	return 0;
+}
+
+static const gfx_buffer_t *gfx_software_uniform_binding(const gfx_frame_t *frame, u32 slot)
+{
+	if (frame == NULL) {
+		return NULL; // LCOV_EXCL_LINE
+	}
+	for (u32 i = 0; i < frame->resource_binding_count; i++) {
+		const gfx_resource_binding_t *binding = &frame->resource_bindings[i];
+		if (binding->type == GFX_RESOURCE_UNIFORM_BUFFER && binding->binding == slot) {
+			return binding->buffer;
+		}
+	}
+	return NULL;
+}
+
+static int gfx_software_uniform_member(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, strv_t name,
+				       gfx_software_value_t *out)
+{
+	if (frame == NULL || pipeline == NULL || out == NULL) {
+		return 1; // LCOV_EXCL_LINE
+	}
+	for (u32 i = 0; i < pipeline->ir.buffer_count; i++) {
+		const gfx_shader_struct_ir_t *buffer = &pipeline->ir.buffers[i];
+		size_t offset			     = 0;
+		for (u32 j = 0; j < buffer->member_count; j++) {
+			const gfx_shader_member_t *member = &buffer->members[j];
+			size_t size			  = gfx_software_type_size(member->type);
+			if (size == 0) {  // LCOV_EXCL_LINE
+				return 1; // LCOV_EXCL_LINE
+			}
+			if (strv_eq(member->name, name)) {
+				const gfx_buffer_t *uniform_buffer = gfx_software_uniform_binding(frame, buffer->slot);
+				if (uniform_buffer == NULL || uniform_buffer->data == NULL) {
+					return 1;
+				}
+				const gfx_software_buffer_t *uniform = uniform_buffer->data;
+				if (uniform->buf.used < offset + size) {
+					return 1;
+				}
+				if (strv_eq(member->type, STRV("mat4f"))) {
+					*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_MAT4};
+					mem_copy(&out->m4, sizeof(out->m4), (const u8 *)uniform->buf.data + offset, sizeof(out->m4));
+					return 0;
+				}
+				if (strv_eq(member->type, STRV("vec4f"))) {
+					*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_VEC4};
+					mem_copy(&out->v4, sizeof(out->v4), (const u8 *)uniform->buf.data + offset, sizeof(out->v4));
+					return 0;
+				}
+			}
+			offset += size;
+		}
+	}
+	return 1;
+}
+
+static int gfx_software_value_component(gfx_software_value_t value, char component, gfx_software_value_t *out)
+{
+	if (out == NULL || value.kind != GFX_SOFTWARE_VALUE_VEC4) { // LCOV_EXCL_LINE
+		return 1;					    // LCOV_EXCL_LINE
+	}
+	*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_FLOAT};
+	switch (component) {
+	case 'x': {
+		out->f = value.v4.x;
+		return 0;
+	}
+	case 'y': {
+		out->f = value.v4.y;
+		return 0;
+	}
+	case 'z': {
+		out->f = value.v4.z;
+		return 0;
+	}
+	case 'w': {
+		out->f = value.v4.w;
+		return 0;
+	}
+	default: {	  // LCOV_EXCL_LINE
+		return 1; // LCOV_EXCL_LINE
+	}
+	}
+}
+
+static int gfx_software_eval_expr(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, const gfx_shader_statement_ir_t *stmt,
+				  u32 expr, vec4f_t input_position, vec4f_t input_color, gfx_software_value_t *out)
+{
+	if (frame == NULL || pipeline == NULL || stmt == NULL || out == NULL || expr >= stmt->expr_count) { // LCOV_EXCL_LINE
+		return 1;										    // LCOV_EXCL_LINE
+	}
+
+	const gfx_shader_expr_ir_t *node = &stmt->expr_nodes[expr];
+	switch (node->kind) {
+	case GFX_SHADER_EXPR_INT:
+	case GFX_SHADER_EXPR_FLOAT: {
+		float value = 0.0f;
+		if (gfx_software_parse_float(node->text, &value)) { // LCOV_EXCL_LINE
+			return 1;				    // LCOV_EXCL_LINE
+		}
+		*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_FLOAT, .f = value};
+		return 0;
+	}
+	case GFX_SHADER_EXPR_LVALUE: {
+		if (strv_eq(node->text, STRV("input.position"))) {
+			*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_VEC4, .v4 = input_position};
+			return 0;
+		}
+		if (strv_eq(node->text, STRV("input.color"))) {
+			*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_VEC4, .v4 = input_color};
+			return 0;
+		}
+		if (gfx_software_strv_suffix(node->text, STRV(".x")) || gfx_software_strv_suffix(node->text, STRV(".y")) ||
+		    gfx_software_strv_suffix(node->text, STRV(".z")) || gfx_software_strv_suffix(node->text, STRV(".w"))) {
+			strv_t base			    = STRVN(node->text.data, node->text.len - 2);
+			gfx_software_value_t value	    = {0};
+			gfx_shader_expr_ir_t base_node	    = {.kind = GFX_SHADER_EXPR_LVALUE, .text = base};
+			gfx_shader_statement_ir_t base_stmt = *stmt;
+			if (base_stmt.expr_count >= 64) { // LCOV_EXCL_LINE
+				return 1;		  // LCOV_EXCL_LINE
+			}
+			u32 base_expr			= base_stmt.expr_count++;
+			base_stmt.expr_nodes[base_expr] = base_node;
+			if (gfx_software_eval_expr(frame, pipeline, &base_stmt, base_expr, input_position, input_color, &value)) {
+				return 1;
+			}
+			return gfx_software_value_component(value, node->text.data[node->text.len - 1], out);
+		}
+		return gfx_software_uniform_member(frame, pipeline, node->text, out);
+	}
+	case GFX_SHADER_EXPR_CALL: {
+		if (!strv_eq(node->text, STRV("vec4f")) || node->arg_count != 4) {
+			return 1;
+		}
+		float args[4] = {0};
+		for (u32 i = 0; i < 4; i++) {
+			gfx_software_value_t value = {0};
+			if (gfx_software_eval_expr(frame, pipeline, stmt, node->args[i], input_position, input_color, &value) ||
+			    value.kind != GFX_SOFTWARE_VALUE_FLOAT) {
+				return 1;
+			}
+			args[i] = value.f;
+		}
+		*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_VEC4, .v4 = vec4f(args[0], args[1], args[2], args[3])};
+		return 0;
+	}
+	case GFX_SHADER_EXPR_BINARY: {
+		gfx_software_value_t left  = {0};
+		gfx_software_value_t right = {0};
+		if (!strv_eq(node->op, STRV("*")) ||
+		    gfx_software_eval_expr(frame, pipeline, stmt, node->left, input_position, input_color, &left) ||
+		    gfx_software_eval_expr(frame, pipeline, stmt, node->right, input_position, input_color, &right)) {
+			return 1;
+		}
+		if (left.kind == GFX_SOFTWARE_VALUE_MAT4 && right.kind == GFX_SOFTWARE_VALUE_MAT4) {
+			*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_MAT4, .m4 = mat4f_mul(left.m4, right.m4)};
+			return 0;
+		}
+		if (left.kind == GFX_SOFTWARE_VALUE_MAT4 && right.kind == GFX_SOFTWARE_VALUE_VEC4) {
+			*out = (gfx_software_value_t){.kind = GFX_SOFTWARE_VALUE_VEC4, .v4 = mat4f_mul_vec4(left.m4, right.v4)};
+			return 0;
+		}
+		return 1;
+	}
+	default: {	  // LCOV_EXCL_LINE
+		return 1; // LCOV_EXCL_LINE
+	}
+	}
+}
+
+static int gfx_software_run_vertex_shader(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, vec4f_t input_position,
+					  vec4f_t input_color, gfx_vertex_2d_t *out)
+{
+	if (frame == NULL || pipeline == NULL || out == NULL) { // LCOV_EXCL_LINE
+		return 1;					// LCOV_EXCL_LINE
+	}
+
+	vec4f_t position = input_position;
+	vec4f_t color	 = input_color;
+	if (pipeline->shader) {
+		for (u32 i = 0; i < pipeline->ir.vertex.statement_count; i++) {
+			const gfx_shader_statement_ir_t *stmt = &pipeline->ir.vertex.statements[i];
+			if (stmt->kind != GFX_SHADER_STMT_ASSIGN) {
+				continue;
+			}
+			gfx_software_value_t value = {0};
+			if (gfx_software_eval_expr(frame, pipeline, stmt, stmt->expr_root, input_position, input_color, &value) ||
+			    value.kind != GFX_SOFTWARE_VALUE_VEC4) {
+				return 1;
+			}
+			if (strv_eq(stmt->lhs, STRV("output.position"))) {
+				position = value.v4;
+			} else if (strv_eq(stmt->lhs, STRV("output.color"))) {
+				color = value.v4;
+			}
+		}
+	}
+
+	if (position.w != 0.0f) {
+		position.x /= position.w;
+		position.y /= position.w;
+	}
+	*out = (gfx_vertex_2d_t){
+		.x = position.x,
+		.y = position.y,
+		.r = color.x,
+		.g = color.y,
+		.b = color.z,
+		.a = color.w,
+	};
+	return 0;
+}
+
+static int gfx_software_fetch_vertex(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, const gfx_software_buffer_t *buffer,
+				     u32 index, gfx_vertex_2d_t *out)
+{
+	if (frame == NULL || pipeline == NULL || buffer == NULL || out == NULL || pipeline->stride == 0 ||
+	    buffer->buf.used < pipeline->stride * ((size_t)index + 1)) {
+		return 1;
+	}
+	const u8 *vertex = (const u8 *)buffer->buf.data + pipeline->stride * (size_t)index;
+	const float *pos = (const float *)(const void *)(vertex + pipeline->position.offset);
+	const float *col = (const float *)(const void *)(vertex + pipeline->color.offset);
+
+	vec4f_t input_position =
+		vec4f(pos[0], pipeline->position.count > 1 ? pos[1] : 0.0f, pipeline->position.count > 2 ? pos[2] : 0.0f, 1.0f);
+	vec4f_t input_color = vec4f(col[0],
+				    pipeline->color.count > 1 ? col[1] : 0.0f,
+				    pipeline->color.count > 2 ? col[2] : 0.0f,
+				    pipeline->color.count > 3 ? col[3] : 1.0f);
+	return gfx_software_run_vertex_shader(frame, pipeline, input_position, input_color, out);
 }
 
 static int gfx_software_init(gfx_t *gfx, const gfx_config_t *config)
@@ -394,7 +729,7 @@ static void gfx_software_buffer_free(gfx_buffer_t *buffer)
 static int gfx_software_buffer_init(gfx_buffer_t *buffer, const gfx_buffer_config_t *config)
 {
 	if (buffer == NULL || buffer->gfx == NULL || config == NULL ||
-	    (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX)) {
+	    (config->type != GFX_BUFFER_VERTEX && config->type != GFX_BUFFER_INDEX && config->type != GFX_BUFFER_UNIFORM)) {
 		return 1;
 	}
 
@@ -460,41 +795,126 @@ static int gfx_software_buffer_bind(gfx_frame_t *frame, const gfx_buffer_t *buff
 	return 0;
 }
 
+static int gfx_software_bind_resources(gfx_frame_t *frame, const gfx_resource_binding_t *bindings, u32 binding_count)
+{
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || (bindings == NULL && binding_count != 0)) {
+		return 1;
+	}
+	for (u32 i = 0; i < binding_count; i++) {
+		const gfx_resource_binding_t *binding = &bindings[i];
+		if (binding->type != GFX_RESOURCE_UNIFORM_BUFFER || binding->buffer == NULL || binding->buffer->gfx != frame->gfx ||
+		    binding->buffer->type != GFX_BUFFER_UNIFORM || binding->buffer->data == NULL) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int gfx_software_shader_init(gfx_shader_t *shader, const gfx_shader_config_t *config)
 {
-	(void)shader;
-	(void)config;
+	if (shader == NULL || shader->gfx == NULL || config == NULL) {
+		return 1;
+	}
+	if (config->compiler == NULL) {
+		return 0;
+	}
+	gfx_software_shader_t *sw_shader = alloc_alloc(&shader->gfx->alloc, sizeof(gfx_software_shader_t));
+	if (sw_shader == NULL) {
+		return 1;
+	}
+	*sw_shader   = (gfx_software_shader_t){.stage = config->stage};
+	shader->data = sw_shader;
+	if (gfx_shader_compiler_ir(config->compiler, config->source, &sw_shader->ir)) {
+		alloc_free(&shader->gfx->alloc, sw_shader, sizeof(gfx_software_shader_t));
+		shader->data = NULL;
+		return 1;
+	}
 	return 0;
 }
 
 static void gfx_software_shader_free(gfx_shader_t *shader)
 {
-	(void)shader;
+	if (shader == NULL || shader->gfx == NULL || shader->data == NULL) {
+		return;
+	}
+	alloc_free(&shader->gfx->alloc, shader->data, sizeof(gfx_software_shader_t));
+	shader->data = NULL;
 }
 
 static int gfx_software_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_config_t *config)
 {
-	(void)pipeline;
-	(void)config;
+	if (pipeline == NULL || pipeline->gfx == NULL || config == NULL) {
+		return 1;
+	}
+	gfx_software_pipeline_t *sw_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_software_pipeline_t));
+	if (sw_pipeline == NULL) {
+		return 1;
+	}
+	*sw_pipeline = (gfx_software_pipeline_t){
+		.position = {.offset = 0, .count = 2},
+		.color	  = {.offset = sizeof(float) * 2, .count = 4},
+		.stride	  = sizeof(gfx_vertex_2d_t),
+	};
+	if (config->input_layout != NULL || config->input_layout_size != 0) {
+		if (config->input_layout == NULL || config->input_layout_size == 0 ||
+		    config->input_layout_size % sizeof(gfx_layout_t) != 0 ||
+		    config->input_layout_size / sizeof(gfx_layout_t) > GFX_SOFTWARE_MAX_ATTRIBUTES) {
+			alloc_free(&pipeline->gfx->alloc, sw_pipeline, sizeof(gfx_software_pipeline_t));
+			return 1;
+		}
+		u32 count	      = (u32)(config->input_layout_size / sizeof(gfx_layout_t));
+		sw_pipeline->position = (gfx_software_attribute_t){0};
+		sw_pipeline->color    = (gfx_software_attribute_t){0};
+		sw_pipeline->stride   = 0;
+		for (u32 i = 0; i < count; i++) {
+			const gfx_layout_t *layout = &config->input_layout[i];
+			if (layout->type != GFX_VALUE_FLOAT32 || layout->count == 0 || layout->count > 4 ||
+			    sw_pipeline->stride > SIZE_MAX - sizeof(float) * layout->count) {
+				alloc_free(&pipeline->gfx->alloc, sw_pipeline, sizeof(gfx_software_pipeline_t));
+				return 1;
+			}
+			if (gfx_software_layout_semantic(layout, STRV("POSITION"))) {
+				sw_pipeline->position = (gfx_software_attribute_t){.offset = sw_pipeline->stride, .count = layout->count};
+			} else if (gfx_software_layout_semantic(layout, STRV("COLOR0"))) {
+				sw_pipeline->color = (gfx_software_attribute_t){.offset = sw_pipeline->stride, .count = layout->count};
+			}
+			sw_pipeline->stride += sizeof(float) * layout->count;
+		}
+		if (sw_pipeline->position.count < 2 || sw_pipeline->position.count > 3 || sw_pipeline->color.count != 4) {
+			alloc_free(&pipeline->gfx->alloc, sw_pipeline, sizeof(gfx_software_pipeline_t));
+			return 1;
+		}
+	}
+	if (config->vs.data != NULL) {
+		const gfx_software_shader_t *shader = config->vs.data;
+		sw_pipeline->ir			    = shader->ir;
+		sw_pipeline->shader		    = 1;
+	}
+	pipeline->data = sw_pipeline;
 	return 0;
 }
 
 static void gfx_software_pipeline_free(gfx_pipeline_t *pipeline)
 {
-	(void)pipeline;
+	if (pipeline == NULL || pipeline->gfx == NULL || pipeline->data == NULL) {
+		return;
+	}
+	alloc_free(&pipeline->gfx->alloc, pipeline->data, sizeof(gfx_software_pipeline_t));
+	pipeline->data = NULL;
 }
 
 static int gfx_software_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pipeline)
 {
-	(void)frame;
-	(void)pipeline;
+	if (frame == NULL || pipeline == NULL || pipeline->data == NULL) {
+		return 1;
+	}
 	return 0;
 }
 
 static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_vertex)
 {
 	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || frame->vertex_buffer == NULL ||
-	    frame->vertex_buffer->data == NULL || vertex_count < 3) {
+	    frame->vertex_buffer->data == NULL || frame->pipeline == NULL || frame->pipeline->data == NULL || vertex_count < 3) {
 		return 1;
 	}
 
@@ -503,12 +923,17 @@ static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_ver
 		return 1;
 	}
 
-	gfx_software_buffer_t *sw_buffer       = frame->vertex_buffer->data;
-	const gfx_vertex_2d_t *buffer_vertices = sw_buffer->buf.data;
-	if (sw_buffer->buf.used < sizeof(gfx_vertex_2d_t) * ((size_t)first_vertex + 3)) {
-		return 1;
+	const gfx_software_pipeline_t *pipeline = frame->pipeline->data;
+	const gfx_software_buffer_t *sw_buffer	= frame->vertex_buffer->data;
+	for (u32 i = 0; i + 2 < vertex_count; i += 3) {
+		gfx_vertex_2d_t triangle[3] = {0};
+		if (gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i, &triangle[0]) ||
+		    gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i + 1, &triangle[1]) ||
+		    gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i + 2, &triangle[2])) {
+			return 1;
+		}
+		draw_triangle(render, triangle);
 	}
-	draw_triangle(render, &buffer_vertices[first_vertex]);
 
 	return 0;
 }
@@ -516,7 +941,8 @@ static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_ver
 static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
 {
 	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || frame->vertex_buffer == NULL ||
-	    frame->vertex_buffer->data == NULL || frame->index_buffer == NULL || frame->index_buffer->data == NULL || index_count < 3) {
+	    frame->vertex_buffer->data == NULL || frame->index_buffer == NULL || frame->index_buffer->data == NULL ||
+	    frame->pipeline == NULL || frame->pipeline->data == NULL || index_count < 3) {
 		return 1;
 	}
 
@@ -525,11 +951,11 @@ static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
 		return 1;
 	}
 
-	gfx_software_buffer_t *vertex_buffer = frame->vertex_buffer->data;
-	gfx_software_buffer_t *index_buffer  = frame->index_buffer->data;
-	const gfx_vertex_2d_t *vertices	     = vertex_buffer->buf.data;
-	const u32 *indices		     = index_buffer->buf.data;
-	size_t vertex_count		     = vertex_buffer->buf.used / sizeof(gfx_vertex_2d_t);
+	const gfx_software_pipeline_t *pipeline	   = frame->pipeline->data;
+	const gfx_software_buffer_t *vertex_buffer = frame->vertex_buffer->data;
+	const gfx_software_buffer_t *index_buffer  = frame->index_buffer->data;
+	const u32 *indices			   = index_buffer->buf.data;
+	size_t vertex_count			   = vertex_buffer->buf.used / pipeline->stride;
 	if (index_buffer->buf.used < sizeof(u32) * (size_t)index_count) {
 		return 1;
 	}
@@ -539,11 +965,12 @@ static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
 			return 1;
 		}
 
-		gfx_vertex_2d_t triangle[3] = {
-			vertices[indices[i]],
-			vertices[indices[i + 1]],
-			vertices[indices[i + 2]],
-		};
+		gfx_vertex_2d_t triangle[3] = {0};
+		if (gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i], &triangle[0]) ||
+		    gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i + 1], &triangle[1]) ||
+		    gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i + 2], &triangle[2])) {
+			return 1;
+		}
 		draw_triangle(render, triangle);
 	}
 	return 0;
@@ -575,6 +1002,7 @@ static gfx_driver_t gfx_software = {
 	.buffer_free		= gfx_software_buffer_free,
 	.buffer_set_data	= gfx_software_buffer_set_data,
 	.buffer_bind		= gfx_software_buffer_bind,
+	.bind_resources		= gfx_software_bind_resources,
 	.shader_init		= gfx_software_shader_init,
 	.shader_free		= gfx_software_shader_free,
 	.pipeline_init		= gfx_software_pipeline_init,
