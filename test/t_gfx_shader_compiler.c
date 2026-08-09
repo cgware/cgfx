@@ -3,11 +3,24 @@
 #include "log.h"
 #include "test.h"
 
-#include <stdio.h>
-#include <string.h>
-
 static int t_gfx_shader_compiler_alloc_count;
 static int t_gfx_shader_compiler_alloc_fail_at;
+
+static const char *t_gfx_shader_compiler_contains(const char *text, strv_t pattern)
+{
+	strv_t str = strv_cstr(text);
+	if (str.data == NULL || pattern.data == NULL || pattern.len > str.len) {
+		return NULL;
+	}
+	for (size_t i = 0; i <= str.len - pattern.len; i++) {
+		if (strv_cmpn((strv_t){.data = str.data + i, .len = str.len - i}, pattern, pattern.len) == 0) {
+			return str.data + i;
+		}
+	}
+	return NULL;
+}
+
+#define T_CONTAINS(_text, _pattern) t_gfx_shader_compiler_contains((_text), STRV(_pattern))
 
 enum {
 	T_GFX_SHADER_SPV_OP_F_NEGATE		= 127,
@@ -321,36 +334,35 @@ static int t_gfx_shader_compiler_realloc_fail(alloc_t *alloc, void **ptr, size_t
 static int t_gfx_shader_compiler_transpile_expr(gfx_shader_compiler_t *compiler, const char *expr)
 {
 	char source[1024] = {0};
-	int len		  = snprintf(source,
-			     sizeof(source),
-			     "vs_in 0 VertexIn {\n"
-				     "\tvec2f position : POSITION;\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "vs_out VertexOut {\n"
-				     "\tvec4f position : POSITION;\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "fs_in FragmentIn {\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "fs_out FragmentOut {\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "VertexOut vertex(VertexIn input) {\n"
-				     "\tVertexOut output;\n"
-				     "\tvec2f pos = %s;\n"
-				     "\toutput.position = vec4f(pos.x, pos.y, 0.0f, 1.0f);\n"
-				     "\toutput.color = input.color;\n"
-				     "\treturn output;\n"
-				     "}\n"
-				     "FragmentOut fragment(FragmentIn input) {\n"
-				     "\tFragmentOut output;\n"
-				     "\toutput.color = input.color;\n"
-				     "\treturn output;\n"
-				     "}\n",
-			     expr);
-	if (len < 0 || (size_t)len >= sizeof(source)) {
+	size_t len	  = dputf(DST_BUF(source),
+				  "vs_in 0 VertexIn {\n"
+				  "\tvec2f position : POSITION;\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "vs_out VertexOut {\n"
+				  "\tvec4f position : POSITION;\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "fs_in FragmentIn {\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "fs_out FragmentOut {\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "VertexOut vertex(VertexIn input) {\n"
+				  "\tVertexOut output;\n"
+				  "\tvec2f pos = %s;\n"
+				  "\toutput.position = vec4f(pos.x, pos.y, 0.0f, 1.0f);\n"
+				  "\toutput.color = input.color;\n"
+				  "\treturn output;\n"
+				  "}\n"
+				  "FragmentOut fragment(FragmentIn input) {\n"
+				  "\tFragmentOut output;\n"
+				  "\toutput.color = input.color;\n"
+				  "\treturn output;\n"
+				  "}\n",
+				  expr);
+	if (len == 0 || len >= sizeof(source)) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
@@ -364,38 +376,37 @@ static int t_gfx_shader_compiler_transpile_spirv_position_expr(gfx_shader_compil
 							       int uniform_block)
 {
 	char source[2048] = {0};
-	int len		  = snprintf(source,
-			     sizeof(source),
-			     "vs_in 0 VertexIn {\n"
-				     "\t%s position : POSITION;\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "vs_out VertexOut {\n"
-				     "\tvec4f position : POSITION;\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "fs_in FragmentIn {\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "fs_out FragmentOut {\n"
-				     "\tvec4f color : COLOR0;\n"
-				     "}\n"
-				     "%s"
-				     "VertexOut vertex(VertexIn input) {\n"
-				     "\tVertexOut output;\n"
-				     "\toutput.position = %s;\n"
-				     "\toutput.color = input.color;\n"
-				     "\treturn output;\n"
-				     "}\n"
-				     "FragmentOut fragment(FragmentIn input) {\n"
-				     "\tFragmentOut output;\n"
-				     "\toutput.color = input.color;\n"
-				     "\treturn output;\n"
-				     "}\n",
-			     position_type,
-			     uniform_block ? "buffer 0 Camera {\n\tmat4f mvp;\n}\n" : "",
-			     expr);
-	if (len < 0 || (size_t)len >= sizeof(source)) {
+	size_t len	  = dputf(DST_BUF(source),
+				  "vs_in 0 VertexIn {\n"
+				  "\t%s position : POSITION;\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "vs_out VertexOut {\n"
+				  "\tvec4f position : POSITION;\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "fs_in FragmentIn {\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "fs_out FragmentOut {\n"
+				  "\tvec4f color : COLOR0;\n"
+				  "}\n"
+				  "%s"
+				  "VertexOut vertex(VertexIn input) {\n"
+				  "\tVertexOut output;\n"
+				  "\toutput.position = %s;\n"
+				  "\toutput.color = input.color;\n"
+				  "\treturn output;\n"
+				  "}\n"
+				  "FragmentOut fragment(FragmentIn input) {\n"
+				  "\tFragmentOut output;\n"
+				  "\toutput.color = input.color;\n"
+				  "\treturn output;\n"
+				  "}\n",
+				  position_type,
+				  uniform_block ? "buffer 0 Camera {\n\tmat4f mvp;\n}\n" : "",
+				  expr);
+	if (len == 0 || len >= sizeof(source)) {
 		return 1; // LCOV_EXCL_LINE
 	}
 
@@ -554,11 +565,12 @@ TEST(gfx_shader_compiler_transpile_expression_parse_failures)
 	log_set_quiet(0, 0);
 	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, "vec2f()"), 0);
 	char expr[1024] = {0};
+	dst_t expr_dst	= DST_BUF(expr);
 	for (u32 i = 0; i < 34; i++) {
 		if (i > 0) {
-			strcat(expr, " + ");
+			expr_dst.off += dputs(expr_dst, STRV(" + "));
 		}
-		strcat(expr, "input.position");
+		expr_dst.off += dputs(expr_dst, STRV("input.position"));
 	}
 	log_set_quiet(0, 1);
 	EXPECT_EQ(t_gfx_shader_compiler_transpile_expr(&compiler, expr), 1);
@@ -623,14 +635,14 @@ TEST(gfx_shader_compiler_transpile_outputs)
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
 		EXPECT_STRN(shader.text, "#version 330 core", 17);
-		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 0) in vec2 position;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 1) in vec4 color;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec2 local = vec2"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec2 pos = position.xy;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "gl_Position = vec4("));
-		EXPECT_NOT_NULL(strstr(shader.text, "local.x"));
-		EXPECT_NOT_NULL(strstr(shader.text, "local.y"));
-		EXPECT_NULL(strstr(shader.text, "u_target_size"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "layout(location = 0) in vec2 position;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "layout(location = 1) in vec4 color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec2 local = vec2"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec2 pos = position.xy;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "gl_Position = vec4("));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "local.x"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "local.y"));
+		EXPECT_NULL(T_CONTAINS(shader.text, "u_target_size"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -640,10 +652,10 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "in vec4 v_color;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 0) out vec4 o_color;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec4 color = v_color.rgba;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "o_color = color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "in vec4 v_color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "layout(location = 0) out vec4 o_color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec4 color = v_color.rgba;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "o_color = color;"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -653,10 +665,10 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "float2 position : POSITION;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4 position : SV_POSITION;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float2 local = float2"));
-		EXPECT_NOT_NULL(strstr(shader.text, "return output;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2 position : POSITION;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4 position : SV_POSITION;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2 local = float2"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "return output;"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -666,10 +678,10 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "float4 main(VertexOut input) : SV_TARGET"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4 output_color;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "output_color = color;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "return output_color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4 main(VertexOut input) : SV_TARGET"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4 output_color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "output_color = color;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "return output_color;"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -693,9 +705,9 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "vec4 tint = vec4"));
-		EXPECT_NOT_NULL(strstr(shader.text, "v_color = tint;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "output.unknown = tint;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec4 tint = vec4"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "v_color = tint;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "output.unknown = tint;"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -705,7 +717,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "float4 color = float4"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4 color = float4"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -729,14 +741,14 @@ TEST(gfx_shader_compiler_transpile_uniform_block_outputs)
 		EXPECT_EQ(shader.buffer_count, 1);
 		EXPECT_EQ(shader.buffers[0].slot, 3);
 		EXPECT_EQ(strv_eq(shader.buffers[0].name, STRV("Camera")), 1);
-		EXPECT_NOT_NULL(strstr(shader.text, "layout(std140) uniform Camera"));
-		EXPECT_NOT_NULL(strstr(shader.text, "mat4 model;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "mat4 view;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "mat4 projection;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "projection"));
-		EXPECT_NOT_NULL(strstr(shader.text, "view"));
-		EXPECT_NOT_NULL(strstr(shader.text, "model"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec4("));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "layout(std140) uniform Camera"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mat4 model;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mat4 view;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mat4 projection;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "projection"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "view"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "model"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec4("));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -749,14 +761,14 @@ TEST(gfx_shader_compiler_transpile_uniform_block_outputs)
 		EXPECT_EQ(shader.buffer_count, 1);
 		EXPECT_EQ(shader.buffers[0].slot, 3);
 		EXPECT_EQ(strv_eq(shader.buffers[0].name, STRV("Camera")), 1);
-		EXPECT_NOT_NULL(strstr(shader.text, "cbuffer Camera : register(b3)"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4x4 model;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4x4 view;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4x4 projection;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "projection"));
-		EXPECT_NOT_NULL(strstr(shader.text, "view"));
-		EXPECT_NOT_NULL(strstr(shader.text, "model"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4("));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "cbuffer Camera : register(b3)"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4x4 model;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4x4 view;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4x4 projection;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "projection"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "view"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "model"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4("));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -815,9 +827,9 @@ TEST(gfx_shader_compiler_transpile_vec3_mat4_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "layout(location = 0) in vec3 position;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "vec3 local = position;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "mat4 transform = mat4();"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "layout(location = 0) in vec3 position;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "vec3 local = position;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mat4 transform = mat4();"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -827,9 +839,9 @@ TEST(gfx_shader_compiler_transpile_vec3_mat4_outputs)
 
 	EXPECT_EQ(ret, 0);
 	if (ret == 0) {
-		EXPECT_NOT_NULL(strstr(shader.text, "float3 position : POSITION;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float3 local = input.position;"));
-		EXPECT_NOT_NULL(strstr(shader.text, "float4x4 transform = float4x4();"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float3 position : POSITION;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float3 local = input.position;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4x4 transform = float4x4();"));
 	}
 	gfx_shader_code_free(&shader);
 
