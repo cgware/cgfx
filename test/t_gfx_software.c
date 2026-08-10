@@ -2,6 +2,7 @@
 
 #include "cmath.h"
 #include "log.h"
+#include "mem.h"
 #include "test.h"
 
 static gfx_driver_t *t_gfx_software_driver(void)
@@ -13,6 +14,7 @@ static int t_gfx_software_present_calls;
 static int t_gfx_software_present_ret;
 static int t_gfx_software_memory_calls;
 static int t_gfx_software_memory_ret;
+static gfx_image_t t_gfx_software_image;
 static int t_gfx_software_alloc_count;
 static gfx_surface_memory_t t_gfx_software_memory;
 
@@ -141,6 +143,7 @@ static void t_gfx_software_reset_surface(u8 *pixels, u16 width, u16 height, size
 	t_gfx_software_present_ret   = 0;
 	t_gfx_software_memory_calls  = 0;
 	t_gfx_software_memory_ret    = 0;
+	t_gfx_software_image	     = (gfx_image_t){0};
 
 	t_gfx_software_memory = (gfx_surface_memory_t){
 		.format = GFX_FORMAT_RGBA8,
@@ -176,11 +179,11 @@ static int t_gfx_software_realloc_fail(alloc_t *alloc, void **ptr, size_t *capac
 	return 1;
 }
 
-static int t_gfx_software_scene(gfx_t *gfx, gfx_target_t *target, gfx_render_pass_t *render_pass, gfx_framebuffer_t *framebuffer,
-				u8 *pixels, u16 width, u16 height, size_t stride)
+static int t_gfx_software_scene(gfx_t *gfx, gfx_image_t *target, gfx_render_pass_t *render_pass, gfx_framebuffer_t *framebuffer, u8 *pixels,
+				u16 width, u16 height, size_t stride)
 {
-	gfx_driver_t *drv				= t_gfx_software_driver();
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_driver_t *drv			       = t_gfx_software_driver();
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= width,
@@ -193,7 +196,7 @@ static int t_gfx_software_scene(gfx_t *gfx, gfx_target_t *target, gfx_render_pas
 		.store	      = GFX_STORE_STORE,
 	};
 	if (gfx_init(gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD) != gfx ||
-	    gfx_target_init_memory(target, gfx, &memory_target_config) != target) {
+	    gfx_image_init_memory(target, gfx, &memory_target_config) != target) {
 		return 1;
 	}
 	if (gfx_render_pass_init(render_pass, gfx, &render_pass_config) != render_pass) {
@@ -202,15 +205,20 @@ static int t_gfx_software_scene(gfx_t *gfx, gfx_target_t *target, gfx_render_pas
 	return gfx_framebuffer_init(framebuffer, target, render_pass) != framebuffer;
 }
 
-static int t_gfx_software_surface_scene(gfx_t *gfx, gfx_swapchain_t *swapchain, gfx_target_t *target, gfx_render_pass_t *render_pass,
+static int t_gfx_software_surface_scene(gfx_t *gfx, gfx_swapchain_t *swapchain, gfx_image_t *target, gfx_render_pass_t *render_pass,
 					gfx_framebuffer_t *framebuffer, gfx_surface_t *surface)
 {
-	gfx_driver_t *drv			= t_gfx_software_driver();
+	gfx_driver_t *drv = t_gfx_software_driver();
+	static gfx_image_t images[8];
+	mem_set(images, 0, sizeof(images));
 	gfx_swapchain_config_t swapchain_config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = surface,
-		.width	 = 2,
-		.height	 = 2,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = surface,
+		.width		 = 2,
+		.height		 = 2,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -218,20 +226,21 @@ static int t_gfx_software_surface_scene(gfx_t *gfx, gfx_swapchain_t *swapchain, 
 		.store	      = GFX_STORE_STORE,
 	};
 	if (gfx_init(gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD) != gfx ||
-	    gfx_swapchain_init(swapchain, gfx, &swapchain_config) != swapchain || gfx_target_init_swapchain(target, swapchain) != target) {
+	    gfx_swapchain_init(swapchain, gfx, &swapchain_config) != swapchain) {
 		return 1;
 	}
+	*target = swapchain->images[0];
 	if (gfx_render_pass_init(render_pass, gfx, &render_pass_config) != render_pass) {
 		return 1;
 	}
 	return gfx_framebuffer_init(framebuffer, target, render_pass) != framebuffer;
 }
 
-static void t_gfx_software_scene_free(gfx_t *gfx, gfx_target_t *target, gfx_render_pass_t *render_pass, gfx_framebuffer_t *framebuffer)
+static void t_gfx_software_scene_free(gfx_t *gfx, gfx_image_t *target, gfx_render_pass_t *render_pass, gfx_framebuffer_t *framebuffer)
 {
 	gfx_framebuffer_free(framebuffer);
 	gfx_render_pass_free(render_pass);
-	gfx_target_free(target);
+	gfx_image_free(target);
 	gfx_free(gfx);
 }
 
@@ -239,7 +248,7 @@ static int t_gfx_software_draw_source(const char *source, int indexed, int use_u
 {
 	u8 pixels[256]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	int ret			      = 1;
@@ -378,15 +387,15 @@ TEST(gfx_software_memory_pass_clears_target)
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 2,
 		.height = 2,
 		.stride = 8,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(gfx_image_init_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -405,7 +414,7 @@ TEST(gfx_software_memory_pass_clears_target)
 	EXPECT_EQ(gfx_end(&frame), 0);
 
 	u8 readback[16] = {0};
-	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 8}), 0);
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 8}), 0);
 	EXPECT_EQ(readback[0], 255);
 	EXPECT_EQ(readback[1], 0);
 	EXPECT_EQ(readback[2], 0);
@@ -413,7 +422,7 @@ TEST(gfx_software_memory_pass_clears_target)
 
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -424,7 +433,7 @@ TEST(gfx_software_memory_pass_load_does_not_clear)
 
 	u8 pixels[4]		      = {1, 2, 3, 4};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 1, 1, 4), 0);
@@ -463,23 +472,30 @@ TEST(gfx_software_surface_target_lifecycle)
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
 	gfx_swapchain_t swapchain		= {0};
-	gfx_target_t target			= {0};
+	gfx_image_t target			= {0};
+	gfx_image_t images[2]			= {0};
 	gfx_swapchain_config_t swapchain_config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &surface,
-		.width	 = 2,
-		.height	 = 2,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &surface,
+		.width		 = 2,
+		.height		 = 2,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	EXPECT_PTR(gfx_swapchain_init(&swapchain, &gfx, &swapchain_config), &swapchain);
-	EXPECT_PTR(gfx_target_init_swapchain(&target, &swapchain), &target);
+	target = swapchain.images[0];
+	EXPECT_EQ(drv->image_init(&target), 0);
 	EXPECT_EQ(t_gfx_software_memory_calls, 1);
 	EXPECT_NOT_NULL(target.driver_data);
 	EXPECT_EQ(gfx_swapchain_resize(&swapchain, 3, 3), 0);
 	EXPECT_EQ(t_gfx_software_memory_calls, 1);
-	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
+	gfx_swapchain_image_t image = {0};
+	EXPECT_EQ(gfx_swapchain_acquire(&swapchain, &image), 0);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain, &image), 0);
 	EXPECT_EQ(t_gfx_software_present_calls, 1);
 
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	EXPECT_NULL(target.driver_data);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
@@ -505,35 +521,47 @@ TEST(gfx_software_surface_target_failures)
 		.height	 = 1,
 	};
 	EXPECT_NULL(gfx_swapchain_init(&(gfx_swapchain_t){0}, &gfx, &swapchain_config_null));
+	EXPECT_EQ(drv->swapchain_init(&(gfx_swapchain_t){.gfx	  = &gfx,
+							 .format  = GFX_FORMAT_RGBA8,
+							 .surface = &(gfx_surface_t){.api = GFX_API_SOFTWARE},
+							 .width	  = 1,
+							 .height  = 1},
+				      &swapchain_config_null),
+		  1);
 	t_gfx_software_memory_ret		= 1;
 	gfx_swapchain_t invalid_swapchain	= {0};
+	gfx_image_t images[2]			= {0};
 	gfx_swapchain_config_t swapchain_config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &surface,
-		.width	 = 1,
-		.height	 = 1,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &surface,
+		.width		 = 1,
+		.height		 = 1,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	EXPECT_PTR(gfx_swapchain_init(&invalid_swapchain, &gfx, &swapchain_config), &invalid_swapchain);
-	EXPECT_NULL(gfx_target_init_swapchain(&(gfx_target_t){0}, &invalid_swapchain));
+	EXPECT_EQ(drv->image_init(&invalid_swapchain.images[0]), 1);
 	gfx_swapchain_free(&invalid_swapchain);
 	t_gfx_software_memory_ret    = 0;
 	t_gfx_software_memory.stride = 1;
 	EXPECT_PTR(gfx_swapchain_init(&invalid_swapchain, &gfx, &swapchain_config), &invalid_swapchain);
-	EXPECT_NULL(gfx_target_init_swapchain(&(gfx_target_t){0}, &invalid_swapchain));
+	EXPECT_EQ(drv->image_init(&invalid_swapchain.images[0]), 1);
 	gfx_swapchain_free(&invalid_swapchain);
 	EXPECT_EQ(drv->swapchain_resize(
 			  &(gfx_swapchain_t){.gfx = &gfx, .format = GFX_FORMAT_RGBA8, .surface = &surface, .width = 1, .height = 1}, 2, 2),
 		  0);
 	t_gfx_software_reset_surface(pixels, 1, 1, 4);
 	gfx_swapchain_t swapchain = {0};
-	gfx_target_t target	  = {0};
+	gfx_image_t target	  = {0};
 	EXPECT_PTR(gfx_swapchain_init(&swapchain, &gfx, &swapchain_config), &swapchain);
-	EXPECT_PTR(gfx_target_init_swapchain(&target, &swapchain), &target);
+	target = swapchain.images[0];
+	EXPECT_EQ(drv->image_init(&target), 0);
 	t_gfx_software_memory_ret = 1;
 	EXPECT_EQ(gfx_swapchain_resize(&swapchain, 2, 2), 0);
 	EXPECT_EQ(drv->swapchain_present(&(gfx_swapchain_t){0}), 1);
 
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	END;
@@ -556,13 +584,26 @@ TEST(gfx_software_swapchain_resize_rejects_invalid_direct)
 	END;
 }
 
+TEST(gfx_software_swapchain_free_rejects_missing_image_storage_direct)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {.drv = drv};
+
+	drv->swapchain_free(&(gfx_swapchain_t){.gfx = &gfx});
+
+	END;
+}
+
 TEST(gfx_software_draw_triangle)
 {
 	START;
 
 	u8 pixels[64]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 4, 4, 16), 0);
@@ -598,7 +639,7 @@ TEST(gfx_software_draw_triangle)
 	EXPECT_EQ(gfx_end(&frame), 0);
 
 	u8 readback[64] = {0};
-	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 16}), 0);
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 16}), 0);
 	EXPECT_NE(readback[3], 0);
 
 	gfx_buffer_free(&buffer);
@@ -614,7 +655,7 @@ TEST(gfx_software_draw_indexed_triangle)
 
 	u8 pixels[64]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 4, 4, 16), 0);
@@ -649,7 +690,7 @@ TEST(gfx_software_draw_indexed_triangle)
 	EXPECT_EQ(gfx_end(&frame), 0);
 
 	u8 readback[64] = {0};
-	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 16}), 0);
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 16}), 0);
 	EXPECT_NE(readback[3], 0);
 
 	gfx_buffer_free(&index_buffer);
@@ -666,7 +707,7 @@ TEST(gfx_software_draw_shader_pipeline_vec3_uniform)
 
 	u8 pixels[256]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32), 0);
@@ -760,7 +801,7 @@ TEST(gfx_software_draw_shader_pipeline_vec3_uniform)
 	EXPECT_EQ(gfx_end(&frame), 0);
 
 	u8 readback[256] = {0};
-	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 32}), 0);
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 32}), 0);
 	EXPECT_NE(readback[3], 0);
 
 	gfx_buffer_free(&uniform_buffer);
@@ -780,7 +821,7 @@ TEST(gfx_software_shader_pipeline_uniform_failures)
 
 	u8 pixels[256]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32), 0);
@@ -1015,7 +1056,7 @@ TEST(gfx_software_draw_buffer_failures)
 
 	u8 pixels[64]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 4, 4, 16), 0);
@@ -1204,7 +1245,7 @@ TEST(gfx_software_bind_resources_uniform_buffer_success)
 
 	u8 pixels[16]		      = {0};
 	gfx_t gfx		      = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 2, 2, 8), 0);
@@ -1446,7 +1487,7 @@ TEST(gfx_software_surface_pass_begin_and_draw_clips)
 	gfx_surface_t surface	      = {.api = GFX_API_SOFTWARE, .ops = &t_gfx_software_surface_ops};
 	gfx_t gfx		      = {0};
 	gfx_swapchain_t swapchain     = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_EQ(t_gfx_software_surface_scene(&gfx, &swapchain, &target, &render_pass, &framebuffer, &surface), 0);
@@ -1481,8 +1522,58 @@ TEST(gfx_software_surface_pass_begin_and_draw_clips)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_surface_pass_begin_reports_lazy_image_init_failure)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	t_gfx_software_reset_surface(pixels, 1, 1, 4);
+	gfx_surface_t surface = {.api = GFX_API_SOFTWARE, .ops = &t_gfx_software_surface_ops};
+	gfx_driver_t *drv     = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+
+	gfx_swapchain_t swapchain = {
+		.gfx	 = &gfx,
+		.surface = &surface,
+		.format	 = GFX_FORMAT_RGBA8,
+		.width	 = 1,
+		.height	 = 1,
+	};
+	gfx_image_t target = {
+		.gfx	   = &gfx,
+		.origin	   = GFX_IMAGE_ORIGIN_SURFACE,
+		.format	   = GFX_FORMAT_RGBA8,
+		.swapchain = &swapchain,
+		.width	   = 1,
+		.height	   = 1,
+	};
+	gfx_render_pass_t render_pass = {
+		.gfx	      = &gfx,
+		.color_format = GFX_FORMAT_RGBA8,
+		.load	      = GFX_LOAD_LOAD,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.image	     = &target,
+		.render_pass = &render_pass,
+		.width	     = 1,
+		.height	     = 1,
+	};
+	gfx_frame_t frame	  = {.gfx = &gfx};
+	t_gfx_software_memory_ret = 1;
+
+	EXPECT_EQ(drv->framebuffer_pass_begin(&framebuffer, &frame), 1);
+	EXPECT_NULL(target.driver_data);
+
+	t_gfx_software_memory_ret = 0;
 	gfx_free(&gfx);
 	END;
 }
@@ -1497,16 +1588,16 @@ TEST(gfx_software_driver_direct_branches)
 	gfx_t gfx = {0};
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target_1 = {
+	gfx_image_t target_1 = {
 		.gfx	= &gfx,
-		.type	= GFX_TARGET_MEMORY,
+		.origin = GFX_IMAGE_ORIGIN_MEMORY,
 		.format = GFX_FORMAT_NONE,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_EQ(drv->target_init(&target_1), 1);
+	EXPECT_EQ(drv->image_init(&target_1), 1);
 	t_gfx_software_reset_surface(pixels, 1, 1, 4);
 	gfx_swapchain_t swapchain_1 = {
 		.surface = &(gfx_surface_t){.api = GFX_API_SOFTWARE, .ops = &t_gfx_software_surface_ops},
@@ -1514,18 +1605,18 @@ TEST(gfx_software_driver_direct_branches)
 		.width	 = 1,
 		.height	 = 1,
 	};
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	   = &(gfx_t){.data = gfx.data, .alloc = (alloc_t){.alloc = t_gfx_software_alloc_fail}},
-		.type	   = GFX_TARGET_SWAPCHAIN,
+		.origin	   = GFX_IMAGE_ORIGIN_SURFACE,
 		.format	   = GFX_FORMAT_RGBA8,
 		.swapchain = &swapchain_1,
 		.width	   = 1,
 		.height	   = 1,
 	};
-	EXPECT_EQ(drv->target_init(&target), 1);
-	drv->target_free(NULL);
+	EXPECT_EQ(drv->image_init(&target), 1);
+	drv->image_free(NULL);
 
-	EXPECT_EQ(drv->target_read(&(gfx_target_t){.gfx = &gfx}, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(drv->image_read(&(gfx_image_t){.gfx = &gfx}, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
 
 	gfx_frame_t frame		   = {.gfx = &gfx};
 	gfx_render_pass_t pass		   = {0};
@@ -1538,28 +1629,28 @@ TEST(gfx_software_driver_direct_branches)
 	};
 	t_gfx_software_surface_target_data_t surface_data = {.memory = {0}};
 
-	gfx_target_t invalid_surface_target = {
-		.type	     = GFX_TARGET_SWAPCHAIN,
+	gfx_image_t invalid_surface_target = {
+		.origin	     = GFX_IMAGE_ORIGIN_SURFACE,
 		.format	     = GFX_FORMAT_RGBA8,
 		.swapchain   = &software_swapchain,
 		.width	     = 1,
 		.height	     = 1,
 		.driver_data = &surface_data,
 	};
-	gfx_framebuffer_t invalid_surface_framebuffer = {.target = &invalid_surface_target, .render_pass = &pass};
+	gfx_framebuffer_t invalid_surface_framebuffer = {.image = &invalid_surface_target, .render_pass = &pass};
 
 	EXPECT_EQ(drv->framebuffer_pass_begin(
-			  &(gfx_framebuffer_t){.target = &(gfx_target_t){.type = GFX_TARGET_NONE}, .render_pass = &pass}, &frame),
+			  &(gfx_framebuffer_t){.image = &(gfx_image_t){.origin = GFX_IMAGE_ORIGIN_NONE}, .render_pass = &pass}, &frame),
 		  0);
 	EXPECT_EQ(drv->framebuffer_pass_begin(
-			  &(gfx_framebuffer_t){.target = &(gfx_target_t){.type = GFX_TARGET_SWAPCHAIN}, .render_pass = &pass}, &frame),
+			  &(gfx_framebuffer_t){.image = &(gfx_image_t){.origin = GFX_IMAGE_ORIGIN_SURFACE}, .render_pass = &pass}, &frame),
 		  1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(&invalid_surface_framebuffer, &frame), 1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(
-			  &(gfx_framebuffer_t){.target = &(gfx_target_t){.type = GFX_TARGET_MEMORY}, .render_pass = &pass}, &frame),
+			  &(gfx_framebuffer_t){.image = &(gfx_image_t){.origin = GFX_IMAGE_ORIGIN_MEMORY}, .render_pass = &pass}, &frame),
 		  1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(
-			  &(gfx_framebuffer_t){.target = &(gfx_target_t){.type = (gfx_target_type_t)99}, .render_pass = &pass}, &frame),
+			  &(gfx_framebuffer_t){.image = &(gfx_image_t){.origin = (gfx_image_origin_t)99}, .render_pass = &pass}, &frame),
 		  1);
 	drv->buffer_free(NULL);
 	gfx_buffer_t buffer = {.gfx = &gfx};
@@ -1627,9 +1718,9 @@ TEST(gfx_software_driver_callback_failures)
 	gfx_driver_t *drv = t_gfx_software_driver();
 	EXPECT_NOT_NULL(drv);
 
-	EXPECT_EQ(drv->target_init(NULL), 1);
-	EXPECT_EQ(drv->target_init(&(gfx_target_t){.type = GFX_TARGET_NONE, .gfx = &(gfx_t){.data = (void *)1}}), 1);
-	EXPECT_EQ(drv->target_read(NULL, &(gfx_memory_readback_config_t){0}), 1);
+	EXPECT_EQ(drv->image_init(NULL), 1);
+	EXPECT_EQ(drv->image_init(&(gfx_image_t){.origin = GFX_IMAGE_ORIGIN_NONE, .gfx = &(gfx_t){.data = (void *)1}}), 1);
+	EXPECT_EQ(drv->image_read(NULL, &(gfx_memory_readback_config_t){0}), 1);
 	EXPECT_EQ(drv->framebuffer_pass_begin(NULL, NULL), 1);
 	EXPECT_EQ(drv->buffer_init(NULL, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
 	EXPECT_EQ(drv->buffer_set_data(NULL, NULL, 0), 1);
@@ -1654,6 +1745,7 @@ STEST(gfx_software)
 	RUN(gfx_software_surface_target_lifecycle);
 	RUN(gfx_software_surface_target_failures);
 	RUN(gfx_software_swapchain_resize_rejects_invalid_direct);
+	RUN(gfx_software_swapchain_free_rejects_missing_image_storage_direct);
 	RUN(gfx_software_draw_triangle);
 	RUN(gfx_software_draw_indexed_triangle);
 	RUN(gfx_software_draw_shader_pipeline_vec3_uniform);
@@ -1672,6 +1764,7 @@ STEST(gfx_software)
 	RUN(gfx_software_pipeline_layout_failures);
 	RUN(gfx_software_draw_indexed_rejects_invalid_target);
 	RUN(gfx_software_surface_pass_begin_and_draw_clips);
+	RUN(gfx_software_surface_pass_begin_reports_lazy_image_init_failure);
 	RUN(gfx_software_driver_direct_branches);
 	RUN(gfx_software_driver_callback_failures);
 	SEND;

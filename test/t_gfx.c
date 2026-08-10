@@ -5,7 +5,7 @@
 
 static int t_init_calls;
 static int t_free_calls;
-static int t_target_init_calls;
+static int t_image_init_calls;
 static int t_render_pass_init_calls;
 static int t_framebuffer_init_calls;
 static int t_framebuffer_pass_begin_calls;
@@ -38,10 +38,10 @@ static int t_free(gfx_t *gfx)
 	return 0;
 }
 
-static int t_target_init(gfx_target_t *target)
+static int t_image_init(gfx_image_t *target)
 {
 	(void)target;
-	t_target_init_calls++;
+	t_image_init_calls++;
 	return 0;
 }
 
@@ -176,7 +176,7 @@ static gfx_driver_t t_driver = {
 	.free			= t_free,
 	.native			= t_native,
 	.proc			= t_proc,
-	.target_init		= t_target_init,
+	.image_init		= t_image_init,
 	.render_pass_init	= t_render_pass_init,
 	.framebuffer_init	= t_framebuffer_init,
 	.framebuffer_pass_begin = t_framebuffer_pass_begin,
@@ -200,7 +200,7 @@ static void t_reset(void)
 {
 	t_init_calls		       = 0;
 	t_free_calls		       = 0;
-	t_target_init_calls	       = 0;
+	t_image_init_calls	       = 0;
 	t_render_pass_init_calls       = 0;
 	t_framebuffer_init_calls       = 0;
 	t_framebuffer_pass_begin_calls = 0;
@@ -400,16 +400,16 @@ TEST(gfx_frame_requires_bound_pipeline_and_buffer)
 	gfx_t gfx     = {0};
 	EXPECT_PTR(gfx_init(&gfx, &t_driver, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 2,
 		.height = 2,
 		.stride = 8,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
-	EXPECT_EQ(t_target_init_calls, 1);
+	EXPECT_PTR(gfx_image_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_EQ(t_image_init_calls, 1);
 
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
@@ -457,7 +457,7 @@ TEST(gfx_frame_requires_bound_pipeline_and_buffer)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -471,15 +471,15 @@ TEST(gfx_draw_indexed_requires_bound_vertex_and_index_buffers)
 	gfx_t gfx     = {0};
 	EXPECT_PTR(gfx_init(&gfx, &t_driver, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 2,
 		.height = 2,
 		.stride = 8,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(gfx_image_init_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -520,7 +520,7 @@ TEST(gfx_draw_indexed_requires_bound_vertex_and_index_buffers)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }

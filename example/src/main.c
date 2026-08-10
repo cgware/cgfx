@@ -75,6 +75,7 @@ int main(void)
 	gfx_buffer_t vb		      = {0};
 	gfx_shader_t vertex	      = {0};
 	gfx_shader_t fragment	      = {0};
+	gfx_image_t image	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	gfx_pipeline_t pipeline	      = {0};
@@ -146,20 +147,19 @@ int main(void)
 		{.index = 0, .semantic = "POSITION", .count = 2, .type = GFX_VALUE_FLOAT32},
 		{.index = 1, .semantic = "COLOR", .count = 4, .type = GFX_VALUE_FLOAT32},
 	};
-	gfx_memory_target_config_t target_config = {
+	gfx_image_memory_config_t image_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= WIDTH,
 		.height = HEIGHT,
 		.stride = WIDTH * 4,
 	};
-	gfx_target_t target = {0};
-	if (ret == 0 && gfx_target_init_memory(&target, &gfx, &target_config) == NULL) {
-		log_error("cgfx_example", "main", NULL, "failed to initialize memory target");
+	if (ret == 0 && gfx_image_init_memory(&image, &gfx, &image_config) == NULL) {
+		log_error("cgfx_example", "main", NULL, "failed to initialize memory image");
 		ret = 1;
 	}
 	gfx_render_pass_config_t render_pass_config = {
-		.color_format = target.format,
+		.color_format = image.format,
 		.load	      = GFX_LOAD_CLEAR,
 		.store	      = GFX_STORE_STORE,
 	};
@@ -167,7 +167,7 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to initialize render pass");
 		ret = 1;
 	}
-	if (ret == 0 && gfx_framebuffer_init(&framebuffer, &target, &render_pass) == NULL) {
+	if (ret == 0 && gfx_framebuffer_init(&framebuffer, &image, &render_pass) == NULL) {
 		log_error("cgfx_example", "main", NULL, "failed to initialize framebuffer");
 		ret = 1;
 	}
@@ -207,7 +207,7 @@ int main(void)
 		log_error("cgfx_example", "main", NULL, "failed to end frame");
 		ret = 1;
 	}
-	if (ret == 0 && gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = WIDTH * 4})) {
+	if (ret == 0 && gfx_image_read(&image, &(gfx_memory_readback_config_t){.data = pixels, .stride = WIDTH * 4})) {
 		log_error("cgfx_example", "main", NULL, "failed to read back rendered image");
 		ret = 1;
 	}
@@ -225,7 +225,7 @@ int main(void)
 	gfx_shader_free(&fragment);
 	gfx_pipeline_free(&pipeline);
 	gfx_framebuffer_free(&framebuffer);
-	gfx_target_free(&target);
+	gfx_image_free(&image);
 	gfx_render_pass_free(&render_pass);
 	gfx_free(&gfx);
 	proc_free(&proc);

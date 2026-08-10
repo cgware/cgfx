@@ -2,6 +2,14 @@
 
 #include "test.h"
 
+static gfx_image_t t_gfx_none_image;
+
+static gfx_image_t *t_gfx_none_image_init_image_memory(gfx_image_t *target, gfx_t *gfx, const gfx_image_memory_config_t *config)
+{
+	(void)t_gfx_none_image;
+	return gfx_image_init_memory(target, gfx, config);
+}
+
 static gfx_driver_t *t_gfx_none_driver(void)
 {
 	return gfx_driver_find(STRV("none"));
@@ -63,15 +71,15 @@ TEST(gfx_none_explicit_pass_success)
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_none_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -85,11 +93,11 @@ TEST(gfx_none_explicit_pass_success)
 	gfx_frame_t frame = {0};
 	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear = {0.0f, 0.0f, 0.0f, 1.0f}}), 0);
 	EXPECT_EQ(gfx_end(&frame), 0);
-	EXPECT_EQ(gfx_target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
 
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -105,15 +113,15 @@ TEST(gfx_none_draw_pipeline_success)
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_none_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -146,7 +154,7 @@ TEST(gfx_none_draw_pipeline_success)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -162,15 +170,15 @@ TEST(gfx_none_bind_resources_uniform_buffer_success)
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_none_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -210,7 +218,7 @@ TEST(gfx_none_bind_resources_uniform_buffer_success)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -226,15 +234,15 @@ TEST(gfx_none_draw_indexed_pipeline_success)
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
-	gfx_target_t target				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_none_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_t render_pass		    = {0};
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
@@ -274,7 +282,7 @@ TEST(gfx_none_draw_indexed_pipeline_success)
 	gfx_shader_free(&shader);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	END;
 }
@@ -290,19 +298,25 @@ TEST(gfx_none_surface_target_success)
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
 
 	gfx_swapchain_t swapchain		= {0};
+	gfx_image_t images[2]			= {0};
 	gfx_swapchain_config_t swapchain_config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &surface,
-		.width	 = 1,
-		.height	 = 1,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &surface,
+		.width		 = 1,
+		.height		 = 1,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	EXPECT_PTR(gfx_swapchain_init(&swapchain, &gfx, &swapchain_config), &swapchain);
-	gfx_target_t target = {0};
-	EXPECT_PTR(gfx_target_init_swapchain(&target, &swapchain), &target);
+	gfx_image_t target = {0};
+	target		   = swapchain.images[0];
 	EXPECT_EQ(gfx_swapchain_resize(&swapchain, 2, 3), 0);
-	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
+	gfx_swapchain_image_t image = {0};
+	EXPECT_EQ(gfx_swapchain_acquire(&swapchain, &image), 0);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain, &image), 0);
 
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	END;

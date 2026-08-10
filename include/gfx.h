@@ -57,11 +57,20 @@ typedef struct gfx_surface_memory_s {
 	size_t stride;
 } gfx_surface_memory_t;
 
+typedef struct gfx_surface_config_s {
+	gfx_format_t format;
+	u16 width;
+	u16 height;
+	u32 image_count;
+	gfx_present_mode_t present_mode;
+} gfx_surface_config_t;
+
 typedef struct gfx_surface_ops_s {
 	int (*proc)(gfx_surface_t *surface, strv_t name, void **proc);
 	int (*make_current)(gfx_surface_t *surface);
 	int (*clear_current)(gfx_surface_t *surface);
 	int (*present_mode)(gfx_surface_t *surface, gfx_present_mode_t requested, gfx_present_mode_t *actual);
+	int (*configure)(gfx_surface_t *surface, const gfx_surface_config_t *config);
 	int (*present)(gfx_surface_t *surface, gfx_present_mode_t present_mode);
 	int (*memory)(gfx_surface_t *surface, gfx_surface_memory_t *memory);
 } gfx_surface_ops_t;

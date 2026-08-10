@@ -2,6 +2,7 @@
 #include "eprs.h"
 #include "gfx_shader_driver.h"
 #include "log.h"
+#include "mem.h"
 
 static const char *gfx_shader_stage_name(gfx_shader_stage_t stage)
 {
@@ -638,7 +639,7 @@ static int gfx_shader_build_ir(const eprs_t *eprs, const lex_t *lex, const gfx_s
 		return 1; // LCOV_EXCL_LINE
 	}
 
-	*ir = (gfx_shader_ir_t){0};
+	mem_set(ir, 0, sizeof(gfx_shader_ir_t));
 
 	eprs_node_t item;
 	const void *data;
@@ -865,7 +866,7 @@ int gfx_shader_compiler_ir(gfx_shader_compiler_t *compiler, strv_t source, gfx_s
 		return 1;
 	}
 
-	*ir = (gfx_shader_ir_t){0};
+	mem_set(ir, 0, sizeof(gfx_shader_ir_t));
 
 	lex_t lex	 = {0};
 	eprs_t eprs	 = {0};
@@ -886,12 +887,12 @@ int gfx_shader_compiler_ir(gfx_shader_compiler_t *compiler, strv_t source, gfx_s
 	lex_free(&lex);
 	if (ret) {										       // LCOV_EXCL_LINE
 		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: IR build failed"); // LCOV_EXCL_LINE
-		*ir = (gfx_shader_ir_t){0};							       // LCOV_EXCL_LINE
+		mem_set(ir, 0, sizeof(gfx_shader_ir_t));					       // LCOV_EXCL_LINE
 		return 1;									       // LCOV_EXCL_LINE
 	}
 	if (!gfx_shader_ir_supported(ir)) {
 		log_error("cgfx", "gfx_shader", NULL, "failed to compile shader IR: IR is not supported by current backends");
-		*ir = (gfx_shader_ir_t){0};
+		mem_set(ir, 0, sizeof(gfx_shader_ir_t));
 		return 1;
 	}
 	return 0;

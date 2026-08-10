@@ -5,6 +5,7 @@
 #include "gfx_buffer.h"
 #include "gfx_framebuffer.h"
 #include "gfx_pipeline.h"
+#include "gfx_swapchain.h"
 
 /**
  * @defgroup graphics Graphics
@@ -26,10 +27,11 @@ typedef struct gfx_driver_s {
 	void (*swapchain_free)(gfx_swapchain_t *swapchain);
 	int (*swapchain_resize)(gfx_swapchain_t *swapchain, u16 width, u16 height);
 	int (*swapchain_refresh)(gfx_swapchain_t *swapchain);
+	int (*swapchain_acquire)(gfx_swapchain_t *swapchain, gfx_swapchain_image_t *image);
 	int (*swapchain_present)(gfx_swapchain_t *swapchain);
-	int (*target_init)(gfx_target_t *target);
-	void (*target_free)(gfx_target_t *target);
-	int (*target_read)(gfx_target_t *target, const gfx_memory_readback_config_t *config);
+	int (*image_init)(gfx_image_t *image);
+	void (*image_free)(gfx_image_t *image);
+	int (*image_read)(gfx_image_t *image, const gfx_memory_readback_config_t *config);
 	int (*buffer_init)(gfx_buffer_t *buffer, const gfx_buffer_config_t *config);
 	void (*buffer_free)(gfx_buffer_t *buffer);
 	int (*buffer_set_data)(gfx_buffer_t *buffer, const void *data, size_t size);

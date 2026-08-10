@@ -1,6 +1,7 @@
 #include "gfx_driver.h"
 
 #include "log.h"
+#include "mem.h"
 #include "opengl.h"
 #include "test.h"
 
@@ -88,6 +89,28 @@ static int t_gl_program_info_log_available;
 static int t_gl_get_error_available;
 static int t_gl_get_string_available;
 static int t_gl_program_status;
+static gfx_image_t t_gfx_opengl_image;
+
+static gfx_image_t *t_gfx_opengl_image_init_image_memory(gfx_image_t *target, gfx_t *gfx, const gfx_image_memory_config_t *config)
+{
+	(void)t_gfx_opengl_image;
+	return gfx_image_init_memory(target, gfx, config);
+}
+
+static gfx_image_t *t_gfx_opengl_image_init_image_swapchain(gfx_image_t *target, gfx_swapchain_t *swapchain)
+{
+	if (target == NULL || swapchain == NULL || swapchain->images == NULL) {
+		return NULL;
+	}
+	*target = swapchain->images[0];
+	return target;
+}
+
+static int t_gfx_opengl_swapchain_present(gfx_swapchain_t *swapchain)
+{
+	gfx_swapchain_image_t image = {0};
+	return gfx_swapchain_acquire(swapchain, &image) || gfx_swapchain_present(swapchain, &image);
+}
 static int t_gl_shader_fail_call;
 static unsigned int t_gl_create_shader_ret;
 static unsigned int t_gl_create_program_ret;
@@ -130,7 +153,7 @@ static const char *t_gfx_opengl_uniform_shader_source = "vs_in 0 VertexIn {\n"
 
 typedef struct t_gfx_opengl_data_s {
 	void *gl_lib;
-	const gfx_target_t *target;
+	const gfx_image_t *image;
 	const gfx_framebuffer_t *framebuffer;
 	gfx_surface_t *surface;
 	PFN_glClearColor ClearColor;
@@ -901,18 +924,23 @@ static int t_gfx_opengl_init_gfx(gfx_t *gfx, proc_t *proc)
 	return t_gfx_opengl_init_gfx_configured(gfx, proc);
 }
 
-static gfx_target_t *t_gfx_opengl_init_swapchain_target(gfx_t *gfx, gfx_swapchain_t *swapchain, gfx_target_t *target, u16 width, u16 height)
+static gfx_image_t *t_gfx_opengl_init_swapchain_target(gfx_t *gfx, gfx_swapchain_t *swapchain, gfx_image_t *target, u16 width, u16 height)
 {
+	static gfx_image_t images[8];
+	mem_set(images, 0, sizeof(images));
 	gfx_swapchain_config_t swapchain_config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_opengl_surface,
-		.width	 = width,
-		.height	 = height,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &t_gfx_opengl_surface,
+		.width		 = width,
+		.height		 = height,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	if (gfx_swapchain_init(swapchain, gfx, &swapchain_config) != swapchain) {
 		return NULL;
 	}
-	if (gfx_target_init_swapchain(target, swapchain) != target) {
+	if (t_gfx_opengl_image_init_image_swapchain(target, swapchain) != target) {
 		gfx_swapchain_free(swapchain);
 		return NULL;
 	}
@@ -998,10 +1026,10 @@ static int t_gfx_opengl_uniform_shader(gfx_t *gfx, gfx_shader_t *shader)
 	return gfx_shader_init(shader, gfx, &config) != shader;
 }
 
-static gfx_target_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height, size_t stride)
+static gfx_image_t t_gfx_opengl_memory_target(u8 *pixels, u16 width, u16 height, size_t stride)
 {
-	return (gfx_target_t){
-		.type	= GFX_TARGET_MEMORY,
+	return (gfx_image_t){
+		.origin = GFX_IMAGE_ORIGIN_MEMORY,
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= width,
@@ -3103,27 +3131,27 @@ TEST(gfx_opengl_set_target_null_data)
 		.drv = t_gfx_opengl_driver(),
 	};
 	EXPECT_NOT_NULL(gfx.drv);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
 
 	END;
 }
 
-TEST(gfx_opengl_target_free_null_data)
+TEST(gfx_opengl_image_free_null_data)
 {
 	START;
 
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
 
-	drv->target_free(NULL);
+	drv->image_free(NULL);
 
 	END;
 }
 
-TEST(gfx_opengl_target_free_surface_make_current_failure)
+TEST(gfx_opengl_image_free_surface_make_current_failure)
 {
 	START;
 
@@ -3135,19 +3163,19 @@ TEST(gfx_opengl_target_free_surface_make_current_failure)
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.surface = &t_gfx_opengl_surface}, &proc, ALLOC_STD), &gfx);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
-	EXPECT_EQ(drv->target_init(&target), 0);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
+	EXPECT_EQ(drv->image_init(&target), 0);
 	t_surface_make_current_ret = 0;
 
 	log_set_quiet(0, 1);
-	drv->target_free(&target);
+	drv->image_free(&target);
 	log_set_quiet(0, 0);
 	EXPECT_NOT_NULL(target.driver_data);
 
 	t_surface_make_current_ret = 1;
-	drv->target_free(&target);
+	drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3175,39 +3203,39 @@ TEST(gfx_opengl_render_pass_init_success)
 	END;
 }
 
-TEST(gfx_opengl_memory_target_init_invalid_config)
+TEST(gfx_opengl_memory_image_init_invalid_config)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	= &gfx,
-		.type	= GFX_TARGET_MEMORY,
+		.origin = GFX_IMAGE_ORIGIN_MEMORY,
 		.format = GFX_FORMAT_NONE,
 	};
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_memory_target_init_alloc_failure)
+TEST(gfx_opengl_memory_image_init_alloc_failure)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx.alloc	    = (alloc_t){.alloc = t_gfx_opengl_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
+	gfx.alloc	   = (alloc_t){.alloc = t_gfx_opengl_alloc_fail, .realloc = alloc_realloc_std, .free = alloc_free_std};
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
 
 	gfx.alloc = ALLOC_STD;
 	gfx_free(&gfx);
@@ -3215,7 +3243,7 @@ TEST(gfx_opengl_memory_target_init_alloc_failure)
 	END;
 }
 
-TEST(gfx_opengl_memory_target_init_surface_make_current_failure)
+TEST(gfx_opengl_memory_image_init_surface_make_current_failure)
 {
 	START;
 
@@ -3229,34 +3257,64 @@ TEST(gfx_opengl_memory_target_init_surface_make_current_failure)
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.surface = &t_gfx_opengl_surface}, &proc, ALLOC_STD), &gfx);
 	t_surface_make_current_ret = 0;
 	u8 pixels[4]		   = {0};
-	gfx_target_t target	   = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	gfx_image_t target	   = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
 	target.gfx		   = &gfx;
 
 	log_set_quiet(0, 1);
-	EXPECT_EQ(drv->target_init(&target), 1);
+	EXPECT_EQ(drv->image_init(&target), 1);
 	log_set_quiet(0, 0);
 
 	t_surface_make_current_ret = 1;
-	drv->target_free(&target);
+	drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_surface_target_init_invalid_config)
+TEST(gfx_opengl_surface_image_init_invalid_config)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	= &gfx,
-		.type	= GFX_TARGET_SWAPCHAIN,
+		.origin = GFX_IMAGE_ORIGIN_SURFACE,
 		.format = GFX_FORMAT_RGBA8,
 	};
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_surface_image_init_rejects_height_mismatch_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {
+		.gfx	 = &gfx,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_opengl_surface,
+		.width	 = 2,
+		.height	 = 2,
+	};
+	gfx_image_t target = {
+		.gfx	   = &gfx,
+		.origin	   = GFX_IMAGE_ORIGIN_SURFACE,
+		.format	   = GFX_FORMAT_RGBA8,
+		.swapchain = &swapchain,
+		.width	   = 2,
+		.height	   = 1,
+	};
+
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3289,11 +3347,15 @@ TEST(gfx_opengl_swapchain_init_present_mode_failure)
 	gfx_surface_ops_t ops	      = t_gfx_opengl_surface_ops;
 	ops.present_mode	      = t_gfx_opengl_surface_present_mode_failure;
 	t_gfx_opengl_surface.ops      = &ops;
+	gfx_image_t images[2]	      = {0};
 	gfx_swapchain_config_t config = {
-		.format	 = GFX_FORMAT_RGBA8,
-		.surface = &t_gfx_opengl_surface,
-		.width	 = 2,
-		.height	 = 2,
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &t_gfx_opengl_surface,
+		.width		 = 2,
+		.height		 = 2,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = sizeof(images) / sizeof(images[0]),
 	};
 	gfx_swapchain_t swapchain = {0};
 
@@ -3305,7 +3367,7 @@ TEST(gfx_opengl_swapchain_init_present_mode_failure)
 	END;
 }
 
-TEST(gfx_opengl_surface_target_init_success)
+TEST(gfx_opengl_surface_image_init_success)
 {
 	START;
 
@@ -3313,19 +3375,49 @@ TEST(gfx_opengl_surface_target_init_success)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_swapchain_t swapchain = {0};
-	gfx_target_t target	  = {0};
+	gfx_image_t target	  = {0};
 
 	EXPECT_PTR(t_gfx_opengl_init_swapchain_target(&gfx, &swapchain, &target, 2, 2), &target);
 	EXPECT_EQ(t_surface_make_current_calls, 1);
 
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_surface_target_init_make_current_failure)
+TEST(gfx_opengl_surface_image_init_success_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {
+		.gfx	 = &gfx,
+		.format	 = GFX_FORMAT_RGBA8,
+		.surface = &t_gfx_opengl_surface,
+		.width	 = 2,
+		.height	 = 2,
+	};
+	gfx_image_t target = {
+		.gfx	   = &gfx,
+		.origin	   = GFX_IMAGE_ORIGIN_SURFACE,
+		.format	   = GFX_FORMAT_RGBA8,
+		.swapchain = &swapchain,
+		.width	   = 2,
+		.height	   = 2,
+	};
+
+	EXPECT_EQ(gfx.drv->image_init(&target), 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_surface_image_init_make_current_failure)
 {
 	START;
 
@@ -3334,7 +3426,7 @@ TEST(gfx_opengl_surface_target_init_make_current_failure)
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	t_surface_make_current_ret = 0;
 	gfx_swapchain_t swapchain  = {0};
-	gfx_target_t target	   = {0};
+	gfx_image_t target	   = {0};
 
 	log_set_quiet(0, 1);
 	EXPECT_NULL(t_gfx_opengl_init_swapchain_target(&gfx, &swapchain, &target, 2, 2));
@@ -3383,58 +3475,58 @@ TEST(gfx_opengl_swapchain_present_calls_surface)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_swapchain_t swapchain = {0};
-	gfx_target_t target	  = {0};
+	gfx_image_t target	  = {0};
 	EXPECT_PTR(t_gfx_opengl_init_swapchain_target(&gfx, &swapchain, &target, 2, 2), &target);
 
-	EXPECT_EQ(gfx_swapchain_present(&swapchain), 0);
+	EXPECT_EQ(t_gfx_opengl_swapchain_present(&swapchain), 0);
 	EXPECT_EQ(t_surface_present_calls, 1);
 
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_init_none)
+TEST(gfx_opengl_image_init_none)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.gfx  = &gfx,
-		.type = GFX_TARGET_NONE,
+	gfx_image_t target = {
+		.gfx	= &gfx,
+		.origin = GFX_IMAGE_ORIGIN_NONE,
 	};
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 0);
+	EXPECT_EQ(gfx.drv->image_init(&target), 0);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_init_unknown_type)
+TEST(gfx_opengl_image_init_unknown_type)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	gfx_target_t target = {
-		.gfx  = &gfx,
-		.type = (gfx_target_type_t)99,
+	gfx_image_t target = {
+		.gfx	= &gfx,
+		.origin = (gfx_image_origin_t)99,
 	};
 
-	EXPECT_EQ(gfx.drv->target_init(&target), 1);
+	EXPECT_EQ(gfx.drv->image_init(&target), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_read_null_config)
+TEST(gfx_opengl_image_read_null_config)
 {
 	START;
 
@@ -3442,77 +3534,77 @@ TEST(gfx_opengl_target_read_null_config)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 
-	EXPECT_EQ(gfx.drv->target_read(&(gfx_target_t){.gfx = &gfx}, NULL), 1);
+	EXPECT_EQ(gfx.drv->image_read(&(gfx_image_t){.gfx = &gfx}, NULL), 1);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_read_without_bound_target)
+TEST(gfx_opengl_image_read_without_bound_target)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
-	EXPECT_EQ(gfx.drv->target_init(&target), 0);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
+	EXPECT_EQ(gfx.drv->image_init(&target), 0);
 
-	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(gfx.drv->image_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
 
-	gfx.drv->target_free(&target);
+	gfx.drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_read_without_bound_framebuffer)
+TEST(gfx_opengl_image_read_without_bound_framebuffer)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
-	EXPECT_EQ(gfx.drv->target_init(&target), 0);
-	((t_gfx_opengl_data_t *)gfx.data)->target      = &target;
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
+	EXPECT_EQ(gfx.drv->image_init(&target), 0);
+	((t_gfx_opengl_data_t *)gfx.data)->image       = &target;
 	((t_gfx_opengl_data_t *)gfx.data)->framebuffer = NULL;
 
-	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
+	EXPECT_EQ(gfx.drv->image_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 1);
 	EXPECT_EQ(t_gl_read_pixels_calls, 0);
 
-	gfx.drv->target_free(&target);
+	gfx.drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
 
-TEST(gfx_opengl_target_read_reads_rows)
+TEST(gfx_opengl_image_read_reads_rows)
 {
 	START;
 
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[8]					= {0};
-	gfx_swapchain_t swapchain			= {0};
-	gfx_target_t target				= {0};
-	gfx_render_pass_t render_pass			= {0};
-	gfx_framebuffer_t framebuffer			= {0};
-	gfx_frame_t frame				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	u8 pixels[8]				       = {0};
+	gfx_swapchain_t swapchain		       = {0};
+	gfx_image_t target			       = {0};
+	gfx_render_pass_t render_pass		       = {0};
+	gfx_framebuffer_t framebuffer		       = {0};
+	gfx_frame_t frame			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 2,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_opengl_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
 		.load	      = GFX_LOAD_LOAD,
@@ -3522,7 +3614,7 @@ TEST(gfx_opengl_target_read_reads_rows)
 	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
 	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 0);
 
-	EXPECT_EQ(gfx.drv->target_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
+	EXPECT_EQ(gfx.drv->image_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 4}), 0);
 	EXPECT_EQ(t_gl_read_pixels_calls, 2);
 	EXPECT_EQ(t_gl_read_pixels_first_y, 1);
 	EXPECT_EQ(t_gl_read_pixels_y, 0);
@@ -3530,7 +3622,7 @@ TEST(gfx_opengl_target_read_reads_rows)
 	gfx_end(&frame);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3579,17 +3671,17 @@ TEST(gfx_opengl_framebuffer_free_surface_make_current_failure)
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.surface = &t_gfx_opengl_surface}, &proc, ALLOC_STD), &gfx);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
-	EXPECT_EQ(drv->target_init(&target), 0);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
+	EXPECT_EQ(drv->image_init(&target), 0);
 	gfx_render_pass_t render_pass = {
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 	};
 	EXPECT_EQ(drv->framebuffer_init(&framebuffer), 0);
@@ -3602,7 +3694,7 @@ TEST(gfx_opengl_framebuffer_free_surface_make_current_failure)
 
 	t_surface_make_current_ret = 1;
 	drv->framebuffer_free(&framebuffer);
-	drv->target_free(&target);
+	drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3632,10 +3724,10 @@ TEST(gfx_opengl_framebuffer_init_alloc_failure)
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = {
 		.gfx	     = &gfx,
-		.type	     = GFX_TARGET_MEMORY,
+		.origin	     = GFX_IMAGE_ORIGIN_MEMORY,
 		.format	     = GFX_FORMAT_RGBA8,
 		.data	     = pixels,
 		.driver_data = &target,
@@ -3645,7 +3737,7 @@ TEST(gfx_opengl_framebuffer_init_alloc_failure)
 	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 	};
 
@@ -3668,14 +3760,14 @@ TEST(gfx_opengl_framebuffer_init_invalid_target_type)
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	= &gfx,
-		.type	= (gfx_target_type_t)99,
+		.origin = (gfx_image_origin_t)99,
 		.format = GFX_FORMAT_RGBA8,
 	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 	};
 
@@ -3698,17 +3790,17 @@ TEST(gfx_opengl_framebuffer_init_surface_make_current_failure)
 	gfx_driver_t *drv = t_gfx_opengl_driver();
 	EXPECT_NOT_NULL(drv);
 	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){.surface = &t_gfx_opengl_surface}, &proc, ALLOC_STD), &gfx);
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
-	target.gfx	    = &gfx;
-	EXPECT_EQ(drv->target_init(&target), 0);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = t_gfx_opengl_memory_target(pixels, 1, 1, 4);
+	target.gfx	   = &gfx;
+	EXPECT_EQ(drv->image_init(&target), 0);
 	gfx_render_pass_t render_pass = {
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 	};
 	t_surface_make_current_ret = 0;
@@ -3719,7 +3811,7 @@ TEST(gfx_opengl_framebuffer_init_surface_make_current_failure)
 
 	t_surface_make_current_ret = 1;
 	drv->framebuffer_free(&framebuffer);
-	drv->target_free(&target);
+	drv->image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3733,7 +3825,7 @@ TEST(gfx_opengl_framebuffer_init_surface_success)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_swapchain_t swapchain     = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	EXPECT_PTR(t_gfx_opengl_init_swapchain_target(&gfx, &swapchain, &target, 2, 2), &target);
@@ -3748,7 +3840,7 @@ TEST(gfx_opengl_framebuffer_init_surface_success)
 
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3762,20 +3854,20 @@ TEST(gfx_opengl_framebuffer_init_incomplete_failure)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	t_gl_framebuffer_status				= 0;
-	u8 pixels[4]					= {0};
-	gfx_swapchain_t swapchain			= {0};
-	gfx_target_t target				= {0};
-	gfx_render_pass_t render_pass			= {0};
-	gfx_framebuffer_t framebuffer			= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	t_gl_framebuffer_status			       = 0;
+	u8 pixels[4]				       = {0};
+	gfx_swapchain_t swapchain		       = {0};
+	gfx_image_t target			       = {0};
+	gfx_render_pass_t render_pass		       = {0};
+	gfx_framebuffer_t framebuffer		       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_opengl_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
 		.load	      = GFX_LOAD_LOAD,
@@ -3788,7 +3880,7 @@ TEST(gfx_opengl_framebuffer_init_incomplete_failure)
 	log_set_quiet(0, 0);
 
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3807,15 +3899,15 @@ TEST(gfx_opengl_framebuffer_pass_begin_bind_failure)
 		.load = GFX_LOAD_CLEAR,
 		.data = &render_pass,
 	};
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	= &gfx,
-		.type	= (gfx_target_type_t)99,
+		.origin = (gfx_image_origin_t)99,
 		.format = GFX_FORMAT_RGBA8,
 	};
 	unsigned int gl_framebuffer   = 1;
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 		.data	     = &gl_framebuffer,
 	};
@@ -3841,10 +3933,10 @@ TEST(gfx_opengl_framebuffer_pass_begin_zero_memory_framebuffer)
 		.load = GFX_LOAD_CLEAR,
 		.data = &render_pass,
 	};
-	u8 pixels[4]	    = {0};
-	gfx_target_t target = {
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = {
 		.gfx	     = &gfx,
-		.type	     = GFX_TARGET_MEMORY,
+		.origin	     = GFX_IMAGE_ORIGIN_MEMORY,
 		.format	     = GFX_FORMAT_RGBA8,
 		.data	     = pixels,
 		.driver_data = &target,
@@ -3855,7 +3947,7 @@ TEST(gfx_opengl_framebuffer_pass_begin_zero_memory_framebuffer)
 	unsigned int gl_framebuffer   = 0;
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 		.data	     = &gl_framebuffer,
 	};
@@ -3877,20 +3969,20 @@ TEST(gfx_opengl_framebuffer_pass_begin_clears_memory_target)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
-	u8 pixels[4]					= {0};
-	gfx_swapchain_t swapchain			= {0};
-	gfx_target_t target				= {0};
-	gfx_render_pass_t render_pass			= {0};
-	gfx_framebuffer_t framebuffer			= {0};
-	gfx_frame_t frame				= {0};
-	gfx_memory_target_config_t memory_target_config = {
+	u8 pixels[4]				       = {0};
+	gfx_swapchain_t swapchain		       = {0};
+	gfx_image_t target			       = {0};
+	gfx_render_pass_t render_pass		       = {0};
+	gfx_framebuffer_t framebuffer		       = {0};
+	gfx_frame_t frame			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
 		.format = GFX_FORMAT_RGBA8,
 		.data	= pixels,
 		.width	= 1,
 		.height = 1,
 		.stride = 4,
 	};
-	EXPECT_PTR(gfx_target_init_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(t_gfx_opengl_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
 	gfx_render_pass_config_t render_pass_config = {
 		.color_format = GFX_FORMAT_RGBA8,
 		.load	      = GFX_LOAD_CLEAR,
@@ -3920,7 +4012,7 @@ TEST(gfx_opengl_framebuffer_pass_begin_clears_memory_target)
 	gfx_end(&frame);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3935,7 +4027,7 @@ TEST(gfx_opengl_framebuffer_pass_begin_binds_surface_framebuffer)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
 	gfx_swapchain_t swapchain     = {0};
-	gfx_target_t target	      = {0};
+	gfx_image_t target	      = {0};
 	gfx_render_pass_t render_pass = {0};
 	gfx_framebuffer_t framebuffer = {0};
 	gfx_frame_t frame	      = {0};
@@ -3956,7 +4048,7 @@ TEST(gfx_opengl_framebuffer_pass_begin_binds_surface_framebuffer)
 	gfx_end(&frame);
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
-	gfx_target_free(&target);
+	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3974,9 +4066,9 @@ TEST(gfx_opengl_framebuffer_pass_begin_make_current_failure)
 		.gfx  = &gfx,
 		.data = &render_pass,
 	};
-	gfx_target_t target = {
+	gfx_image_t target = {
 		.gfx	   = &gfx,
-		.type	   = GFX_TARGET_SWAPCHAIN,
+		.origin	   = GFX_IMAGE_ORIGIN_SURFACE,
 		.format	   = GFX_FORMAT_RGBA8,
 		.swapchain = &(gfx_swapchain_t){.surface = &t_gfx_opengl_surface, .format = GFX_FORMAT_RGBA8, .width = 2, .height = 2},
 		.width	   = 2,
@@ -3984,7 +4076,7 @@ TEST(gfx_opengl_framebuffer_pass_begin_make_current_failure)
 	};
 	gfx_framebuffer_t framebuffer = {
 		.gfx	     = &gfx,
-		.target	     = &target,
+		.image	     = &target,
 		.render_pass = &render_pass,
 		.data	     = &framebuffer,
 	};
@@ -4127,25 +4219,27 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_render_pass_init_alloc_failure);
 	RUN(gfx_opengl_render_pass_init_success);
 	RUN(gfx_opengl_set_target_null_data);
-	RUN(gfx_opengl_target_free_null_data);
-	RUN(gfx_opengl_target_free_surface_make_current_failure);
-	RUN(gfx_opengl_memory_target_init_invalid_config);
-	RUN(gfx_opengl_memory_target_init_alloc_failure);
-	RUN(gfx_opengl_memory_target_init_surface_make_current_failure);
-	RUN(gfx_opengl_surface_target_init_invalid_config);
+	RUN(gfx_opengl_image_free_null_data);
+	RUN(gfx_opengl_image_free_surface_make_current_failure);
+	RUN(gfx_opengl_memory_image_init_invalid_config);
+	RUN(gfx_opengl_memory_image_init_alloc_failure);
+	RUN(gfx_opengl_memory_image_init_surface_make_current_failure);
+	RUN(gfx_opengl_surface_image_init_invalid_config);
+	RUN(gfx_opengl_surface_image_init_rejects_height_mismatch_direct);
 	RUN(gfx_opengl_swapchain_init_rejects_invalid_direct);
 	RUN(gfx_opengl_swapchain_init_present_mode_failure);
-	RUN(gfx_opengl_surface_target_init_success);
-	RUN(gfx_opengl_surface_target_init_make_current_failure);
+	RUN(gfx_opengl_surface_image_init_success);
+	RUN(gfx_opengl_surface_image_init_success_direct);
+	RUN(gfx_opengl_surface_image_init_make_current_failure);
 	RUN(gfx_opengl_swapchain_free_rejects_invalid_direct);
 	RUN(gfx_opengl_swapchain_resize_rejects_invalid_direct);
 	RUN(gfx_opengl_swapchain_present_calls_surface);
-	RUN(gfx_opengl_target_init_none);
-	RUN(gfx_opengl_target_init_unknown_type);
-	RUN(gfx_opengl_target_read_null_config);
-	RUN(gfx_opengl_target_read_without_bound_target);
-	RUN(gfx_opengl_target_read_without_bound_framebuffer);
-	RUN(gfx_opengl_target_read_reads_rows);
+	RUN(gfx_opengl_image_init_none);
+	RUN(gfx_opengl_image_init_unknown_type);
+	RUN(gfx_opengl_image_read_null_config);
+	RUN(gfx_opengl_image_read_without_bound_target);
+	RUN(gfx_opengl_image_read_without_bound_framebuffer);
+	RUN(gfx_opengl_image_read_reads_rows);
 	RUN(gfx_opengl_init_missing_framebuffer_symbol);
 	RUN(gfx_opengl_framebuffer_free_null_data);
 	RUN(gfx_opengl_framebuffer_free_surface_make_current_failure);

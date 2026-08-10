@@ -5,7 +5,7 @@
 
 typedef struct gfx_opengl_s {
 	void *gl_lib;
-	const gfx_target_t *target;
+	const gfx_image_t *image;
 	const gfx_framebuffer_t *framebuffer;
 	gfx_surface_t *surface;
 	PFN_glClearColor ClearColor;
@@ -248,7 +248,7 @@ static int gfx_opengl_free(gfx_t *gfx)
 	}
 
 	gfx_opengl_t *opengl = gfx->data;
-	opengl->target	     = NULL;
+	opengl->image	     = NULL;
 	if (opengl->gl_lib != NULL) {
 		proc_dlclose(gfx->proc, opengl->gl_lib);
 	}
@@ -300,10 +300,10 @@ static int gfx_opengl_render_pass_init(gfx_render_pass_t *render_pass, const gfx
 	return 0;
 }
 
-static int memory_target_valid(const gfx_target_t *target)
+static int memory_image_valid(const gfx_image_t *image)
 {
-	return target != NULL && target->type == GFX_TARGET_MEMORY && target->format == GFX_FORMAT_RGBA8 && target->data != NULL &&
-	       target->width != 0 && target->height != 0 && target->stride >= (size_t)target->width * 4;
+	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_MEMORY && image->format == GFX_FORMAT_RGBA8 && image->data != NULL &&
+	       image->width != 0 && image->height != 0 && image->stride >= (size_t)image->width * 4;
 }
 
 static int swapchain_valid(const gfx_swapchain_t *swapchain)
@@ -314,49 +314,49 @@ static int swapchain_valid(const gfx_swapchain_t *swapchain)
 	       swapchain->height != 0;
 }
 
-static int surface_target_valid(const gfx_target_t *target)
+static int surface_image_valid(const gfx_image_t *image)
 {
-	return target != NULL && target->type == GFX_TARGET_SWAPCHAIN && target->swapchain != NULL && swapchain_valid(target->swapchain) &&
-	       target->format == target->swapchain->format && target->width == target->swapchain->width &&
-	       target->height == target->swapchain->height;
+	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_SURFACE && image->swapchain != NULL &&
+	       swapchain_valid(image->swapchain) && image->format == image->swapchain->format && image->width == image->swapchain->width &&
+	       image->height == image->swapchain->height;
 }
 
-static void gfx_opengl_target_free(gfx_target_t *target)
+static void gfx_opengl_image_free(gfx_image_t *image)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
+	if (image == NULL || image->gfx == NULL || image->gfx->data == NULL) {
 		return;
 	}
 
-	gfx_opengl_t *opengl = target->gfx->data;
-	if (target->driver_data != NULL) {
-		gfx_opengl_target_t *gl_target = target->driver_data;
+	gfx_opengl_t *opengl = image->gfx->data;
+	if (image->driver_data != NULL) {
+		gfx_opengl_target_t *gl_target = image->driver_data;
 		if (gfx_opengl_make_current(opengl, "target destruction")) {
 			return;
 		}
 		if (gl_target->texture != 0 && opengl->DeleteTextures != NULL) {
 			opengl->DeleteTextures(1, &gl_target->texture);
 		}
-		alloc_free(&target->gfx->alloc, gl_target, sizeof(gfx_opengl_target_t));
-		target->driver_data = NULL;
+		alloc_free(&image->gfx->alloc, gl_target, sizeof(gfx_opengl_target_t));
+		image->driver_data = NULL;
 	}
-	if (opengl->target == target) {
-		opengl->target = NULL;
+	if (opengl->image == image) {
+		opengl->image = NULL;
 	}
 }
 
-static int gfx_opengl_memory_target_init(gfx_target_t *target)
+static int gfx_opengl_memory_image_init(gfx_image_t *image)
 {
-	if (!memory_target_valid(target)) {
+	if (!memory_image_valid(image)) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl	       = target->gfx->data;
-	gfx_opengl_target_t *gl_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_opengl_target_t));
+	gfx_opengl_t *opengl	       = image->gfx->data;
+	gfx_opengl_target_t *gl_target = alloc_alloc(&image->gfx->alloc, sizeof(gfx_opengl_target_t));
 	if (gl_target == NULL) {
 		return 1;
 	}
-	*gl_target	    = (gfx_opengl_target_t){0};
-	target->driver_data = gl_target;
+	*gl_target	   = (gfx_opengl_target_t){0};
+	image->driver_data = gl_target;
 
 	if (gfx_opengl_make_current(opengl, "memory target initialization")) {
 		return 1;
@@ -367,7 +367,7 @@ static int gfx_opengl_memory_target_init(gfx_target_t *target)
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	opengl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, target->width, target->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	opengl->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	return 0;
 }
@@ -426,44 +426,44 @@ static int gfx_opengl_swapchain_present(gfx_swapchain_t *swapchain)
 	return swapchain->surface->ops->present(swapchain->surface, swapchain->actual_present_mode);
 }
 
-static int gfx_opengl_target_init(gfx_target_t *target)
+static int gfx_opengl_image_init(gfx_image_t *image)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
+	if (image == NULL || image->gfx == NULL || image->gfx->data == NULL) {
 		return 1;
 	}
 
-	switch (target->type) {
-	case GFX_TARGET_NONE:
+	switch (image->origin) {
+	case GFX_IMAGE_ORIGIN_NONE:
 		return 0;
-	case GFX_TARGET_MEMORY:
-		return gfx_opengl_memory_target_init(target);
-	case GFX_TARGET_SWAPCHAIN:
-		if (!surface_target_valid(target)) {
+	case GFX_IMAGE_ORIGIN_MEMORY:
+		return gfx_opengl_memory_image_init(image);
+	case GFX_IMAGE_ORIGIN_SURFACE:
+		if (!surface_image_valid(image)) {
 			return 1;
 		}
-		((gfx_opengl_t *)target->gfx->data)->surface = target->swapchain->surface;
+		((gfx_opengl_t *)image->gfx->data)->surface = image->swapchain->surface;
 		return 0;
 	default:
 		return 1;
 	}
 }
 
-static int gfx_opengl_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
+static int gfx_opengl_image_read(gfx_image_t *image, const gfx_memory_readback_config_t *config)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || config == NULL) {
+	if (image == NULL || image->gfx == NULL || image->gfx->data == NULL || config == NULL) {
 		return 1;
 	}
 
-	gfx_opengl_t *opengl = target->gfx->data;
-	if (opengl->target != target || target->type != GFX_TARGET_MEMORY || target->driver_data == NULL ||
+	gfx_opengl_t *opengl = image->gfx->data;
+	if (opengl->image != image || image->origin != GFX_IMAGE_ORIGIN_MEMORY || image->driver_data == NULL ||
 	    gfx_opengl_make_current(opengl, "memory readback") || gfx_opengl_bind_framebuffer(opengl)) {
 		return 1;
 	}
 
-	const gfx_target_t *gl_target = opengl->target;
-	for (u16 y = 0; y < gl_target->height; y++) {
+	const gfx_image_t *gl_image = opengl->image;
+	for (u16 y = 0; y < gl_image->height; y++) {
 		u8 *row = (u8 *)config->data + (size_t)y * config->stride;
-		opengl->ReadPixels(0, gl_target->height - 1 - y, gl_target->width, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
+		opengl->ReadPixels(0, gl_image->height - 1 - y, gl_image->width, 1, GL_RGBA, GL_UNSIGNED_BYTE, row);
 	}
 
 	return 0;
@@ -493,7 +493,7 @@ static void gfx_opengl_framebuffer_free(gfx_framebuffer_t *framebuffer)
 
 static int gfx_opengl_framebuffer_init(gfx_framebuffer_t *framebuffer)
 {
-	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->target == NULL ||
+	if (framebuffer == NULL || framebuffer->gfx == NULL || framebuffer->gfx->data == NULL || framebuffer->image == NULL ||
 	    framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
 		return 1;
 	}
@@ -505,16 +505,16 @@ static int gfx_opengl_framebuffer_init(gfx_framebuffer_t *framebuffer)
 	*gl_framebuffer	  = (gfx_opengl_framebuffer_t){0};
 	framebuffer->data = gl_framebuffer;
 
-	if (framebuffer->target->type == GFX_TARGET_SWAPCHAIN) {
+	if (framebuffer->image->origin == GFX_IMAGE_ORIGIN_SURFACE) {
 		return 0;
 	}
-	if (framebuffer->target->type != GFX_TARGET_MEMORY || framebuffer->target->driver_data == NULL) {
+	if (framebuffer->image->origin != GFX_IMAGE_ORIGIN_MEMORY || framebuffer->image->driver_data == NULL) {
 		gfx_opengl_framebuffer_free(framebuffer);
 		return 1;
 	}
 
 	gfx_opengl_t *opengl	       = framebuffer->gfx->data;
-	gfx_opengl_target_t *gl_target = framebuffer->target->driver_data;
+	gfx_opengl_target_t *gl_target = framebuffer->image->driver_data;
 	if (gfx_opengl_make_current(opengl, "framebuffer initialization")) {
 		gfx_opengl_framebuffer_free(framebuffer);
 		return 1;
@@ -532,15 +532,15 @@ static int gfx_opengl_framebuffer_init(gfx_framebuffer_t *framebuffer)
 
 static int gfx_opengl_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
 {
-	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->target == NULL ||
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->image == NULL ||
 	    framebuffer->render_pass == NULL || framebuffer->render_pass->data == NULL) {
 		return 1;
 	}
 
 	gfx_opengl_t *opengl = frame->gfx->data;
-	opengl->target	     = framebuffer->target;
+	opengl->image	     = framebuffer->image;
 	opengl->framebuffer  = framebuffer;
-	opengl->surface	     = opengl->target->type == GFX_TARGET_SWAPCHAIN ? opengl->target->swapchain->surface : opengl->surface;
+	opengl->surface	     = opengl->image->origin == GFX_IMAGE_ORIGIN_SURFACE ? opengl->image->swapchain->surface : opengl->surface;
 	if (_gfx_opengl_begin(frame->gfx, "pass begin", &opengl)) {
 		return 1;
 	}
@@ -557,10 +557,10 @@ static int gfx_opengl_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx
 
 static int gfx_opengl_bind_framebuffer(gfx_opengl_t *opengl)
 {
-	if (opengl->target == NULL || opengl->framebuffer == NULL) {
+	if (opengl->image == NULL || opengl->framebuffer == NULL) {
 		return 1;
 	}
-	if (opengl->target->type == GFX_TARGET_MEMORY) {
+	if (opengl->image->origin == GFX_IMAGE_ORIGIN_MEMORY) {
 		gfx_opengl_framebuffer_t *framebuffer = opengl->framebuffer->data;
 		if (framebuffer == NULL || framebuffer->framebuffer == 0) {
 			return 1;
@@ -568,7 +568,7 @@ static int gfx_opengl_bind_framebuffer(gfx_opengl_t *opengl)
 		opengl->BindFramebuffer(GL_FRAMEBUFFER, framebuffer->framebuffer);
 		return 0;
 	}
-	if (opengl->target->type == GFX_TARGET_SWAPCHAIN) {
+	if (opengl->image->origin == GFX_IMAGE_ORIGIN_SURFACE) {
 		opengl->BindFramebuffer(GL_FRAMEBUFFER, 0);
 		return 0;
 	}
@@ -1191,9 +1191,9 @@ static gfx_driver_t gfx_opengl = {
 	.swapchain_free		= gfx_opengl_swapchain_free,
 	.swapchain_resize	= gfx_opengl_swapchain_resize,
 	.swapchain_present	= gfx_opengl_swapchain_present,
-	.target_init		= gfx_opengl_target_init,
-	.target_free		= gfx_opengl_target_free,
-	.target_read		= gfx_opengl_target_read,
+	.image_init		= gfx_opengl_image_init,
+	.image_free		= gfx_opengl_image_free,
+	.image_read		= gfx_opengl_image_read,
 	.framebuffer_init	= gfx_opengl_framebuffer_init,
 	.framebuffer_free	= gfx_opengl_framebuffer_free,
 	.framebuffer_pass_begin = gfx_opengl_framebuffer_pass_begin,

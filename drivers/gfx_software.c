@@ -32,7 +32,7 @@ typedef struct gfx_software_pipeline_s {
 } gfx_software_pipeline_t;
 
 typedef struct gfx_software_s {
-	gfx_target_t target;
+	gfx_image_t image;
 	gfx_swapchain_t *swapchain;
 	u16 viewport_x;
 	u16 viewport_y;
@@ -43,6 +43,8 @@ typedef struct gfx_software_s {
 typedef struct gfx_software_surface_target_s {
 	gfx_surface_memory_t memory;
 } gfx_software_surface_target_t;
+
+static int gfx_software_image_init(gfx_image_t *image);
 
 typedef enum gfx_software_value_kind_e {
 	GFX_SOFTWARE_VALUE_NONE,
@@ -69,26 +71,26 @@ static u8 color_u8(float value)
 	return (u8)(value * 255.0f + 0.5f);
 }
 
-static int memory_target_valid(const gfx_target_t *target)
+static int memory_image_valid(const gfx_image_t *image)
 {
-	if (target == NULL || target->format != GFX_FORMAT_RGBA8 || target->data == NULL || target->width == 0 || target->height == 0) {
+	if (image == NULL || image->format != GFX_FORMAT_RGBA8 || image->data == NULL || image->width == 0 || image->height == 0) {
 		return 0;
 	}
 
-	return target->stride >= (size_t)target->width * 4;
+	return image->stride >= (size_t)image->width * 4;
 }
 
-static int surface_target_valid(const gfx_target_t *target)
+static int surface_image_valid(const gfx_image_t *image)
 {
-	return target != NULL && target->type == GFX_TARGET_SWAPCHAIN && target->format == GFX_FORMAT_RGBA8 && target->swapchain != NULL &&
-	       target->swapchain->surface != NULL && target->swapchain->surface->api == GFX_API_SOFTWARE &&
-	       target->swapchain->surface->ops != NULL && target->swapchain->surface->ops->memory != NULL && target->width != 0 &&
-	       target->height != 0;
+	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_SURFACE && image->format == GFX_FORMAT_RGBA8 &&
+	       image->swapchain != NULL && image->swapchain->surface != NULL && image->swapchain->surface->api == GFX_API_SOFTWARE &&
+	       image->swapchain->surface->ops != NULL && image->swapchain->surface->ops->memory != NULL && image->width != 0 &&
+	       image->height != 0;
 }
 
-static int target_valid(const gfx_target_t *target)
+static int image_valid(const gfx_image_t *image)
 {
-	return target != NULL && (target->type == GFX_TARGET_MEMORY || target->type == GFX_TARGET_SWAPCHAIN) && memory_target_valid(target);
+	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_MEMORY && memory_image_valid(image);
 }
 
 static int gfx_software_strv_suffix(strv_t str, strv_t suffix)
@@ -415,42 +417,45 @@ static int gfx_software_free(gfx_t *gfx)
 	return 0;
 }
 
-static int gfx_software_target_set(gfx_t *gfx, const gfx_target_t *target)
+static int gfx_software_image_set(gfx_t *gfx, gfx_image_t *image)
 {
 	gfx_software_t *render = gfx->data;
-	switch (target->type) {
-	case GFX_TARGET_NONE: {
-		render->target	  = (gfx_target_t){0};
+	switch (image->origin) {
+	case GFX_IMAGE_ORIGIN_NONE: {
+		render->image	  = (gfx_image_t){0};
 		render->swapchain = NULL;
 		return 0;
 	}
-	case GFX_TARGET_SWAPCHAIN: {
-		if (!surface_target_valid(target) || target->driver_data == NULL) {
+	case GFX_IMAGE_ORIGIN_SURFACE: {
+		if (!surface_image_valid(image)) {
+			return 1;
+		}
+		if (image->driver_data == NULL && gfx_software_image_init(image)) {
 			return 1;
 		}
 
-		gfx_software_surface_target_t *surface_target = target->driver_data;
+		gfx_software_surface_target_t *surface_target = image->driver_data;
 
-		render->target = (gfx_target_t){
-			.gfx	= target->gfx,
-			.type	= GFX_TARGET_MEMORY,
+		render->image = (gfx_image_t){
+			.gfx	= image->gfx,
+			.origin = GFX_IMAGE_ORIGIN_MEMORY,
 			.format = surface_target->memory.format,
 			.data	= surface_target->memory.data,
 			.width	= surface_target->memory.width,
 			.height = surface_target->memory.height,
 			.stride = surface_target->memory.stride,
 		};
-		if (!target_valid(&render->target)) {
+		if (!image_valid(&render->image)) {
 			return 1;
 		}
-		render->swapchain = target->swapchain;
+		render->swapchain = image->swapchain;
 		break;
 	}
-	case GFX_TARGET_MEMORY: {
-		if (!target_valid(target)) {
+	case GFX_IMAGE_ORIGIN_MEMORY: {
+		if (!image_valid(image)) {
 			return 1;
 		}
-		render->target	  = *target;
+		render->image	  = *image;
 		render->swapchain = NULL;
 		break;
 	}
@@ -461,67 +466,67 @@ static int gfx_software_target_set(gfx_t *gfx, const gfx_target_t *target)
 
 	render->viewport_x	= 0;
 	render->viewport_y	= 0;
-	render->viewport_width	= render->target.width;
-	render->viewport_height = render->target.height;
+	render->viewport_width	= render->image.width;
+	render->viewport_height = render->image.height;
 	return 0;
 }
 
-static int gfx_software_target_init(gfx_target_t *target)
+static int gfx_software_image_init(gfx_image_t *image)
 {
-	if (target == NULL || target->gfx == NULL) {
+	if (image == NULL || image->gfx == NULL) {
 		return 1;
 	}
-	if (target->type == GFX_TARGET_MEMORY) {
-		return !target_valid(target);
+	if (image->origin == GFX_IMAGE_ORIGIN_MEMORY) {
+		return !image_valid(image);
 	}
-	if (!surface_target_valid(target)) {
+	if (!surface_image_valid(image)) {
 		return 1;
 	}
 
-	gfx_software_surface_target_t *surface_target = alloc_alloc(&target->gfx->alloc, sizeof(gfx_software_surface_target_t));
+	gfx_software_surface_target_t *surface_target = alloc_alloc(&image->gfx->alloc, sizeof(gfx_software_surface_target_t));
 	if (surface_target == NULL) {
 		return 1;
 	}
 	gfx_surface_memory_t memory = {
-		.format = target->format,
-		.data	= target->data,
-		.width	= target->width,
-		.height = target->height,
-		.stride = target->stride,
+		.format = image->format,
+		.data	= image->data,
+		.width	= image->width,
+		.height = image->height,
+		.stride = image->stride,
 	};
-	if (target->swapchain->surface->ops->memory(target->swapchain->surface, &memory)) {
-		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
+	if (image->swapchain->surface->ops->memory(image->swapchain->surface, &memory)) {
+		alloc_free(&image->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
 		return 1;
 	}
 	surface_target->memory = memory;
-	if (!target_valid(&(gfx_target_t){
-		    .type   = GFX_TARGET_MEMORY,
+	if (!image_valid(&(gfx_image_t){
+		    .origin = GFX_IMAGE_ORIGIN_MEMORY,
 		    .format = memory.format,
 		    .data   = memory.data,
 		    .width  = memory.width,
 		    .height = memory.height,
 		    .stride = memory.stride,
 	    })) {
-		alloc_free(&target->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
+		alloc_free(&image->gfx->alloc, surface_target, sizeof(gfx_software_surface_target_t));
 		return 1;
 	}
-	target->driver_data = surface_target;
+	image->driver_data = surface_target;
 	return 0;
 }
 
-static void gfx_software_target_free(gfx_target_t *target)
+static void gfx_software_image_free(gfx_image_t *image)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL) {
+	if (image == NULL || image->gfx == NULL || image->gfx->data == NULL) {
 		return;
 	}
 
-	gfx_software_t *render = target->gfx->data;
-	if (target->driver_data != NULL) {
-		alloc_free(&target->gfx->alloc, target->driver_data, sizeof(gfx_software_surface_target_t));
-		target->driver_data = NULL;
+	gfx_software_t *render = image->gfx->data;
+	if (image->origin == GFX_IMAGE_ORIGIN_SURFACE && image->driver_data != NULL) {
+		alloc_free(&image->gfx->alloc, image->driver_data, sizeof(gfx_software_surface_target_t));
+		image->driver_data = NULL;
 	}
-	if (render->target.swapchain == target->swapchain || render->target.data == target->data) {
-		render->target	  = (gfx_target_t){0};
+	if (render->image.swapchain == image->swapchain || render->image.data == image->data) {
+		render->image	  = (gfx_image_t){0};
 		render->swapchain = NULL;
 	}
 }
@@ -540,7 +545,12 @@ static int gfx_software_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swa
 
 static void gfx_software_swapchain_free(gfx_swapchain_t *swapchain)
 {
-	(void)swapchain;
+	if (swapchain == NULL || swapchain->images == NULL || swapchain->gfx == NULL) {
+		return;
+	}
+	for (u32 i = 0; i < swapchain->image_capacity; i++) {
+		gfx_software_image_free(&swapchain->images[i]);
+	}
 }
 
 static int gfx_software_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
@@ -573,9 +583,9 @@ static void gfx_software_clear(gfx_software_t *render, gfx_color_t color)
 		color_u8(color.b),
 		color_u8(color.a),
 	};
-	for (u16 y = 0; y < render->target.height; y++) {
-		u8 *row = (u8 *)render->target.data + (size_t)y * render->target.stride;
-		for (u16 x = 0; x < render->target.width; x++) {
+	for (u16 y = 0; y < render->image.height; y++) {
+		u8 *row = (u8 *)render->image.data + (size_t)y * render->image.stride;
+		for (u16 x = 0; x < render->image.width; x++) {
 			u8 *pixel = row + (size_t)x * 4;
 			pixel[0]  = clear[0];
 			pixel[1]  = clear[1];
@@ -585,33 +595,33 @@ static void gfx_software_clear(gfx_software_t *render, gfx_color_t color)
 	}
 }
 
-static int gfx_software_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
+static int gfx_software_image_read(gfx_image_t *image, const gfx_memory_readback_config_t *config)
 {
-	if (target == NULL || target->gfx == NULL || target->gfx->data == NULL || config == NULL) {
+	if (image == NULL || image->gfx == NULL || image->gfx->data == NULL || config == NULL) {
 		return 1;
 	}
 
-	gfx_software_t *render = target->gfx->data;
-	if (!target_valid(&render->target)) {
+	gfx_software_t *render = image->gfx->data;
+	if (!image_valid(&render->image)) {
 		return 1;
 	}
 
-	for (u16 y = 0; y < render->target.height; y++) {
+	for (u16 y = 0; y < render->image.height; y++) {
 		u8 *dst	      = (u8 *)config->data + (size_t)y * config->stride;
-		const u8 *src = (const u8 *)render->target.data + (size_t)y * render->target.stride;
-		mem_copy(dst, config->stride, src, (size_t)render->target.width * 4);
+		const u8 *src = (const u8 *)render->image.data + (size_t)y * render->image.stride;
+		mem_copy(dst, config->stride, src, (size_t)render->image.width * 4);
 	}
 	return 0;
 }
 
 static int gfx_software_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
 {
-	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->target == NULL ||
+	if (frame == NULL || frame->gfx == NULL || frame->gfx->data == NULL || framebuffer == NULL || framebuffer->image == NULL ||
 	    framebuffer->render_pass == NULL) {
 		return 1;
 	}
 
-	if (gfx_software_target_set(frame->gfx, framebuffer->target)) {
+	if (gfx_software_image_set(frame->gfx, framebuffer->image)) {
 		return 1;
 	}
 
@@ -641,7 +651,7 @@ static int point_inside(float w0, float w1, float w2, float area)
 
 static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 {
-	u8 *row	  = (u8 *)render->target.data + (size_t)y * render->target.stride;
+	u8 *row	  = (u8 *)render->image.data + (size_t)y * render->image.stride;
 	u8 *pixel = row + (size_t)x * 4;
 	pixel[0]  = color[0];
 	pixel[1]  = color[1];
@@ -677,11 +687,11 @@ static void draw_triangle(gfx_software_t *render, const gfx_vertex_2d_t *src_ver
 	u16 y0 = render->viewport_y;
 	u32 x1 = (u32)x0 + render->viewport_width;
 	u32 y1 = (u32)y0 + render->viewport_height;
-	if (x1 > render->target.width) {
-		x1 = render->target.width;
+	if (x1 > render->image.width) {
+		x1 = render->image.width;
 	}
-	if (y1 > render->target.height) {
-		y1 = render->target.height;
+	if (y1 > render->image.height) {
+		y1 = render->image.height;
 	}
 
 	for (u16 y = y0; y < y1; y++) {
@@ -919,7 +929,7 @@ static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_ver
 	}
 
 	gfx_software_t *render = frame->gfx->data;
-	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
+	if (!image_valid(&render->image) || render->viewport_width == 0 || render->viewport_height == 0) {
 		return 1;
 	}
 
@@ -947,7 +957,7 @@ static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
 	}
 
 	gfx_software_t *render = frame->gfx->data;
-	if (!target_valid(&render->target) || render->viewport_width == 0 || render->viewport_height == 0) {
+	if (!image_valid(&render->image) || render->viewport_width == 0 || render->viewport_height == 0) {
 		return 1;
 	}
 
@@ -994,9 +1004,9 @@ static gfx_driver_t gfx_software = {
 	.swapchain_free		= gfx_software_swapchain_free,
 	.swapchain_resize	= gfx_software_swapchain_resize,
 	.swapchain_present	= gfx_software_swapchain_present,
-	.target_init		= gfx_software_target_init,
-	.target_free		= gfx_software_target_free,
-	.target_read		= gfx_software_target_read,
+	.image_init		= gfx_software_image_init,
+	.image_free		= gfx_software_image_free,
+	.image_read		= gfx_software_image_read,
 	.framebuffer_pass_begin = gfx_software_framebuffer_pass_begin,
 	.buffer_init		= gfx_software_buffer_init,
 	.buffer_free		= gfx_software_buffer_free,

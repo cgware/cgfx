@@ -5,12 +5,12 @@
 STEST(gfx);
 STEST(gfx_buffer);
 STEST(gfx_framebuffer);
+STEST(gfx_image);
 STEST(gfx_pipeline);
 STEST(gfx_render_pass);
 STEST(gfx_shader);
 STEST(gfx_shader_compiler);
 STEST(gfx_swapchain);
-STEST(gfx_target);
 STEST(gfx_none);
 STEST(gfx_software);
 STEST(gfx_opengl);
@@ -23,12 +23,12 @@ TEST(cgfx)
 	RUN(gfx);
 	RUN(gfx_buffer);
 	RUN(gfx_framebuffer);
+	RUN(gfx_image);
 	RUN(gfx_pipeline);
 	RUN(gfx_render_pass);
 	RUN(gfx_shader);
 	RUN(gfx_shader_compiler);
 	RUN(gfx_swapchain);
-	RUN(gfx_target);
 	RUN(gfx_none);
 	RUN(gfx_software);
 	RUN(gfx_d3d11);

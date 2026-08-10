@@ -20,15 +20,15 @@ static int gfx_none_free(gfx_t *gfx)
 	return 0;
 }
 
-static int gfx_none_target_init(gfx_target_t *target)
+static int gfx_none_image_init(gfx_image_t *image)
 {
-	(void)target;
+	(void)image;
 	return 0;
 }
 
-static void gfx_none_target_free(gfx_target_t *target)
+static void gfx_none_image_free(gfx_image_t *image)
 {
-	(void)target;
+	(void)image;
 }
 
 static int gfx_none_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
@@ -59,16 +59,16 @@ static int gfx_none_swapchain_present(gfx_swapchain_t *swapchain)
 	return 0;
 }
 
-static int gfx_none_target_read(gfx_target_t *target, const gfx_memory_readback_config_t *config)
+static int gfx_none_image_read(gfx_image_t *image, const gfx_memory_readback_config_t *config)
 {
-	(void)target;
+	(void)image;
 	(void)config;
 	return 0;
 }
 
 static int gfx_none_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_frame_t *frame)
 {
-	if (frame == NULL || frame->gfx == NULL || framebuffer == NULL || framebuffer->target == NULL || framebuffer->render_pass == NULL) {
+	if (frame == NULL || frame->gfx == NULL || framebuffer == NULL || framebuffer->image == NULL || framebuffer->render_pass == NULL) {
 		return 1;
 	}
 
@@ -186,9 +186,9 @@ static gfx_driver_t gfx_none = {
 	.swapchain_free		= gfx_none_swapchain_free,
 	.swapchain_resize	= gfx_none_swapchain_resize,
 	.swapchain_present	= gfx_none_swapchain_present,
-	.target_init		= gfx_none_target_init,
-	.target_free		= gfx_none_target_free,
-	.target_read		= gfx_none_target_read,
+	.image_init		= gfx_none_image_init,
+	.image_free		= gfx_none_image_free,
+	.image_read		= gfx_none_image_read,
 	.framebuffer_pass_begin = gfx_none_framebuffer_pass_begin,
 	.buffer_init		= gfx_none_buffer_init,
 	.buffer_free		= gfx_none_buffer_free,
