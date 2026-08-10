@@ -3331,18 +3331,18 @@ TEST(gfx_vulkan_bind_resources_rejects_invalid_args)
 	EXPECT_EQ(gfx.drv->bind_resources(NULL, bindings, 1), 1);
 	EXPECT_EQ(gfx.drv->bind_resources(&(gfx_frame_t){.gfx = &gfx}, bindings, 1), 1);
 	EXPECT_EQ(gfx.drv->bind_resources(&frame, NULL, 1), 1);
-	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx.drv->bind_resources(&frame,
 					  &(gfx_resource_binding_t){.binding = 0,
 								    .type    = GFX_RESOURCE_UNIFORM_BUFFER,
 								    .buffer  = &(gfx_buffer_t){.gfx = &gfx}},
 					  1),
 		  1);
-	log_set_quiet(0, 0);
 	EXPECT_EQ(gfx.drv->bind_resources(&frame, &high_binding, 1), 1);
 	EXPECT_EQ(gfx.drv->bind_resources(&frame, &vertex_binding, 1), 1);
 	driver_pipeline.descriptor_set_index = 64;
+	log_set_quiet(0, 1);
 	EXPECT_EQ(gfx.drv->bind_resources(&frame, bindings, 1), 1);
+	log_set_quiet(0, 0);
 	driver_pipeline.descriptor_set_index = 0;
 	driver_buffer.buffer		     = 0;
 	EXPECT_EQ(gfx.drv->bind_resources(&frame, bindings, 1), 1);
