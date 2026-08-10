@@ -53,6 +53,7 @@ typedef enum VkStructureType_e {
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO		    = 40,
 	VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO		    = 42,
 	VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO		    = 43,
+	VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER			    = 44,
 	VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER			    = 45,
 	VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR		    = 1000001000,
 	VK_STRUCTURE_TYPE_PRESENT_INFO_KHR			    = 1000001001,
@@ -220,6 +221,7 @@ typedef void (*PFN_vkGetPhysicalDeviceQueueFamilyProperties)(VkPhysicalDevice ph
 #define VK_MAX_MEMORY_HEAPS 16U
 
 typedef enum VkMemoryPropertyFlagBits_e {
+	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT   = 0x00000001,
 	VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT   = 0x00000002,
 	VK_MEMORY_PROPERTY_HOST_COHERENT_BIT  = 0x00000004,
 	VK_MEMORY_PROPERTY_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
@@ -257,6 +259,7 @@ typedef void (*PFN_vkGetPhysicalDeviceMemoryProperties)(VkPhysicalDevice physica
 
 typedef enum VkFormatFeatureFlagBits_e {
 	VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT = 0x00000080,
+	VK_FORMAT_FEATURE_TRANSFER_SRC_BIT     = 0x00004000,
 	VK_FORMAT_FEATURE_TRANSFER_DST_BIT     = 0x00008000,
 	VK_FORMAT_FEATURE_FLAG_BITS_MAX_ENUM   = 0x7FFFFFFF
 } VkFormatFeatureFlagBits;
@@ -313,6 +316,7 @@ typedef enum VkCompositeAlphaFlagBitsKHR_e {
 typedef VkFlags VkCompositeAlphaFlagsKHR;
 
 typedef enum VkImageUsageFlagBits_e {
+	VK_IMAGE_USAGE_TRANSFER_SRC_BIT	    = 0x00000001,
 	VK_IMAGE_USAGE_TRANSFER_DST_BIT	    = 0x00000002,
 	VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT = 0x00000010,
 	VK_IMAGE_USAGE_FLAG_BITS_MAX_ENUM   = 0x7FFFFFFF
@@ -612,6 +616,7 @@ typedef enum VkSampleCountFlagBits_e {
 } VkSampleCountFlagBits;
 
 typedef enum VkImageTiling_e {
+	VK_IMAGE_TILING_OPTIMAL	 = 0,
 	VK_IMAGE_TILING_LINEAR	 = 1,
 	VK_IMAGE_TILING_MAX_ENUM = 0x7FFFFFFF
 } VkImageTiling;
@@ -625,6 +630,7 @@ typedef enum VkImageLayout_e {
 	VK_IMAGE_LAYOUT_UNDEFINED		 = 0,
 	VK_IMAGE_LAYOUT_GENERAL			 = 1,
 	VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL = 2,
+	VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL	 = 6,
 	VK_IMAGE_LAYOUT_PRESENT_SRC_KHR		 = 1000001002,
 	VK_IMAGE_LAYOUT_MAX_ENUM		 = 0x7FFFFFFF
 } VkImageLayout;
@@ -719,6 +725,7 @@ typedef u64 VkBuffer;
 typedef VkFlags VkBufferCreateFlags;
 
 typedef enum VkBufferUsageFlagBits_e {
+	VK_BUFFER_USAGE_TRANSFER_DST_BIT   = 0x00000002,
 	VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT = 0x00000010,
 	VK_BUFFER_USAGE_INDEX_BUFFER_BIT   = 0x00000040,
 	VK_BUFFER_USAGE_VERTEX_BUFFER_BIT  = 0x00000080,
@@ -1021,6 +1028,7 @@ typedef struct VkSubpassDescription_s {
 typedef enum VkPipelineStageFlagBits_e {
 	VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT	      = 0x00000001,
 	VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT = 0x00000400,
+	VK_PIPELINE_STAGE_TRANSFER_BIT		      = 0x00001000,
 	VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT	      = 0x00002000,
 	VK_PIPELINE_STAGE_HOST_BIT		      = 0x00004000,
 	VK_PIPELINE_STAGE_FLAG_BITS_MAX_ENUM	      = 0x7FFFFFFF
@@ -1029,6 +1037,9 @@ typedef VkFlags VkPipelineStageFlags;
 
 typedef enum VkAccessFlagBits_e {
 	VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT = 0x00000100,
+	VK_ACCESS_TRANSFER_READ_BIT	     = 0x00000800,
+	VK_ACCESS_TRANSFER_WRITE_BIT	     = 0x00001000,
+	VK_ACCESS_HOST_READ_BIT		     = 0x00002000,
 	VK_ACCESS_FLAG_BITS_MAX_ENUM	     = 0x7FFFFFFF
 } VkAccessFlagBits;
 typedef VkFlags VkAccessFlags;
@@ -1770,6 +1781,37 @@ typedef union VkClearColorValue_u {
  */
 typedef void (*PFN_vkCmdClearColorImage)(VkCommandBuffer commandBuffer, VkImage image, VkImageLayout imageLayout,
 					 const VkClearColorValue *pColor, u32 rangeCount, const VkImageSubresourceRange *pRanges);
+
+typedef struct VkImageSubresourceLayers_s {
+	VkImageAspectFlags aspectMask;
+	u32 mipLevel;
+	u32 baseArrayLayer;
+	u32 layerCount;
+} VkImageSubresourceLayers;
+
+typedef struct VkOffset3D_s {
+	s32 x;
+	s32 y;
+	s32 z;
+} VkOffset3D;
+
+typedef struct VkBufferImageCopy_s {
+	VkDeviceSize bufferOffset;
+	u32 bufferRowLength;
+	u32 bufferImageHeight;
+	VkImageSubresourceLayers imageSubresource;
+	VkOffset3D imageOffset;
+	VkExtent3D imageExtent;
+} VkBufferImageCopy;
+
+/**
+ * @brief Copy image data into a buffer
+ * @param[in] commandBuffer created by PFN_vkAllocateCommandBuffers()
+ * @param[in] srcImage created by PFN_vkCreateImage()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdCopyImageToBuffer.html
+ */
+typedef void (*PFN_vkCmdCopyImageToBuffer)(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
+					   VkBuffer dstBuffer, u32 regionCount, const VkBufferImageCopy *pRegions);
 
 typedef struct VkClearDepthStencilValue_s {
 	float depth;

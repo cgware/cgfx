@@ -26,6 +26,7 @@ static int t_vk_free_memory_calls;
 static int t_vk_bind_image_memory_calls;
 static int t_vk_bind_buffer_memory_calls;
 static int t_vk_clear_color_image_calls;
+static int t_vk_copy_image_to_buffer_calls;
 static int t_vk_flush_mapped_memory_ranges_calls;
 static int t_vk_queue_submit_calls;
 static int t_vk_wait_for_fences_calls;
@@ -85,7 +86,7 @@ static int t_vk_draw_calls;
 static int t_vk_draw_indexed_calls;
 static int t_vk_physical_device_count;
 static int t_vk_queue_count;
-static VkFlags t_vk_linear_features;
+static VkFlags t_vk_optimal_features;
 static VkFlags t_vk_memory_flags;
 static u32 t_vk_memory_type_bits;
 static VkDeviceSize t_vk_row_pitch;
@@ -155,6 +156,7 @@ static int t_vk_allocate_command_buffers_ret;
 static int t_vk_create_fence_ret;
 static int t_vk_create_image_ret;
 static int t_vk_allocate_memory_ret;
+static int t_vk_allocate_memory_fail_at;
 static int t_vk_bind_image_memory_ret;
 static int t_vk_create_buffer_ret;
 static int t_vk_bind_buffer_memory_ret;
@@ -213,10 +215,14 @@ static int t_gfx_vulkan_compiler_initialized;
 
 typedef struct t_gfx_vulkan_memory_target_data_s {
 	VkImage image;
-	VkDeviceMemory memory;
-	VkDeviceSize memory_size;
-	int memory_coherent;
-	VkSubresourceLayout layout;
+	VkDeviceMemory image_memory;
+	struct {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		VkDeviceSize size;
+		VkDeviceSize memory_size;
+		int memory_coherent;
+	} readback;
 	VkImageView image_view;
 } t_gfx_vulkan_memory_target_data_t;
 
@@ -371,7 +377,7 @@ static void t_vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice device, u32 f
 {
 	(void)device;
 	(void)format;
-	props->linearTilingFeatures = t_vk_linear_features;
+	props->optimalTilingFeatures = t_vk_optimal_features;
 }
 
 static int t_vkCreateDevice(VkPhysicalDevice physical_device, const void *create, const void *alloc, VkDevice *device)
@@ -562,6 +568,9 @@ static int t_vkAllocateMemory(VkDevice device, const void *alloc_info, const voi
 	(void)alloc_info;
 	(void)alloc;
 	t_vk_allocate_memory_calls++;
+	if (t_vk_allocate_memory_fail_at != 0 && t_vk_allocate_memory_calls == t_vk_allocate_memory_fail_at) {
+		return 1;
+	}
 	*memory = 8;
 	return t_vk_allocate_memory_ret;
 }
@@ -703,6 +712,18 @@ static void t_vkCmdClearColorImage(VkCommandBuffer buffer, VkImage image, u32 la
 	t_vk_clear_color[1] = color->float32[1];
 	t_vk_clear_color[2] = color->float32[2];
 	t_vk_clear_color[3] = color->float32[3];
+}
+
+static void t_vkCmdCopyImageToBuffer(VkCommandBuffer command_buffer, VkImage image, VkImageLayout layout, VkBuffer buffer, u32 region_count,
+				     const VkBufferImageCopy *regions)
+{
+	(void)command_buffer;
+	(void)image;
+	(void)layout;
+	(void)buffer;
+	(void)region_count;
+	(void)regions;
+	t_vk_copy_image_to_buffer_calls++;
 }
 
 static int t_vkCreateImageView(VkDevice device, const void *create, const void *alloc, VkImageView *view)
@@ -1135,6 +1156,7 @@ static void t_vkReset(void)
 	t_vk_bind_image_memory_calls		   = 0;
 	t_vk_bind_buffer_memory_calls		   = 0;
 	t_vk_clear_color_image_calls		   = 0;
+	t_vk_copy_image_to_buffer_calls		   = 0;
 	t_vk_flush_mapped_memory_ranges_calls	   = 0;
 	t_vk_queue_submit_calls			   = 0;
 	t_vk_wait_for_fences_calls		   = 0;
@@ -1194,7 +1216,7 @@ static void t_vkReset(void)
 	t_vk_draw_indexed_calls			   = 0;
 	t_vk_physical_device_count		   = 1;
 	t_vk_queue_count			   = 1;
-	t_vk_linear_features			   = VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+	t_vk_optimal_features			   = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 	t_vk_memory_flags			   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	t_vk_memory_type_bits			   = 1;
 	t_vk_row_pitch				   = 8;
@@ -1241,6 +1263,7 @@ static void t_vkReset(void)
 	t_vk_create_image_ret			   = VK_SUCCESS;
 	t_vk_create_buffer_ret			   = VK_SUCCESS;
 	t_vk_allocate_memory_ret		   = VK_SUCCESS;
+	t_vk_allocate_memory_fail_at		   = 0;
 	t_vk_bind_image_memory_ret		   = VK_SUCCESS;
 	t_vk_bind_buffer_memory_ret		   = VK_SUCCESS;
 	t_vk_create_image_view_ret		   = VK_SUCCESS;
@@ -1422,6 +1445,9 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	}
 	if (t_strcmp(name, "vkCmdClearColorImage") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdClearColorImage);
+	}
+	if (t_strcmp(name, "vkCmdCopyImageToBuffer") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCmdCopyImageToBuffer);
 	}
 	if (t_strcmp(name, "vkCreateImageView") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateImageView);
@@ -2075,19 +2101,18 @@ TEST(gfx_vulkan_init_limits_queue_count)
 	END;
 }
 
-TEST(gfx_vulkan_init_skips_queue_without_transfer_feature)
+TEST(gfx_vulkan_init_does_not_require_memory_target_format)
 {
 	START;
 
 	t_vkReset();
-	t_vk_linear_features = 0;
-	gfx_t gfx	     = {0};
-	proc_t proc	     = {0};
+	t_vk_optimal_features = 0;
+	gfx_t gfx	      = {0};
+	proc_t proc	      = {0};
 
-	log_set_quiet(0, 1);
-	EXPECT_EQ(t_gfx_vulkan_init_gfx_current(&gfx, &proc), 1);
-	log_set_quiet(0, 0);
+	EXPECT_EQ(t_gfx_vulkan_init_gfx_current(&gfx, &proc), 0);
 
+	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
 }
@@ -3724,6 +3749,7 @@ TEST(gfx_vulkan_memory_target_render_flow)
 	EXPECT_EQ(t_vk_set_scissor_calls, 1);
 	EXPECT_EQ(t_vk_draw_calls, 1);
 	EXPECT_EQ(t_vk_end_render_pass_calls, 1);
+	EXPECT_EQ(t_vk_copy_image_to_buffer_calls, 1);
 	EXPECT_EQ(t_vk_queue_submit_calls, 1);
 	EXPECT_EQ(t_vk_invalidate_mapped_memory_ranges_calls, 0);
 	EXPECT_EQ(t_vk_map_memory_calls, 2);
@@ -4381,6 +4407,53 @@ TEST(gfx_vulkan_end_finish_missing_target_data)
 	gfx_render_pass_free(&render_pass);
 	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_memory_requires_readback_buffer_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_memory_target_data_t target_data = {
+		.image	    = 10,
+		.image_view = 20,
+	};
+	t_gfx_vulkan_framebuffer_data_t framebuffer_data = {.framebuffer = 30};
+	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
+
+	gfx_image_t target = {
+		.gfx	     = &gfx,
+		.origin	     = GFX_IMAGE_ORIGIN_MEMORY,
+		.format	     = GFX_FORMAT_RGBA8,
+		.data	     = &(u8[8]){0},
+		.driver_data = &target_data,
+		.width	     = 2,
+		.height	     = 1,
+		.stride	     = 8,
+	};
+	gfx_render_pass_t render_pass = {
+		.gfx	      = &gfx,
+		.color_format = target.format,
+		.data	      = &render_pass_data,
+	};
+	gfx_framebuffer_t framebuffer = {
+		.gfx	     = &gfx,
+		.image	     = &target,
+		.render_pass = &render_pass,
+		.data	     = &framebuffer_data,
+		.width	     = 2,
+		.height	     = 1,
+	};
+	gfx_frame_t frame = {.gfx = &gfx};
+
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(&framebuffer, &frame), 0);
+	EXPECT_EQ(gfx.drv->end(&frame), 1);
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -6046,7 +6119,7 @@ TEST(gfx_vulkan_memory_image_init_bind_memory_failure)
 	END;
 }
 
-TEST(gfx_vulkan_memory_image_init_row_pitch_failure)
+TEST(gfx_vulkan_memory_image_init_uses_device_local_memory)
 {
 	START;
 
@@ -6054,7 +6127,62 @@ TEST(gfx_vulkan_memory_image_init_row_pitch_failure)
 	gfx_t gfx    = {0};
 	proc_t proc  = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_vk_row_pitch	   = 7;
+	t_vk_memory_flags =
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	gfx_image_t target = {0};
+
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_EQ(t_vk_allocate_memory_calls, 2);
+
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_image_init_readback_buffer_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_create_buffer_ret = 1;
+	gfx_image_t target     = {0};
+
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	log_set_quiet(0, 1);
+	EXPECT_NULL(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config));
+	log_set_quiet(0, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_image_init_readback_memory_type_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_memory_flags  = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 	gfx_image_t target = {0};
 
 	gfx_image_memory_config_t memory_target_config = {
@@ -6067,6 +6195,63 @@ TEST(gfx_vulkan_memory_image_init_row_pitch_failure)
 	log_set_quiet(0, 1);
 	EXPECT_NULL(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config));
 	log_set_quiet(0, 0);
+	EXPECT_NULL(target.driver_data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_image_init_readback_allocate_memory_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_allocate_memory_fail_at = 2;
+	gfx_image_t target	     = {0};
+
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	log_set_quiet(0, 1);
+	EXPECT_NULL(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config));
+	log_set_quiet(0, 0);
+	EXPECT_NULL(target.driver_data);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_memory_image_init_readback_bind_memory_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	t_vk_bind_buffer_memory_ret = 1;
+	gfx_image_t target	    = {0};
+
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	log_set_quiet(0, 1);
+	EXPECT_NULL(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config));
+	log_set_quiet(0, 0);
+	EXPECT_NULL(target.driver_data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -6661,7 +6846,9 @@ TEST(gfx_vulkan_framebuffer_pass_begin_memory_requires_handles_direct)
 	gfx_t gfx   = {0};
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
-	t_gfx_vulkan_memory_target_data_t target_data	 = {.memory = 8, .memory_size = 8};
+	t_gfx_vulkan_memory_target_data_t target_data = {
+		.readback = {.buffer = 12, .memory = 8, .memory_size = 8},
+	};
 	t_gfx_vulkan_framebuffer_data_t framebuffer_data = {.framebuffer = 30};
 	t_gfx_vulkan_render_pass_data_t render_pass_data = {0};
 
@@ -7319,7 +7506,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_init_limits_physical_device_count);
 	RUN(gfx_vulkan_init_skips_device_without_queues);
 	RUN(gfx_vulkan_init_limits_queue_count);
-	RUN(gfx_vulkan_init_skips_queue_without_transfer_feature);
+	RUN(gfx_vulkan_init_does_not_require_memory_target_format);
 	RUN(gfx_vulkan_init_adds_swapchain_to_existing_device_extensions);
 	RUN(gfx_vulkan_init_device_extension_alloc_failure);
 	RUN(gfx_vulkan_init_create_device_failure);
@@ -7415,6 +7602,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_end_command_failure);
 	RUN(gfx_vulkan_end_submit_failure);
 	RUN(gfx_vulkan_end_finish_missing_target_data);
+	RUN(gfx_vulkan_end_memory_requires_readback_buffer_direct);
 	RUN(gfx_vulkan_draw_create_image_view_failure);
 	RUN(gfx_vulkan_draw_create_framebuffer_failure);
 	RUN(gfx_vulkan_draw_surface_framebuffer_failure);
@@ -7482,7 +7670,11 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_memory_image_init_image_memory_type_failure);
 	RUN(gfx_vulkan_memory_image_init_allocate_memory_failure);
 	RUN(gfx_vulkan_memory_image_init_bind_memory_failure);
-	RUN(gfx_vulkan_memory_image_init_row_pitch_failure);
+	RUN(gfx_vulkan_memory_image_init_uses_device_local_memory);
+	RUN(gfx_vulkan_memory_image_init_readback_buffer_failure);
+	RUN(gfx_vulkan_memory_image_init_readback_memory_type_failure);
+	RUN(gfx_vulkan_memory_image_init_readback_allocate_memory_failure);
+	RUN(gfx_vulkan_memory_image_init_readback_bind_memory_failure);
 	RUN(gfx_vulkan_swapchain_resize_null_swapchain_direct);
 	RUN(gfx_vulkan_image_free_null_target_direct);
 	RUN(gfx_vulkan_image_read_null_target_direct);

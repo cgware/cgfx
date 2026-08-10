@@ -87,6 +87,7 @@ typedef struct gfx_vulkan_s {
 	PFN_vkResetCommandBuffer ResetCommandBuffer;
 	PFN_vkCmdPipelineBarrier CmdPipelineBarrier;
 	PFN_vkCmdClearColorImage CmdClearColorImage;
+	PFN_vkCmdCopyImageToBuffer CmdCopyImageToBuffer;
 	PFN_vkCreateImageView CreateImageView;
 	PFN_vkDestroyImageView DestroyImageView;
 	PFN_vkCreateShaderModule CreateShaderModule;
@@ -129,10 +130,8 @@ typedef struct gfx_vulkan_render_pass_s {
 
 typedef struct gfx_vulkan_memory_target_s {
 	VkImage image;
-	VkDeviceMemory memory;
-	VkDeviceSize memory_size;
-	int memory_coherent;
-	VkSubresourceLayout layout;
+	VkDeviceMemory image_memory;
+	gfx_vulkan_buffer_resource_t readback;
 	VkImageView image_view;
 } gfx_vulkan_memory_target_t;
 
@@ -380,13 +379,19 @@ static void gfx_vulkan_memory_target_free(gfx_vulkan_t *vulkan, gfx_vulkan_memor
 		vulkan->DestroyImage(vulkan->device, target->image, NULL);
 		target->image = 0;
 	}
-	if (target->memory != 0) {
-		vulkan->FreeMemory(vulkan->device, target->memory, NULL);
-		target->memory = 0;
+	if (target->image_memory != 0) {
+		vulkan->FreeMemory(vulkan->device, target->image_memory, NULL);
+		target->image_memory = 0;
 	}
-	target->memory_size	= 0;
-	target->memory_coherent = 0;
-	target->layout		= (VkSubresourceLayout){0};
+	if (target->readback.buffer != 0) {
+		vulkan->DestroyBuffer(vulkan->device, target->readback.buffer, NULL);
+		target->readback.buffer = 0;
+	}
+	if (target->readback.memory != 0) {
+		vulkan->FreeMemory(vulkan->device, target->readback.memory, NULL);
+		target->readback.memory = 0;
+	}
+	target->readback = (gfx_vulkan_buffer_resource_t){0};
 }
 
 static void gfx_vulkan_device_free(gfx_vulkan_t *vulkan)
@@ -455,13 +460,6 @@ static int gfx_vulkan_pick_device(gfx_vulkan_t *vulkan)
 		vulkan->GetPhysicalDeviceQueueFamilyProperties(devices[i], &queue_count, queues);
 		for (u32 q = 0; q < queue_count; q++) {
 			if (queues[q].queueCount != 0 && (queues[q].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
-				VkFormatProperties props = {0};
-				vulkan->GetPhysicalDeviceFormatProperties(devices[i], VK_FORMAT_R8G8B8A8_UNORM, &props);
-				if ((props.linearTilingFeatures &
-				     (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) !=
-				    (VK_FORMAT_FEATURE_TRANSFER_DST_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)) {
-					continue;
-				}
 				vulkan->physical_device = devices[i];
 				vulkan->queue_family	= q;
 				return 0;
@@ -533,16 +531,17 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 	    LOAD_VK_DEV(vulkan, GetImageSubresourceLayout) || LOAD_VK_DEV(vulkan, MapMemory) || LOAD_VK_DEV(vulkan, UnmapMemory) ||
 	    LOAD_VK_DEV(vulkan, FlushMappedMemoryRanges) || LOAD_VK_DEV(vulkan, InvalidateMappedMemoryRanges) ||
 	    LOAD_VK_DEV(vulkan, BeginCommandBuffer) || LOAD_VK_DEV(vulkan, EndCommandBuffer) || LOAD_VK_DEV(vulkan, ResetCommandBuffer) ||
-	    LOAD_VK_DEV(vulkan, CmdPipelineBarrier) || LOAD_VK_DEV(vulkan, CmdClearColorImage) || LOAD_VK_DEV(vulkan, CreateImageView) ||
-	    LOAD_VK_DEV(vulkan, DestroyImageView) || LOAD_VK_DEV(vulkan, CreateShaderModule) || LOAD_VK_DEV(vulkan, DestroyShaderModule) ||
-	    LOAD_VK_DEV(vulkan, CreateRenderPass) || LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) ||
-	    LOAD_VK_DEV(vulkan, DestroyFramebuffer) || LOAD_VK_DEV(vulkan, CreatePipelineLayout) ||
-	    LOAD_VK_DEV(vulkan, DestroyPipelineLayout) || LOAD_VK_DEV(vulkan, CreateDescriptorSetLayout) ||
-	    LOAD_VK_DEV(vulkan, DestroyDescriptorSetLayout) || LOAD_VK_DEV(vulkan, CreateDescriptorPool) ||
-	    LOAD_VK_DEV(vulkan, DestroyDescriptorPool) || LOAD_VK_DEV(vulkan, AllocateDescriptorSets) ||
-	    LOAD_VK_DEV(vulkan, UpdateDescriptorSets) || LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) ||
-	    LOAD_VK_DEV(vulkan, DestroyPipeline) || LOAD_VK_DEV(vulkan, CmdBeginRenderPass) || LOAD_VK_DEV(vulkan, CmdEndRenderPass) ||
-	    LOAD_VK_DEV(vulkan, CmdBindPipeline) || LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdBindIndexBuffer) ||
+	    LOAD_VK_DEV(vulkan, CmdPipelineBarrier) || LOAD_VK_DEV(vulkan, CmdClearColorImage) ||
+	    LOAD_VK_DEV(vulkan, CmdCopyImageToBuffer) || LOAD_VK_DEV(vulkan, CreateImageView) || LOAD_VK_DEV(vulkan, DestroyImageView) ||
+	    LOAD_VK_DEV(vulkan, CreateShaderModule) || LOAD_VK_DEV(vulkan, DestroyShaderModule) || LOAD_VK_DEV(vulkan, CreateRenderPass) ||
+	    LOAD_VK_DEV(vulkan, DestroyRenderPass) || LOAD_VK_DEV(vulkan, CreateFramebuffer) || LOAD_VK_DEV(vulkan, DestroyFramebuffer) ||
+	    LOAD_VK_DEV(vulkan, CreatePipelineLayout) || LOAD_VK_DEV(vulkan, DestroyPipelineLayout) ||
+	    LOAD_VK_DEV(vulkan, CreateDescriptorSetLayout) || LOAD_VK_DEV(vulkan, DestroyDescriptorSetLayout) ||
+	    LOAD_VK_DEV(vulkan, CreateDescriptorPool) || LOAD_VK_DEV(vulkan, DestroyDescriptorPool) ||
+	    LOAD_VK_DEV(vulkan, AllocateDescriptorSets) || LOAD_VK_DEV(vulkan, UpdateDescriptorSets) ||
+	    LOAD_VK_DEV(vulkan, CreateGraphicsPipelines) || LOAD_VK_DEV(vulkan, DestroyPipeline) ||
+	    LOAD_VK_DEV(vulkan, CmdBeginRenderPass) || LOAD_VK_DEV(vulkan, CmdEndRenderPass) || LOAD_VK_DEV(vulkan, CmdBindPipeline) ||
+	    LOAD_VK_DEV(vulkan, CmdBindVertexBuffers) || LOAD_VK_DEV(vulkan, CmdBindIndexBuffer) ||
 	    LOAD_VK_DEV(vulkan, CmdBindDescriptorSets) || LOAD_VK_DEV(vulkan, CmdSetViewport) || LOAD_VK_DEV(vulkan, CmdSetScissor) ||
 	    LOAD_VK_DEV(vulkan, CmdDraw) || LOAD_VK_DEV(vulkan, CmdDrawIndexed) || LOAD_VK_DEV(vulkan, QueueSubmit)) {
 		return 1;
@@ -1263,8 +1262,8 @@ static int gfx_vulkan_memory_image_init(gfx_image_t *image)
 		.mipLevels     = 1,
 		.arrayLayers   = 1,
 		.samples       = VK_SAMPLE_COUNT_1_BIT,
-		.tiling	       = VK_IMAGE_TILING_LINEAR,
-		.usage	       = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		.tiling	       = VK_IMAGE_TILING_OPTIMAL,
+		.usage	       = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
 		.sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
 		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
 	};
@@ -1276,9 +1275,28 @@ static int gfx_vulkan_memory_image_init(gfx_image_t *image)
 	VkMemoryRequirements req = {0};
 	vulkan->GetImageMemoryRequirements(vulkan->device, vk_target->image, &req);
 
-	u32 memory_type = 0;
-	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vk_target->memory_coherent)) {
-		log_error("cgfx", "gfx_vulkan", NULL, "failed to find host visible Vulkan memory");
+	u32 memory_type				      = 0;
+	VkPhysicalDeviceMemoryProperties memory_props = {0};
+	vulkan->GetPhysicalDeviceMemoryProperties(vulkan->physical_device, &memory_props);
+	int image_memory_found = 0;
+	for (u32 i = 0; i < memory_props.memoryTypeCount; i++) {
+		if ((req.memoryTypeBits & (1u << i)) && (memory_props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+			memory_type	   = i;
+			image_memory_found = 1;
+			break;
+		}
+	}
+	if (!image_memory_found) {
+		for (u32 i = 0; i < memory_props.memoryTypeCount; i++) {
+			if (req.memoryTypeBits & (1u << i)) {
+				memory_type	   = i;
+				image_memory_found = 1;
+				break;
+			}
+		}
+	}
+	if (!image_memory_found) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to find Vulkan image memory");
 		gfx_vulkan_image_free(image);
 		return 1;
 	}
@@ -1288,25 +1306,46 @@ static int gfx_vulkan_memory_image_init(gfx_image_t *image)
 		.allocationSize	 = req.size,
 		.memoryTypeIndex = memory_type,
 	};
-	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_target->memory))) {
-		log_error("cgfx", "gfx_vulkan", NULL, "failed to allocate Vulkan memory");
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_target->image_memory))) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to allocate Vulkan image memory");
 		gfx_vulkan_image_free(image);
 		return 1;
 	}
-	vk_target->memory_size = req.size;
 
-	if (!vk_ok(vulkan->BindImageMemory(vulkan->device, vk_target->image, vk_target->memory, 0))) {
+	if (!vk_ok(vulkan->BindImageMemory(vulkan->device, vk_target->image, vk_target->image_memory, 0))) {
 		log_error("cgfx", "gfx_vulkan", NULL, "failed to bind Vulkan image memory");
 		gfx_vulkan_image_free(image);
 		return 1;
 	}
 
-	VkImageSubresource subresource = {
-		.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+	vk_target->readback.size  = (VkDeviceSize)image->width * image->height * 4;
+	VkBufferCreateInfo buffer = {
+		.sType	     = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		.size	     = vk_target->readback.size,
+		.usage	     = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+		.sharingMode = VK_SHARING_MODE_EXCLUSIVE,
 	};
-	vulkan->GetImageSubresourceLayout(vulkan->device, vk_target->image, &subresource, &vk_target->layout);
-	if (vk_target->layout.rowPitch < (VkDeviceSize)image->width * 4) {
-		log_error("cgfx", "gfx_vulkan", NULL, "invalid Vulkan image row pitch");
+	if (!vk_ok(vulkan->CreateBuffer(vulkan->device, &buffer, NULL, &vk_target->readback.buffer))) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to create Vulkan readback buffer");
+		gfx_vulkan_image_free(image);
+		return 1;
+	}
+	vulkan->GetBufferMemoryRequirements(vulkan->device, vk_target->readback.buffer, &req);
+	if (memory_type_find(vulkan, req.memoryTypeBits, &memory_type, &vk_target->readback.memory_coherent)) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to find host visible Vulkan readback memory");
+		gfx_vulkan_image_free(image);
+		return 1;
+	}
+	memory.allocationSize  = req.size;
+	memory.memoryTypeIndex = memory_type;
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_target->readback.memory))) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to allocate Vulkan readback memory");
+		gfx_vulkan_image_free(image);
+		return 1;
+	}
+	vk_target->readback.memory_size = req.size;
+	if (!vk_ok(vulkan->BindBufferMemory(vulkan->device, vk_target->readback.buffer, vk_target->readback.memory, 0))) {
+		log_error("cgfx", "gfx_vulkan", NULL, "failed to bind Vulkan readback memory");
 		gfx_vulkan_image_free(image);
 		return 1;
 	}
@@ -1350,30 +1389,30 @@ static int gfx_vulkan_copy_memory(gfx_vulkan_t *vulkan, const gfx_memory_readbac
 	if (target == NULL) {
 		return 1; // LCOV_EXCL_LINE
 	}
-	if (!target->memory_coherent) {
+	void *mapped = NULL;
+	if (!vk_ok(vulkan->MapMemory(vulkan->device, target->readback.memory, 0, target->readback.memory_size, 0, &mapped))) {
+		return 1;
+	}
+	if (!target->readback.memory_coherent) {
 		VkMappedMemoryRange range = {
 			.sType	= VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE,
-			.memory = target->memory,
+			.memory = target->readback.memory,
 			.offset = 0,
-			.size	= target->memory_size,
+			.size	= target->readback.memory_size,
 		};
 		if (!vk_ok(vulkan->InvalidateMappedMemoryRanges(vulkan->device, 1, &range))) {
+			vulkan->UnmapMemory(vulkan->device, target->readback.memory);
 			return 1;
 		}
 	}
 
-	void *mapped = NULL;
-	if (!vk_ok(vulkan->MapMemory(vulkan->device, target->memory, 0, target->memory_size, 0, &mapped))) {
-		return 1;
-	}
-
-	u8 *src = (u8 *)mapped + target->layout.offset;
+	u8 *src = mapped;
 	for (u16 y = 0; y < vulkan->image->height; y++) {
 		u8 *dst = (u8 *)config->data + (size_t)y * config->stride;
-		mem_copy(dst, config->stride, src + (VkDeviceSize)y * target->layout.rowPitch, (size_t)vulkan->image->width * 4);
+		mem_copy(dst, config->stride, src + (size_t)y * vulkan->image->width * 4, (size_t)vulkan->image->width * 4);
 	}
 
-	vulkan->UnmapMemory(vulkan->device, target->memory);
+	vulkan->UnmapMemory(vulkan->device, target->readback.memory);
 	return 0;
 }
 
@@ -1386,7 +1425,7 @@ static int gfx_vulkan_image_read(gfx_image_t *image, const gfx_memory_readback_c
 	gfx_vulkan_t *vulkan		      = image->gfx->data;
 	gfx_vulkan_memory_target_t *vk_target = image->driver_data;
 	if (vulkan->image != image || image->origin != GFX_IMAGE_ORIGIN_MEMORY || vk_target == NULL || vk_target->image == 0 ||
-	    vk_target->memory == 0 || vulkan->frame.active) {
+	    vk_target->readback.buffer == 0 || vk_target->readback.memory == 0 || vulkan->frame.active) {
 		return 1;
 	}
 
@@ -1690,7 +1729,7 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 		vulkan->frame.view	   = &target->image_view;
 		vulkan->frame.framebuffer  = &vk_framebuffer->framebuffer;
 		vulkan->frame.old_layout   = VK_IMAGE_LAYOUT_UNDEFINED;
-		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_GENERAL;
+		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		break;
 	}
 	case GFX_IMAGE_ORIGIN_SURFACE: {
@@ -2555,6 +2594,7 @@ static int gfx_vulkan_frame_end_render_pass(gfx_vulkan_t *vulkan)
 	VkImageMemoryBarrier from_color = {
 		.sType		     = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
 		.srcAccessMask	     = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+		.dstAccessMask	     = vulkan->frame.surface ? 0 : VK_ACCESS_TRANSFER_READ_BIT,
 		.oldLayout	     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 		.newLayout	     = vulkan->frame.final_layout,
 		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -2566,8 +2606,7 @@ static int gfx_vulkan_frame_end_render_pass(gfx_vulkan_t *vulkan)
 	vulkan->CmdEndRenderPass(vulkan->command_buffer);
 	vulkan->CmdPipelineBarrier(vulkan->command_buffer,
 				   VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-				   vulkan->frame.final_layout == VK_IMAGE_LAYOUT_GENERAL ? VK_PIPELINE_STAGE_HOST_BIT
-											 : VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+				   vulkan->frame.surface ? VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT : VK_PIPELINE_STAGE_TRANSFER_BIT,
 				   0,
 				   0,
 				   NULL,
@@ -2575,6 +2614,50 @@ static int gfx_vulkan_frame_end_render_pass(gfx_vulkan_t *vulkan)
 				   NULL,
 				   1,
 				   &from_color);
+	if (!vulkan->frame.surface) {
+		gfx_vulkan_memory_target_t *target = vulkan->image != NULL ? vulkan->image->driver_data : NULL;
+		if (target == NULL || target->readback.buffer == 0) {
+			return 1;
+		}
+		VkBufferImageCopy copy = {
+			.imageSubresource =
+				{
+					.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+					.layerCount = 1,
+				},
+			.imageExtent =
+				{
+					.width	= vulkan->image->width,
+					.height = vulkan->image->height,
+					.depth	= 1,
+				},
+		};
+		vulkan->CmdCopyImageToBuffer(vulkan->command_buffer,
+					     vulkan->frame.image,
+					     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+					     target->readback.buffer,
+					     1,
+					     &copy);
+		VkBufferMemoryBarrier to_host = {
+			.sType		     = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER,
+			.srcAccessMask	     = VK_ACCESS_TRANSFER_WRITE_BIT,
+			.dstAccessMask	     = VK_ACCESS_HOST_READ_BIT,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.buffer		     = target->readback.buffer,
+			.size		     = ~0ull,
+		};
+		vulkan->CmdPipelineBarrier(vulkan->command_buffer,
+					   VK_PIPELINE_STAGE_TRANSFER_BIT,
+					   VK_PIPELINE_STAGE_HOST_BIT,
+					   0,
+					   0,
+					   NULL,
+					   1,
+					   &to_host,
+					   0,
+					   NULL);
+	}
 	if (!vk_ok(vulkan->EndCommandBuffer(vulkan->command_buffer))) {
 		return 1;
 	}
