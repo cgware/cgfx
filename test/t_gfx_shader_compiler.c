@@ -593,6 +593,58 @@ TEST(gfx_shader_compiler_transpile_expression_multi_char_operators)
 	END;
 }
 
+TEST(gfx_shader_compiler_transpile_hlsl_expression_types)
+{
+	START;
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+	const char *source = "vs_in 0 VertexIn {\n"
+			     "\tvec2f position : POSITION;\n"
+			     "\tvec4f color : COLOR0;\n"
+			     "}\n"
+			     "vs_out VertexOut {\n"
+			     "\tvec4f position : POSITION;\n"
+			     "\tvec4f color : COLOR0;\n"
+			     "}\n"
+			     "fs_in FragmentIn {\n"
+			     "\tvec4f color : COLOR0;\n"
+			     "}\n"
+			     "fs_out FragmentOut {\n"
+			     "\tvec4f color : COLOR0;\n"
+			     "}\n"
+			     "VertexOut vertex(VertexIn input) {\n"
+			     "\tVertexOut output;\n"
+			     "\tvec2f local = vec2f(1.0f, 2.0f);\n"
+			     "\tvec2f sum = local + local;\n"
+			     "\tvec2f unknown_sum = unknown + unknown;\n"
+			     "\tvec2f swizzled = input.position.xy + input.position.xy;\n"
+			     "\tvec2f call_sum = quatf() + quatf();\n"
+			     "\tvec2f vector_sum = vec2f(1.0f, 2.0f) + vec2f(3.0f, 4.0f);\n"
+			     "\toutput.position = vec4f(sum.x + swizzled.x, unknown_sum.y + call_sum.y, 1.0f + 2.0f, vector_sum.x);\n"
+			     "\toutput.color = input.color;\n"
+			     "\treturn output;\n"
+			     "}\n"
+			     "FragmentOut fragment(FragmentIn input) {\n"
+			     "\tFragmentOut output;\n"
+			     "\toutput.color = input.color;\n"
+			     "\treturn output;\n"
+			     "}\n";
+
+	gfx_shader_code_t shader = {0};
+
+	EXPECT_EQ(gfx_shader_compiler_transpile(&compiler, strv_cstr(source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader),
+		  0);
+	EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2 sum = (local + local);"));
+	EXPECT_NOT_NULL(T_CONTAINS(shader.text, "(1.0f + 2.0f)"));
+	EXPECT_NOT_NULL(T_CONTAINS(shader.text, "quatf()"));
+	EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2(1.0f, 2.0f) + float2(3.0f, 4.0f)"));
+
+	gfx_shader_code_free(&shader);
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
 TEST(gfx_shader_compiler_transpile_alloc_failure)
 {
 	START;
@@ -769,6 +821,7 @@ TEST(gfx_shader_compiler_transpile_uniform_block_outputs)
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "view"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "model"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4("));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mul(mul(mul(projection, view), model), float4("));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -1140,6 +1193,7 @@ STEST(gfx_shader_compiler)
 	RUN(gfx_shader_compiler_transpile_expression_operator_spacing);
 	RUN(gfx_shader_compiler_transpile_expression_parse_failures);
 	RUN(gfx_shader_compiler_transpile_expression_multi_char_operators);
+	RUN(gfx_shader_compiler_transpile_hlsl_expression_types);
 	RUN(gfx_shader_compiler_transpile_alloc_failure);
 	RUN(gfx_shader_compiler_transpile_outputs);
 	RUN(gfx_shader_compiler_transpile_uniform_block_outputs);

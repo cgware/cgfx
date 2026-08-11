@@ -3894,6 +3894,54 @@ TEST(gfx_vulkan_swapchain_present_flow)
 	END;
 }
 
+TEST(gfx_vulkan_swapchain_free_detaches_active_draw_target)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	gfx_swapchain_t swapchain = {0};
+	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, GFX_PRESENT_MODE_IMMEDIATE), &swapchain);
+	gfx_image_t *images	      = swapchain.images;
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = images[0].format,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &images[0], &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_swapchain_free(&swapchain);
+	t_gfx_vulkan_data_head_t *vulkan = gfx.data;
+	EXPECT_NULL(vulkan->image);
+	EXPECT_NULL(vulkan->swapchain);
+
+	int destroyed					   = t_vk_destroy_image_view_calls;
+	t_gfx_vulkan_swapchain_image_data_t poisoned_image = {.view = (VkImageView)0xfdfdfe55};
+	gfx_image_t poisoned_images[1]			   = {{.driver_data = &poisoned_image}};
+	gfx_swapchain_t poisoned_swapchain		   = {.images = poisoned_images, .image_count = 1};
+	images[0]					   = (gfx_image_t){
+							 .origin      = GFX_IMAGE_ORIGIN_SURFACE,
+							 .driver_data = &poisoned_image,
+							 .swapchain   = &poisoned_swapchain,
+	 };
+	gfx_free(&gfx);
+	EXPECT_EQ(t_vk_destroy_image_view_calls, destroyed);
+
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_swapchain_present_out_of_date_refreshes_framebuffer)
 {
 	START;
@@ -7588,6 +7636,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_memory_target_render_flow);
 	RUN(gfx_vulkan_memory_target_draw_indexed_flow);
 	RUN(gfx_vulkan_swapchain_present_flow);
+	RUN(gfx_vulkan_swapchain_free_detaches_active_draw_target);
 	RUN(gfx_vulkan_swapchain_present_out_of_date_refreshes_framebuffer);
 	RUN(gfx_vulkan_surface_pass_begin_refresh_capabilities_failure);
 	RUN(gfx_vulkan_surface_pass_begin_refresh_invalid_extent);

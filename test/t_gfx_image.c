@@ -112,6 +112,31 @@ TEST(gfx_image_memory_success_and_free)
 	END;
 }
 
+TEST(gfx_image_free_ignores_active_frame)
+{
+	START;
+	t_gfx_image_reset();
+	u8 pixels[8]	  = {0};
+	gfx_frame_t frame = {0};
+	gfx_t gfx	  = {.drv = &t_gfx_image_driver};
+	gfx_image_t image;
+
+	EXPECT_PTR(gfx_image_init_memory(
+			   &image,
+			   &gfx,
+			   &(gfx_image_memory_config_t){.format = GFX_FORMAT_RGBA8, .data = pixels, .width = 1, .height = 2, .stride = 4}),
+		   &image);
+	gfx.frame = &frame;
+
+	gfx_image_free(&image);
+	EXPECT_EQ(t_gfx_image_free_calls, 0);
+	EXPECT_EQ(image.origin, GFX_IMAGE_ORIGIN_MEMORY);
+
+	gfx.frame = NULL;
+	gfx_image_free(&image);
+	END;
+}
+
 TEST(gfx_image_memory_driver_failure_clears_image)
 {
 	START;
@@ -162,6 +187,7 @@ STEST(gfx_image)
 	SSTART;
 	RUN(gfx_image_memory_rejects_invalid_args);
 	RUN(gfx_image_memory_success_and_free);
+	RUN(gfx_image_free_ignores_active_frame);
 	RUN(gfx_image_memory_driver_failure_clears_image);
 	RUN(gfx_image_read_validates_and_dispatches);
 	SEND;

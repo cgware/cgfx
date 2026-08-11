@@ -71,6 +71,7 @@ typedef struct gfx_surface_ops_s {
 	int (*clear_current)(gfx_surface_t *surface);
 	int (*present_mode)(gfx_surface_t *surface, gfx_present_mode_t requested, gfx_present_mode_t *actual);
 	int (*configure)(gfx_surface_t *surface, const gfx_surface_config_t *config);
+	int (*acquire)(gfx_surface_t *surface, u32 *image_index);
 	int (*present)(gfx_surface_t *surface, gfx_present_mode_t present_mode);
 	int (*memory)(gfx_surface_t *surface, gfx_surface_memory_t *memory);
 } gfx_surface_ops_t;

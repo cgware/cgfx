@@ -1228,6 +1228,12 @@ static void gfx_vulkan_swapchain_free(gfx_swapchain_t *swapchain)
 
 	gfx_vulkan_t *vulkan		     = swapchain->gfx->data;
 	gfx_vulkan_swapchain_t *vk_swapchain = swapchain->data;
+	if (vulkan->swapchain == swapchain ||
+	    (vulkan->image != NULL && vulkan->image->origin == GFX_IMAGE_ORIGIN_SURFACE && vulkan->image->swapchain == swapchain)) {
+		vulkan->frame	  = (gfx_vulkan_frame_t){0};
+		vulkan->image	  = NULL;
+		vulkan->swapchain = NULL;
+	}
 	gfx_vulkan_swapchain_data_free(vulkan, swapchain);
 	alloc_free(&swapchain->gfx->alloc, vk_swapchain, sizeof(gfx_vulkan_swapchain_t));
 	swapchain->data = NULL;

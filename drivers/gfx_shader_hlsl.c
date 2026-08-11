@@ -47,7 +47,75 @@ static int gfx_shader_emit_hlsl_struct(buf_t *text, const gfx_shader_struct_ir_t
 	return gfx_shader_text_put(text, STRV("};\n"));
 }
 
-static int gfx_shader_emit_hlsl_expr(buf_t *text, const gfx_shader_statement_ir_t *stmt, u32 node_id)
+typedef enum gfx_shader_hlsl_expr_type_e {
+	GFX_SHADER_HLSL_EXPR_UNKNOWN,
+	GFX_SHADER_HLSL_EXPR_SCALAR,
+	GFX_SHADER_HLSL_EXPR_VECTOR,
+	GFX_SHADER_HLSL_EXPR_MATRIX,
+} gfx_shader_hlsl_expr_type_t;
+
+static gfx_shader_hlsl_expr_type_t gfx_shader_hlsl_type_class(strv_t type)
+{
+	if (strv_eq(type, STRV("mat4f"))) {
+		return GFX_SHADER_HLSL_EXPR_MATRIX;
+	}
+	if (strv_eq(type, STRV("vec2f")) || strv_eq(type, STRV("vec3f")) || strv_eq(type, STRV("vec4f"))) {
+		return GFX_SHADER_HLSL_EXPR_VECTOR;
+	}
+	return GFX_SHADER_HLSL_EXPR_UNKNOWN;
+}
+
+static gfx_shader_hlsl_expr_type_t gfx_shader_hlsl_lvalue_type(const gfx_shader_ir_t *ir, const gfx_shader_function_ir_t *fn, strv_t name)
+{
+	for (u32 i = 0; i < ir->buffer_count; i++) {
+		for (u32 m = 0; m < ir->buffers[i].member_count; m++) {
+			if (strv_eq(ir->buffers[i].members[m].name, name)) {
+				return gfx_shader_hlsl_type_class(ir->buffers[i].members[m].type);
+			}
+		}
+	}
+	for (u32 i = 0; i < fn->statement_count; i++) {
+		if (fn->statements[i].kind == GFX_SHADER_STMT_DECL && strv_eq(fn->statements[i].name, name)) {
+			return gfx_shader_hlsl_type_class(fn->statements[i].type);
+		}
+	}
+	return GFX_SHADER_HLSL_EXPR_UNKNOWN;
+}
+
+static gfx_shader_hlsl_expr_type_t gfx_shader_hlsl_expr_type(const gfx_shader_ir_t *ir, const gfx_shader_function_ir_t *fn,
+							     const gfx_shader_statement_ir_t *stmt, u32 node_id)
+{
+	if (node_id >= stmt->expr_count) {
+		return GFX_SHADER_HLSL_EXPR_UNKNOWN; // LCOV_EXCL_LINE
+	}
+	const gfx_shader_expr_ir_t *node = &stmt->expr_nodes[node_id];
+	if (node->kind == GFX_SHADER_EXPR_INT || node->kind == GFX_SHADER_EXPR_FLOAT) {
+		return GFX_SHADER_HLSL_EXPR_SCALAR;
+	}
+	if (node->kind == GFX_SHADER_EXPR_LVALUE) {
+		return gfx_shader_hlsl_lvalue_type(ir, fn, node->text);
+	}
+	if (node->kind == GFX_SHADER_EXPR_CALL) {
+		return gfx_shader_hlsl_type_class(node->text);
+	}
+	if (node->kind != GFX_SHADER_EXPR_BINARY) {
+		return GFX_SHADER_HLSL_EXPR_UNKNOWN; // LCOV_EXCL_LINE
+	}
+	gfx_shader_hlsl_expr_type_t left  = gfx_shader_hlsl_expr_type(ir, fn, stmt, node->left);
+	gfx_shader_hlsl_expr_type_t right = gfx_shader_hlsl_expr_type(ir, fn, stmt, node->right);
+	if (left == GFX_SHADER_HLSL_EXPR_MATRIX && right == GFX_SHADER_HLSL_EXPR_MATRIX) {
+		return GFX_SHADER_HLSL_EXPR_MATRIX;
+	}
+	if (left == GFX_SHADER_HLSL_EXPR_MATRIX || right == GFX_SHADER_HLSL_EXPR_MATRIX || // LCOV_EXCL_LINE
+	    left == GFX_SHADER_HLSL_EXPR_VECTOR ||					   // LCOV_EXCL_LINE
+	    right == GFX_SHADER_HLSL_EXPR_VECTOR) {
+		return GFX_SHADER_HLSL_EXPR_VECTOR; // LCOV_EXCL_LINE
+	}
+	return left != GFX_SHADER_HLSL_EXPR_UNKNOWN ? left : right; // LCOV_EXCL_LINE
+}
+
+static int gfx_shader_emit_hlsl_expr(buf_t *text, const gfx_shader_ir_t *ir, const gfx_shader_function_ir_t *fn,
+				     const gfx_shader_statement_ir_t *stmt, u32 node_id)
 {
 	if (stmt == NULL || node_id >= stmt->expr_count) {
 		return 1; // LCOV_EXCL_LINE
@@ -69,16 +137,24 @@ static int gfx_shader_emit_hlsl_expr(buf_t *text, const gfx_shader_statement_ir_
 			return 1; // LCOV_EXCL_LINE
 		}
 		for (u32 i = 0; i < node->arg_count; i++) {
-			if ((i > 0 && gfx_shader_text_put(text, STRV(", "))) || gfx_shader_emit_hlsl_expr(text, stmt, node->args[i])) {
+			if ((i > 0 && gfx_shader_text_put(text, STRV(", "))) ||
+			    gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, node->args[i])) {
 				return 1; // LCOV_EXCL_LINE
 			}
 		}
 		return gfx_shader_text_put(text, STRV(")"));
 	}
 	if (node->kind == GFX_SHADER_EXPR_BINARY) {
-		return gfx_shader_text_put(text, STRV("(")) || gfx_shader_emit_hlsl_expr(text, stmt, node->left) ||
+		gfx_shader_hlsl_expr_type_t left  = gfx_shader_hlsl_expr_type(ir, fn, stmt, node->left);
+		gfx_shader_hlsl_expr_type_t right = gfx_shader_hlsl_expr_type(ir, fn, stmt, node->right);
+		if (strv_eq(node->op, STRV("*")) && (left == GFX_SHADER_HLSL_EXPR_MATRIX || right == GFX_SHADER_HLSL_EXPR_MATRIX)) {
+			return gfx_shader_text_put(text, STRV("mul(")) || gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, node->left) ||
+			       gfx_shader_text_put(text, STRV(", ")) || gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, node->right) ||
+			       gfx_shader_text_put(text, STRV(")"));
+		}
+		return gfx_shader_text_put(text, STRV("(")) || gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, node->left) ||
 		       gfx_shader_text_putf(text, " %.*s ", node->op.len, node->op.data) ||
-		       gfx_shader_emit_hlsl_expr(text, stmt, node->right) || gfx_shader_text_put(text, STRV(")"));
+		       gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, node->right) || gfx_shader_text_put(text, STRV(")"));
 	}
 	return 1; // LCOV_EXCL_LINE
 }
@@ -104,8 +180,8 @@ static int gfx_shader_emit_hlsl_buffers(buf_t *text, const gfx_shader_ir_t *ir)
 	return 0;
 }
 
-static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_function_ir_t *fn, const gfx_shader_statement_ir_t *stmt,
-					  gfx_shader_stage_t stage)
+static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_ir_t *ir, const gfx_shader_function_ir_t *fn,
+					  const gfx_shader_statement_ir_t *stmt, gfx_shader_stage_t stage)
 {
 	if (stmt->kind == GFX_SHADER_STMT_DECL) {
 		const char *type = gfx_shader_hlsl_type(stmt->type);
@@ -124,7 +200,7 @@ static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_function
 			return 1; // LCOV_EXCL_LINE
 		}
 		if (stmt->has_init) {
-			if (gfx_shader_text_put(text, STRV(" = ")) || gfx_shader_emit_hlsl_expr(text, stmt, stmt->expr_root)) {
+			if (gfx_shader_text_put(text, STRV(" = ")) || gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root)) {
 				return 1; // LCOV_EXCL_LINE
 			}
 		}
@@ -133,10 +209,10 @@ static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_function
 	if (stmt->kind == GFX_SHADER_STMT_ASSIGN) {
 		if (stage == GFX_SHADER_STAGE_FRAGMENT && strv_eq(stmt->lhs, STRV("output.color"))) {
 			return gfx_shader_text_put(text, STRV("    output_color = ")) ||
-			       gfx_shader_emit_hlsl_expr(text, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"));
+			       gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"));
 		}
 		if (gfx_shader_text_putf(text, "    %.*s %.*s ", stmt->lhs.len, stmt->lhs.data, stmt->op.len, stmt->op.data) ||
-		    gfx_shader_emit_hlsl_expr(text, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"))) {
+		    gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"))) {
 			return 1; // LCOV_EXCL_LINE
 		}
 		return 0;
@@ -145,7 +221,7 @@ static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_function
 		if (stage == GFX_SHADER_STAGE_FRAGMENT && strv_eq(stmt->expr, STRV("output"))) {
 			return gfx_shader_text_put(text, STRV("    return output_color;\n"));
 		}
-		return gfx_shader_text_put(text, STRV("    return ")) || gfx_shader_emit_hlsl_expr(text, stmt, stmt->expr_root) ||
+		return gfx_shader_text_put(text, STRV("    return ")) || gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) ||
 		       gfx_shader_text_put(text, STRV(";\n"));
 	}
 	return 1; // LCOV_EXCL_LINE
@@ -172,7 +248,7 @@ static int gfx_shader_hlsl_emit_text(buf_t *text, const gfx_shader_ir_t *ir, gfx
 		return 1; // LCOV_EXCL_LINE
 	}
 	for (u32 i = 0; i < fn->statement_count; i++) {
-		if (gfx_shader_emit_hlsl_statement(text, fn, &fn->statements[i], stage)) {
+		if (gfx_shader_emit_hlsl_statement(text, ir, fn, &fn->statements[i], stage)) {
 			return 1; // LCOV_EXCL_LINE
 		}
 	}
