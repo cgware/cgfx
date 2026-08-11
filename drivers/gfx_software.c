@@ -34,6 +34,8 @@ typedef struct gfx_software_pipeline_s {
 typedef struct gfx_software_s {
 	gfx_image_t image;
 	gfx_swapchain_t *swapchain;
+	float *depth;
+	size_t depth_size;
 	u16 viewport_x;
 	u16 viewport_y;
 	u16 viewport_width;
@@ -43,6 +45,16 @@ typedef struct gfx_software_s {
 typedef struct gfx_software_surface_target_s {
 	gfx_surface_memory_t memory;
 } gfx_software_surface_target_t;
+
+typedef struct gfx_software_vertex_s {
+	float x;
+	float y;
+	float z;
+	float r;
+	float g;
+	float b;
+	float a;
+} gfx_software_vertex_t;
 
 static int gfx_software_image_init(gfx_image_t *image);
 
@@ -328,7 +340,7 @@ static int gfx_software_eval_expr(const gfx_frame_t *frame, const gfx_software_p
 }
 
 static int gfx_software_run_vertex_shader(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, vec4f_t input_position,
-					  vec4f_t input_color, gfx_vertex_2d_t *out)
+					  vec4f_t input_color, gfx_software_vertex_t *out)
 {
 	if (frame == NULL || pipeline == NULL || out == NULL) { // LCOV_EXCL_LINE
 		return 1;					// LCOV_EXCL_LINE
@@ -358,20 +370,22 @@ static int gfx_software_run_vertex_shader(const gfx_frame_t *frame, const gfx_so
 	if (position.w != 0.0f) {
 		position.x /= position.w;
 		position.y /= position.w;
+		position.z /= position.w;
 	}
-	*out = (gfx_vertex_2d_t){
+	*out = (gfx_software_vertex_t){
 		.x = position.x,
 		.y = position.y,
 		.r = color.x,
 		.g = color.y,
 		.b = color.z,
 		.a = color.w,
+		.z = position.z,
 	};
 	return 0;
 }
 
 static int gfx_software_fetch_vertex(const gfx_frame_t *frame, const gfx_software_pipeline_t *pipeline, const gfx_software_buffer_t *buffer,
-				     u32 index, gfx_vertex_2d_t *out)
+				     u32 index, gfx_software_vertex_t *out)
 {
 	if (frame == NULL || pipeline == NULL || buffer == NULL || out == NULL || pipeline->stride == 0 ||
 	    buffer->buf.used < pipeline->stride * ((size_t)index + 1)) {
@@ -412,6 +426,9 @@ static int gfx_software_free(gfx_t *gfx)
 	}
 
 	gfx_software_t *render = gfx->data;
+	if (render->depth != NULL) {
+		alloc_free(&gfx->alloc, render->depth, render->depth_size * sizeof(float));
+	}
 	alloc_free(&gfx->alloc, render, sizeof(gfx_software_t));
 	gfx->data = NULL;
 	return 0;
@@ -633,10 +650,36 @@ static int gfx_software_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, g
 	if (framebuffer->render_pass->load == GFX_LOAD_CLEAR) {
 		gfx_software_clear(render, frame->pass.clear);
 	}
+	if (framebuffer->render_pass->depth_format == GFX_FORMAT_NONE) {
+		if (render->depth != NULL) {
+			alloc_free(&frame->gfx->alloc, render->depth, render->depth_size * sizeof(float));
+			render->depth	   = NULL;
+			render->depth_size = 0;
+		}
+		return 0;
+	}
+
+	size_t depth_size = (size_t)render->image.width * render->image.height;
+	if (render->depth_size != depth_size) {
+		float *depth = alloc_alloc(&frame->gfx->alloc, depth_size * sizeof(float));
+		if (depth == NULL) {
+			return 1;
+		}
+		if (render->depth != NULL) {
+			alloc_free(&frame->gfx->alloc, render->depth, render->depth_size * sizeof(float));
+		}
+		render->depth	   = depth;
+		render->depth_size = depth_size;
+	}
+	if (framebuffer->render_pass->depth_load == GFX_LOAD_CLEAR) {
+		for (size_t i = 0; i < render->depth_size; i++) {
+			render->depth[i] = frame->pass.clear_depth;
+		}
+	}
 	return 0;
 }
 
-static float edge(const gfx_vertex_2d_t *a, const gfx_vertex_2d_t *b, float x, float y)
+static float edge(const gfx_software_vertex_t *a, const gfx_software_vertex_t *b, float x, float y)
 {
 	return (x - a->x) * (b->y - a->y) - (y - a->y) * (b->x - a->x);
 }
@@ -659,21 +702,22 @@ static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 	pixel[3]  = color[3];
 }
 
-static void vertex_to_screen(gfx_vertex_2d_t *out, const gfx_vertex_2d_t *vertex, const gfx_software_t *render)
+static void vertex_to_screen(gfx_software_vertex_t *out, const gfx_software_vertex_t *vertex, const gfx_software_t *render)
 {
-	*out = (gfx_vertex_2d_t){
+	*out = (gfx_software_vertex_t){
 		.x = (float)render->viewport_x + (vertex->x + 1.0f) * 0.5f * (float)render->viewport_width,
 		.y = (float)render->viewport_y + (1.0f - vertex->y) * 0.5f * (float)render->viewport_height,
 		.r = vertex->r,
 		.g = vertex->g,
 		.b = vertex->b,
 		.a = vertex->a,
+		.z = vertex->z,
 	};
 }
 
-static void draw_triangle(gfx_software_t *render, const gfx_vertex_2d_t *src_vertices)
+static void draw_triangle(gfx_software_t *render, const gfx_frame_t *frame, const gfx_software_vertex_t *src_vertices)
 {
-	gfx_vertex_2d_t vertices[3];
+	gfx_software_vertex_t vertices[3];
 	for (u32 i = 0; i < 3; i++) {
 		vertex_to_screen(&vertices[i], &src_vertices[i], render);
 	}
@@ -694,6 +738,8 @@ static void draw_triangle(gfx_software_t *render, const gfx_vertex_2d_t *src_ver
 		y1 = render->image.height;
 	}
 
+	int depth_test	= frame->pipeline->depth.test && frame->render_pass->depth_format != GFX_FORMAT_NONE && render->depth != NULL;
+	int depth_write = frame->pipeline->depth.write && frame->render_pass->depth_format != GFX_FORMAT_NONE && render->depth != NULL;
 	for (u16 y = y0; y < y1; y++) {
 		for (u16 x = x0; x < x1; x++) {
 			float px = (float)x + 0.5f;
@@ -709,6 +755,16 @@ static void draw_triangle(gfx_software_t *render, const gfx_vertex_2d_t *src_ver
 			w0 *= inv_area;
 			w1 *= inv_area;
 			w2 *= inv_area;
+			float z = vertices[0].z * w0 + vertices[1].z * w1 + vertices[2].z * w2;
+			if (depth_test || depth_write) {
+				size_t index = (size_t)y * render->image.width + x;
+				if (depth_test && z >= render->depth[index]) {
+					continue;
+				}
+				if (depth_write) {
+					render->depth[index] = z;
+				}
+			}
 			u8 color[4] = {
 				color_u8(vertices[0].r * w0 + vertices[1].r * w1 + vertices[2].r * w2),
 				color_u8(vertices[0].g * w0 + vertices[1].g * w1 + vertices[2].g * w2),
@@ -936,13 +992,13 @@ static int gfx_software_draw(gfx_frame_t *frame, u32 vertex_count, u32 first_ver
 	const gfx_software_pipeline_t *pipeline = frame->pipeline->data;
 	const gfx_software_buffer_t *sw_buffer	= frame->vertex_buffer->data;
 	for (u32 i = 0; i + 2 < vertex_count; i += 3) {
-		gfx_vertex_2d_t triangle[3] = {0};
+		gfx_software_vertex_t triangle[3] = {0};
 		if (gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i, &triangle[0]) ||
 		    gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i + 1, &triangle[1]) ||
 		    gfx_software_fetch_vertex(frame, pipeline, sw_buffer, first_vertex + i + 2, &triangle[2])) {
 			return 1;
 		}
-		draw_triangle(render, triangle);
+		draw_triangle(render, frame, triangle);
 	}
 
 	return 0;
@@ -975,13 +1031,13 @@ static int gfx_software_draw_indexed(gfx_frame_t *frame, u32 index_count)
 			return 1;
 		}
 
-		gfx_vertex_2d_t triangle[3] = {0};
+		gfx_software_vertex_t triangle[3] = {0};
 		if (gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i], &triangle[0]) ||
 		    gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i + 1], &triangle[1]) ||
 		    gfx_software_fetch_vertex(frame, pipeline, vertex_buffer, indices[i + 2], &triangle[2])) {
 			return 1;
 		}
-		draw_triangle(render, triangle);
+		draw_triangle(render, frame, triangle);
 	}
 	return 0;
 }

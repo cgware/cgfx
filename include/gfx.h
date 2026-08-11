@@ -9,6 +9,7 @@ typedef enum gfx_format_e {
 	GFX_FORMAT_BGRA8_UNORM,
 	GFX_FORMAT_RGBA8_SRGB,
 	GFX_FORMAT_BGRA8_SRGB,
+	GFX_FORMAT_D32_FLOAT,
 	GFX_FORMAT_RGBA8 = GFX_FORMAT_RGBA8_UNORM,
 } gfx_format_t;
 
@@ -120,6 +121,7 @@ typedef struct gfx_config_s {
 
 typedef struct gfx_pass_config_s {
 	gfx_color_t clear;
+	float clear_depth;
 	gfx_rect_t viewport;
 } gfx_pass_config_t;
 

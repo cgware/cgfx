@@ -6,7 +6,8 @@
 #include "test.h"
 
 enum {
-	S_OK = 0,
+	S_OK   = 0,
+	E_FAIL = (HRESULT)-1,
 };
 
 typedef void (*t_gfx_d3d11_symbol_t)(void);
@@ -24,6 +25,7 @@ typedef struct t_d3d_blob_s t_d3d_blob_t;
 typedef struct t_d3d11_buffer_s t_d3d11_buffer_t;
 typedef struct t_d3d11_device_s t_d3d11_device_t;
 typedef struct t_d3d11_context_s t_d3d11_context_t;
+typedef struct t_d3d11_depth_stencil_state_s t_d3d11_depth_stencil_state_t;
 typedef struct t_d3d11_input_layout_s t_d3d11_input_layout_t;
 typedef struct t_d3d11_pixel_shader_s t_d3d11_pixel_shader_t;
 typedef struct t_d3d11_view_s t_d3d11_view_t;
@@ -50,6 +52,10 @@ struct t_d3d11_device_s {
 
 struct t_d3d11_context_s {
 	ID3D11DeviceContextVTable *vtbl;
+};
+
+struct t_d3d11_depth_stencil_state_s {
+	ID3D11PixelShaderVTable *vtbl;
 };
 
 struct t_d3d11_input_layout_s {
@@ -84,9 +90,12 @@ static int t_release_texture_calls;
 static int t_release_buffer_calls;
 static int t_release_input_layout_calls;
 static int t_release_pixel_shader_calls;
+static int t_release_depth_stencil_state_calls;
 static int t_release_vertex_shader_calls;
 static int t_release_blob_calls;
 static int t_create_render_target_view_calls;
+static int t_create_depth_stencil_view_calls;
+static int t_create_depth_stencil_state_calls;
 static int t_create_buffer_calls;
 static int t_create_texture_2d_calls;
 static int t_create_input_layout_calls;
@@ -96,7 +105,9 @@ static int t_get_buffer_calls;
 static int t_resize_buffers_calls;
 static int t_d3d_compile_calls;
 static int t_clear_render_target_view_calls;
+static int t_clear_depth_stencil_view_calls;
 static int t_om_set_render_targets_calls;
+static int t_om_set_depth_stencil_state_calls;
 static int t_ia_set_input_layout_calls;
 static int t_ia_set_vertex_buffers_calls;
 static int t_ia_set_index_buffer_calls;
@@ -130,6 +141,11 @@ static UINT t_create_texture_height;
 static UINT t_create_texture_usage;
 static UINT t_create_texture_bind_flags;
 static UINT t_create_texture_cpu_access_flags;
+static int t_depth_enable;
+static UINT t_depth_write_mask;
+static UINT t_depth_func;
+static UINT t_clear_depth_flags;
+static float t_clear_depth_value;
 static UINT t_copy_resource_dst_is_texture;
 static UINT t_copy_resource_src_is_texture;
 static UINT t_map_type;
@@ -189,6 +205,8 @@ static HRESULT t_create_texture_2d_ret;
 static HRESULT t_create_input_layout_ret;
 static HRESULT t_create_vertex_shader_ret;
 static HRESULT t_create_pixel_shader_ret;
+static HRESULT t_create_depth_stencil_view_ret;
+static HRESULT t_create_depth_stencil_state_ret;
 static HRESULT t_get_buffer_ret;
 static HRESULT t_create_render_target_view_ret;
 static HRESULT t_resize_buffers_ret;
@@ -202,7 +220,9 @@ static t_d3d11_device_t t_device;
 static t_d3d11_context_t t_context;
 static t_d3d11_input_layout_t t_input_layout;
 static t_d3d11_pixel_shader_t t_pixel_shader;
+static t_d3d11_depth_stencil_state_t t_depth_stencil_state;
 static t_d3d11_view_t t_view;
+static t_d3d11_view_t t_depth_view;
 static t_d3d11_texture_t t_texture;
 static t_d3d11_vertex_shader_t t_vertex_shader;
 static t_dxgi_swapchain_t t_swapchain;
@@ -248,6 +268,8 @@ typedef struct t_gfx_d3d11_data_s {
 typedef struct t_gfx_d3d11_framebuffer_data_s {
 	t_d3d11_view_t *render_target;
 	t_d3d11_view_t **swapchain_render_targets;
+	t_d3d11_texture_t *depth_texture;
+	t_d3d11_view_t *depth_view;
 	u32 swapchain_render_target_count;
 } t_gfx_d3d11_framebuffer_data_t;
 
@@ -261,6 +283,7 @@ typedef struct t_gfx_d3d11_pipeline_data_s {
 	t_d3d11_vertex_shader_t *vertex_shader;
 	t_d3d11_pixel_shader_t *pixel_shader;
 	UINT stride;
+	t_d3d11_depth_stencil_state_t *depth_state;
 } t_gfx_d3d11_pipeline_data_t;
 
 static gfx_pipeline_config_t t_gfx_d3d11_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
@@ -352,6 +375,13 @@ static ULONG t_pixel_shader_release(ID3D11PixelShader *self)
 	return 0;
 }
 
+static ULONG t_depth_stencil_state_release(ID3D11PixelShader *self)
+{
+	(void)self;
+	t_release_depth_stencil_state_calls++;
+	return 0;
+}
+
 static ULONG t_vertex_shader_release(ID3D11VertexShader *self)
 {
 	(void)self;
@@ -398,6 +428,27 @@ static HRESULT t_CreateRenderTargetView(ID3D11Device *self, void *resource, cons
 	t_create_render_target_view_calls++;
 	*view = (ID3D11RenderTargetView *)&t_view;
 	return t_create_render_target_view_ret;
+}
+
+static HRESULT t_CreateDepthStencilView(ID3D11Device *self, void *resource, const void *desc, ID3D11DepthStencilView **view)
+{
+	(void)self;
+	(void)resource;
+	(void)desc;
+	t_create_depth_stencil_view_calls++;
+	*view = (ID3D11DepthStencilView *)&t_depth_view;
+	return t_create_depth_stencil_view_ret;
+}
+
+static HRESULT t_CreateDepthStencilState(ID3D11Device *self, const D3D11_DEPTH_STENCIL_DESC *desc, ID3D11DepthStencilState **state)
+{
+	(void)self;
+	t_create_depth_stencil_state_calls++;
+	t_depth_enable	   = desc->DepthEnable;
+	t_depth_write_mask = desc->DepthWriteMask;
+	t_depth_func	   = desc->DepthFunc;
+	*state		   = (ID3D11DepthStencilState *)&t_depth_stencil_state;
+	return t_create_depth_stencil_state_ret;
 }
 
 static HRESULT t_CreateTexture2D(ID3D11Device *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data, ID3D11Texture2D **texture)
@@ -461,6 +512,14 @@ static void t_OMSetRenderTargets(ID3D11DeviceContext *self, UINT num_views, ID3D
 	(void)depth_stencil_view;
 	t_om_set_render_targets_calls++;
 	t_render_target_count = num_views;
+}
+
+static void t_OMSetDepthStencilState(ID3D11DeviceContext *self, ID3D11DepthStencilState *state, UINT stencil_ref)
+{
+	(void)self;
+	(void)state;
+	(void)stencil_ref;
+	t_om_set_depth_stencil_state_calls++;
 }
 
 static void t_IASetInputLayout(ID3D11DeviceContext *self, ID3D11InputLayout *input_layout)
@@ -608,6 +667,16 @@ static void t_ClearRenderTargetView(ID3D11DeviceContext *self, ID3D11RenderTarge
 	t_clear_color[3] = color[3];
 }
 
+static void t_ClearDepthStencilView(ID3D11DeviceContext *self, ID3D11DepthStencilView view, D3D11_CLEAR_FLAG flags, float depth, u8 stencil)
+{
+	(void)self;
+	(void)view;
+	(void)stencil;
+	t_clear_depth_stencil_view_calls++;
+	t_clear_depth_flags = flags;
+	t_clear_depth_value = depth;
+}
+
 static void t_RSSetViewports(ID3D11DeviceContext *self, UINT num_viewports, const D3D11_VIEWPORT *viewports)
 {
 	(void)self;
@@ -725,13 +794,15 @@ static ID3D11BufferVTable t_buffer_vtbl = {
 };
 
 static ID3D11DeviceVTable t_device_vtbl = {
-	.Release		= t_device_release,
-	.CreateBuffer		= t_CreateBuffer,
-	.CreateTexture2D	= t_CreateTexture2D,
-	.CreateRenderTargetView = t_CreateRenderTargetView,
-	.CreateInputLayout	= t_CreateInputLayout,
-	.CreateVertexShader	= t_CreateVertexShader,
-	.CreatePixelShader	= t_CreatePixelShader,
+	.Release		 = t_device_release,
+	.CreateBuffer		 = t_CreateBuffer,
+	.CreateTexture2D	 = t_CreateTexture2D,
+	.CreateRenderTargetView	 = t_CreateRenderTargetView,
+	.CreateDepthStencilView	 = t_CreateDepthStencilView,
+	.CreateInputLayout	 = t_CreateInputLayout,
+	.CreateVertexShader	 = t_CreateVertexShader,
+	.CreatePixelShader	 = t_CreatePixelShader,
+	.CreateDepthStencilState = t_CreateDepthStencilState,
 };
 
 static ID3D11DeviceContextVTable t_context_vtbl = {
@@ -749,10 +820,12 @@ static ID3D11DeviceContextVTable t_context_vtbl = {
 	.IASetIndexBuffer	= t_IASetIndexBuffer,
 	.IASetPrimitiveTopology = t_IASetPrimitiveTopology,
 	.OMSetRenderTargets	= t_OMSetRenderTargets,
+	.OMSetDepthStencilState = t_OMSetDepthStencilState,
 	.RSSetViewports		= t_RSSetViewports,
 	.CopyResource		= t_CopyResource,
 	.UpdateSubresource	= t_UpdateSubresource,
 	.ClearRenderTargetView	= t_ClearRenderTargetView,
+	.ClearDepthStencilView	= t_ClearDepthStencilView,
 };
 
 static ID3D11InputLayoutVTable t_input_layout_vtbl = {
@@ -761,6 +834,10 @@ static ID3D11InputLayoutVTable t_input_layout_vtbl = {
 
 static ID3D11PixelShaderVTable t_pixel_shader_vtbl = {
 	.Release = t_pixel_shader_release,
+};
+
+static ID3D11PixelShaderVTable t_depth_stencil_state_vtbl = {
+	.Release = t_depth_stencil_state_release,
 };
 
 static ID3D11RenderTargetViewVTable t_view_vtbl = {
@@ -800,124 +877,138 @@ static const gfx_surface_ops_t t_surface_present_mode_ops = {
 
 static void t_gfx_d3d11_reset(void)
 {
-	t_create_device_calls		  = 0;
-	t_release_device_calls		  = 0;
-	t_release_context_calls		  = 0;
-	t_release_view_calls		  = 0;
-	t_release_texture_calls		  = 0;
-	t_release_buffer_calls		  = 0;
-	t_release_input_layout_calls	  = 0;
-	t_release_pixel_shader_calls	  = 0;
-	t_release_vertex_shader_calls	  = 0;
-	t_release_blob_calls		  = 0;
-	t_create_render_target_view_calls = 0;
-	t_create_buffer_calls		  = 0;
-	t_create_texture_2d_calls	  = 0;
-	t_create_input_layout_calls	  = 0;
-	t_create_vertex_shader_calls	  = 0;
-	t_create_pixel_shader_calls	  = 0;
-	t_get_buffer_calls		  = 0;
-	t_resize_buffers_calls		  = 0;
-	t_d3d_compile_calls		  = 0;
-	t_clear_render_target_view_calls  = 0;
-	t_om_set_render_targets_calls	  = 0;
-	t_ia_set_input_layout_calls	  = 0;
-	t_ia_set_vertex_buffers_calls	  = 0;
-	t_ia_set_index_buffer_calls	  = 0;
-	t_ia_set_primitive_topology_calls = 0;
-	t_vs_set_shader_calls		  = 0;
-	t_ps_set_shader_calls		  = 0;
-	t_vs_set_constant_buffers_calls	  = 0;
-	t_ps_set_constant_buffers_calls	  = 0;
-	t_update_subresource_calls	  = 0;
-	t_copy_resource_calls		  = 0;
-	t_map_calls			  = 0;
-	t_unmap_calls			  = 0;
-	t_draw_calls			  = 0;
-	t_draw_indexed_calls		  = 0;
-	t_rs_set_viewports_calls	  = 0;
-	t_surface_present_calls		  = 0;
-	t_surface_configure_calls	  = 0;
-	t_surface_configure_ret		  = 0;
-	t_surface_config		  = (gfx_surface_config_t){0};
-	t_surface_present_mode_calls	  = 0;
-	t_surface_present_mode_ret	  = 0;
-	t_surface_requested_present_mode  = (gfx_present_mode_t)0;
-	t_surface_acquire_index		  = 0;
-	t_surface_acquire_ret		  = 0;
-	t_create_buffer_bytes		  = 0;
-	t_create_buffer_bind_flags	  = 0;
-	t_create_buffer_usage		  = 0;
-	t_create_buffer_initial_data	  = NULL;
-	t_create_texture_width		  = 0;
-	t_create_texture_height		  = 0;
-	t_create_texture_usage		  = 0;
-	t_create_texture_bind_flags	  = 0;
-	t_create_texture_cpu_access_flags = 0;
-	t_copy_resource_dst_is_texture	  = 0;
-	t_copy_resource_src_is_texture	  = 0;
-	t_map_type			  = 0;
-	t_map_row_pitch			  = 4;
-	t_create_driver_type		  = 0;
-	t_create_sdk_version		  = 0;
-	t_resize_width			  = 0;
-	t_resize_height			  = 0;
-	t_input_element_count		  = 0;
-	t_input_semantic_name[0]	  = NULL;
-	t_input_semantic_name[1]	  = NULL;
-	t_input_semantic_index[0]	  = 0;
-	t_input_semantic_index[1]	  = 0;
-	t_render_target_count		  = 0;
-	t_vertex_buffer_start_slot	  = 0;
-	t_vertex_buffer_count		  = 0;
-	t_vertex_buffer_stride		  = 0;
-	t_vertex_buffer_offset		  = 0;
-	t_index_buffer_format		  = 0;
-	t_index_buffer_offset		  = 0;
-	t_constant_buffer_start_slot	  = 0;
-	t_constant_buffer_count		  = 0;
-	t_primitive_topology		  = 0;
-	t_draw_vertex_count		  = 0;
-	t_draw_start_vertex		  = 0;
-	t_draw_index_count		  = 0;
-	t_draw_start_index		  = 0;
-	t_draw_base_vertex		  = 0;
-	t_viewport_count		  = 0;
-	t_uploaded_vertices[0]		  = (t_d3d11_vertex_2d_t){0};
-	t_uploaded_vertices[1]		  = (t_d3d11_vertex_2d_t){0};
-	t_uploaded_vertices[2]		  = (t_d3d11_vertex_2d_t){0};
-	t_viewport			  = (D3D11_VIEWPORT){0};
-	t_clear_color[0]		  = 0.0f;
-	t_clear_color[1]		  = 0.0f;
-	t_clear_color[2]		  = 0.0f;
-	t_clear_color[3]		  = 0.0f;
-	t_create_device_ret		  = S_OK;
-	t_d3d_compile_ret		  = S_OK;
-	t_create_buffer_ret		  = S_OK;
-	t_create_texture_2d_ret		  = S_OK;
-	t_create_input_layout_ret	  = S_OK;
-	t_create_vertex_shader_ret	  = S_OK;
-	t_create_pixel_shader_ret	  = S_OK;
-	t_get_buffer_ret		  = S_OK;
-	t_create_render_target_view_ret	  = S_OK;
-	t_resize_buffers_ret		  = S_OK;
-	t_map_ret			  = S_OK;
-	t_d3d_compile_error_msgs	  = 0;
-	t_readback_pixels[0]		  = 1;
-	t_readback_pixels[1]		  = 2;
-	t_readback_pixels[2]		  = 3;
-	t_readback_pixels[3]		  = 4;
-	t_vertex_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "vertex", .size = 6};
-	t_pixel_blob			  = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "pixel", .size = 5};
-	t_buffer.vtbl			  = &t_buffer_vtbl;
-	t_device.vtbl			  = &t_device_vtbl;
-	t_context.vtbl			  = &t_context_vtbl;
-	t_input_layout.vtbl		  = &t_input_layout_vtbl;
-	t_pixel_shader.vtbl		  = &t_pixel_shader_vtbl;
-	t_view.vtbl			  = &t_view_vtbl;
-	t_texture.vtbl			  = &t_texture_vtbl;
-	t_vertex_shader.vtbl		  = &t_vertex_shader_vtbl;
-	t_swapchain.vtbl		  = &t_swapchain_vtbl;
+	t_create_device_calls		    = 0;
+	t_release_device_calls		    = 0;
+	t_release_context_calls		    = 0;
+	t_release_view_calls		    = 0;
+	t_release_texture_calls		    = 0;
+	t_release_buffer_calls		    = 0;
+	t_release_input_layout_calls	    = 0;
+	t_release_pixel_shader_calls	    = 0;
+	t_release_depth_stencil_state_calls = 0;
+	t_release_vertex_shader_calls	    = 0;
+	t_release_blob_calls		    = 0;
+	t_create_render_target_view_calls   = 0;
+	t_create_depth_stencil_view_calls   = 0;
+	t_create_depth_stencil_state_calls  = 0;
+	t_create_buffer_calls		    = 0;
+	t_create_texture_2d_calls	    = 0;
+	t_create_input_layout_calls	    = 0;
+	t_create_vertex_shader_calls	    = 0;
+	t_create_pixel_shader_calls	    = 0;
+	t_get_buffer_calls		    = 0;
+	t_resize_buffers_calls		    = 0;
+	t_d3d_compile_calls		    = 0;
+	t_clear_render_target_view_calls    = 0;
+	t_clear_depth_stencil_view_calls    = 0;
+	t_om_set_render_targets_calls	    = 0;
+	t_om_set_depth_stencil_state_calls  = 0;
+	t_ia_set_input_layout_calls	    = 0;
+	t_ia_set_vertex_buffers_calls	    = 0;
+	t_ia_set_index_buffer_calls	    = 0;
+	t_ia_set_primitive_topology_calls   = 0;
+	t_vs_set_shader_calls		    = 0;
+	t_ps_set_shader_calls		    = 0;
+	t_vs_set_constant_buffers_calls	    = 0;
+	t_ps_set_constant_buffers_calls	    = 0;
+	t_update_subresource_calls	    = 0;
+	t_copy_resource_calls		    = 0;
+	t_map_calls			    = 0;
+	t_unmap_calls			    = 0;
+	t_draw_calls			    = 0;
+	t_draw_indexed_calls		    = 0;
+	t_rs_set_viewports_calls	    = 0;
+	t_surface_present_calls		    = 0;
+	t_surface_configure_calls	    = 0;
+	t_surface_configure_ret		    = 0;
+	t_surface_config		    = (gfx_surface_config_t){0};
+	t_surface_present_mode_calls	    = 0;
+	t_surface_present_mode_ret	    = 0;
+	t_surface_requested_present_mode    = (gfx_present_mode_t)0;
+	t_surface_acquire_index		    = 0;
+	t_surface_acquire_ret		    = 0;
+	t_create_buffer_bytes		    = 0;
+	t_create_buffer_bind_flags	    = 0;
+	t_create_buffer_usage		    = 0;
+	t_create_buffer_initial_data	    = NULL;
+	t_create_texture_width		    = 0;
+	t_create_texture_height		    = 0;
+	t_create_texture_usage		    = 0;
+	t_create_texture_bind_flags	    = 0;
+	t_create_texture_cpu_access_flags   = 0;
+	t_depth_enable			    = 0;
+	t_depth_write_mask		    = 0;
+	t_depth_func			    = 0;
+	t_clear_depth_flags		    = 0;
+	t_clear_depth_value		    = 0.0f;
+	t_copy_resource_dst_is_texture	    = 0;
+	t_copy_resource_src_is_texture	    = 0;
+	t_map_type			    = 0;
+	t_map_row_pitch			    = 4;
+	t_create_driver_type		    = 0;
+	t_create_sdk_version		    = 0;
+	t_resize_width			    = 0;
+	t_resize_height			    = 0;
+	t_input_element_count		    = 0;
+	t_input_semantic_name[0]	    = NULL;
+	t_input_semantic_name[1]	    = NULL;
+	t_input_semantic_index[0]	    = 0;
+	t_input_semantic_index[1]	    = 0;
+	t_render_target_count		    = 0;
+	t_vertex_buffer_start_slot	    = 0;
+	t_vertex_buffer_count		    = 0;
+	t_vertex_buffer_stride		    = 0;
+	t_vertex_buffer_offset		    = 0;
+	t_index_buffer_format		    = 0;
+	t_index_buffer_offset		    = 0;
+	t_constant_buffer_start_slot	    = 0;
+	t_constant_buffer_count		    = 0;
+	t_primitive_topology		    = 0;
+	t_draw_vertex_count		    = 0;
+	t_draw_start_vertex		    = 0;
+	t_draw_index_count		    = 0;
+	t_draw_start_index		    = 0;
+	t_draw_base_vertex		    = 0;
+	t_viewport_count		    = 0;
+	t_uploaded_vertices[0]		    = (t_d3d11_vertex_2d_t){0};
+	t_uploaded_vertices[1]		    = (t_d3d11_vertex_2d_t){0};
+	t_uploaded_vertices[2]		    = (t_d3d11_vertex_2d_t){0};
+	t_viewport			    = (D3D11_VIEWPORT){0};
+	t_clear_color[0]		    = 0.0f;
+	t_clear_color[1]		    = 0.0f;
+	t_clear_color[2]		    = 0.0f;
+	t_clear_color[3]		    = 0.0f;
+	t_create_device_ret		    = S_OK;
+	t_d3d_compile_ret		    = S_OK;
+	t_create_buffer_ret		    = S_OK;
+	t_create_texture_2d_ret		    = S_OK;
+	t_create_input_layout_ret	    = S_OK;
+	t_create_vertex_shader_ret	    = S_OK;
+	t_create_pixel_shader_ret	    = S_OK;
+	t_create_depth_stencil_view_ret	    = S_OK;
+	t_create_depth_stencil_state_ret    = S_OK;
+	t_get_buffer_ret		    = S_OK;
+	t_create_render_target_view_ret	    = S_OK;
+	t_resize_buffers_ret		    = S_OK;
+	t_map_ret			    = S_OK;
+	t_d3d_compile_error_msgs	    = 0;
+	t_readback_pixels[0]		    = 1;
+	t_readback_pixels[1]		    = 2;
+	t_readback_pixels[2]		    = 3;
+	t_readback_pixels[3]		    = 4;
+	t_vertex_blob			    = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "vertex", .size = 6};
+	t_pixel_blob			    = (t_d3d_blob_t){.vtbl = &t_blob_vtbl, .data = "pixel", .size = 5};
+	t_buffer.vtbl			    = &t_buffer_vtbl;
+	t_device.vtbl			    = &t_device_vtbl;
+	t_context.vtbl			    = &t_context_vtbl;
+	t_input_layout.vtbl		    = &t_input_layout_vtbl;
+	t_pixel_shader.vtbl		    = &t_pixel_shader_vtbl;
+	t_depth_stencil_state.vtbl	    = &t_depth_stencil_state_vtbl;
+	t_view.vtbl			    = &t_view_vtbl;
+	t_depth_view.vtbl		    = &t_view_vtbl;
+	t_texture.vtbl			    = &t_texture_vtbl;
+	t_vertex_shader.vtbl		    = &t_vertex_shader_vtbl;
+	t_swapchain.vtbl		    = &t_swapchain_vtbl;
 
 	t_surface = (gfx_surface_t){
 		.api	= GFX_API_D3D11,
@@ -2633,6 +2724,119 @@ TEST(gfx_d3d11_framebuffer_pass_begin_sets_targets_and_clears)
 	gfx_render_pass_free(&render_pass);
 	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_depth_create_clear_and_free)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]				       = {0};
+	gfx_image_t target			       = {0};
+	gfx_render_pass_t render_pass		       = {0};
+	gfx_framebuffer_t framebuffer		       = {0};
+	gfx_frame_t frame			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 3,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_d3d11_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+						.depth_load   = GFX_LOAD_CLEAR,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(t_create_texture_2d_calls, 2);
+	EXPECT_EQ(t_create_texture_width, 2);
+	EXPECT_EQ(t_create_texture_height, 3);
+	EXPECT_EQ(t_create_texture_bind_flags, D3D11_BIND_DEPTH_STENCIL);
+	EXPECT_EQ(t_create_depth_stencil_view_calls, 1);
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear	  = {.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.4f},
+						     .clear_depth = 0.5f,
+						     .viewport	  = {.width = 2, .height = 3},
+					     }),
+		  0);
+	EXPECT_EQ(t_clear_depth_stencil_view_calls, 1);
+	EXPECT_EQ(t_clear_depth_flags, D3D11_CLEAR_DEPTH);
+	EXPECT_EQ(t_clear_depth_value, 0.5f);
+
+	gfx_end(&frame);
+	gfx_framebuffer_free(&framebuffer);
+	EXPECT_EQ(t_release_view_calls, 2);
+	EXPECT_EQ(t_release_texture_calls, 1);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_framebuffer_depth_failures)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	u8 pixels[4]				       = {0};
+	gfx_image_t target			       = {0};
+	gfx_render_pass_t render_pass		       = {0};
+	gfx_framebuffer_t framebuffer		       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_PTR(t_gfx_d3d11_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+						.depth_load   = GFX_LOAD_CLEAR,
+					}),
+		   &render_pass);
+
+	PFN_CreateDepthStencilView saved_view = t_device_vtbl.CreateDepthStencilView;
+	t_device_vtbl.CreateDepthStencilView  = NULL;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_device_vtbl.CreateDepthStencilView = saved_view;
+
+	t_create_depth_stencil_view_ret = E_FAIL;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_create_depth_stencil_view_ret = S_OK;
+
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	PFN_ClearDepthStencilView saved_clear = t_context_vtbl.ClearDepthStencilView;
+	t_context_vtbl.ClearDepthStencilView  = NULL;
+	EXPECT_EQ(gfx.drv->framebuffer_pass_begin(
+			  &framebuffer, &(gfx_frame_t){.gfx = &gfx, .pass = {.clear_depth = 0.5f, .viewport = {.width = 1, .height = 1}}}),
+		  1);
+	t_context_vtbl.ClearDepthStencilView = saved_clear;
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -4719,6 +4923,107 @@ TEST(gfx_d3d11_bind_resources_missing_callbacks)
 	END;
 }
 
+TEST(gfx_d3d11_pipeline_depth_state)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_frame_t frame	      = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+					}),
+		   &render_pass);
+	t_gfx_d3d11_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
+	config.depth		       = (gfx_depth_state_t){.test = 1, .write = 1, .compare = GFX_COMPARE_LESS};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	EXPECT_EQ(t_create_depth_stencil_state_calls, 1);
+	EXPECT_EQ(t_depth_enable, 1);
+	EXPECT_EQ(t_depth_write_mask, D3D11_DEPTH_WRITE_MASK_ALL);
+	EXPECT_EQ(t_depth_func, D3D11_COMPARISON_LESS);
+
+	gfx.frame = &frame;
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_om_set_depth_stencil_state_calls, 1);
+	gfx.frame = NULL;
+
+	gfx_pipeline_free(&pipeline);
+	EXPECT_EQ(t_release_depth_stencil_state_calls, 1);
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_d3d11_pipeline_depth_state_failures)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+					}),
+		   &render_pass);
+	t_gfx_d3d11_active_render_pass = &render_pass;
+	gfx_pipeline_config_t config   = t_gfx_d3d11_pipeline_config(vs, fs);
+	config.depth		       = (gfx_depth_state_t){.test = 1, .compare = GFX_COMPARE_LESS};
+	gfx_pipeline_t pipeline	       = {0};
+
+	PFN_CreateDepthStencilState saved_create = t_device_vtbl.CreateDepthStencilState;
+	t_device_vtbl.CreateDepthStencilState	 = NULL;
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	t_device_vtbl.CreateDepthStencilState = saved_create;
+
+	t_create_depth_stencil_state_ret = E_FAIL;
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	t_create_depth_stencil_state_ret = S_OK;
+
+	t_gfx_d3d11_pipeline_data_t driver_pipeline = {
+		.input_layout  = &t_input_layout,
+		.vertex_shader = &t_vertex_shader,
+		.pixel_shader  = &t_pixel_shader,
+		.depth_state   = &t_depth_stencil_state,
+	};
+	gfx_pipeline_t direct_pipeline	      = {.gfx = &gfx, .data = &driver_pipeline};
+	gfx_frame_t frame		      = {.gfx = &gfx};
+	PFN_OMSetDepthStencilState saved_bind = t_context_vtbl.OMSetDepthStencilState;
+	t_context_vtbl.OMSetDepthStencilState = NULL;
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &direct_pipeline), 1);
+	t_context_vtbl.OMSetDepthStencilState = saved_bind;
+
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_pipeline_bind_missing_shader_callback)
 {
 	START;
@@ -4971,6 +5276,8 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_framebuffer_pass_begin_surface_render_target_failure);
 	RUN(gfx_d3d11_framebuffer_pass_begin_invalid_target_direct);
 	RUN(gfx_d3d11_framebuffer_pass_begin_sets_targets_and_clears);
+	RUN(gfx_d3d11_framebuffer_depth_create_clear_and_free);
+	RUN(gfx_d3d11_framebuffer_depth_failures);
 	RUN(gfx_d3d11_framebuffer_pass_begin_missing_render_target_callbacks);
 	RUN(gfx_d3d11_framebuffer_pass_begin_missing_clear_callback);
 	RUN(gfx_d3d11_image_read_copies_memory);
@@ -5038,6 +5345,8 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_pipeline_bind_null_frame);
 	RUN(gfx_d3d11_buffer_bind_null_frame);
 	RUN(gfx_d3d11_pipeline_bind_binds_shaders);
+	RUN(gfx_d3d11_pipeline_depth_state);
+	RUN(gfx_d3d11_pipeline_depth_state_failures);
 	RUN(gfx_d3d11_buffer_bind_binds_vertex_buffer);
 	RUN(gfx_d3d11_buffer_bind_binds_index_buffer);
 	RUN(gfx_d3d11_buffer_bind_missing_index_buffer_callback);

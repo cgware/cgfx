@@ -53,6 +53,9 @@ static int gfx_pass_valid(const gfx_pass_config_t *pass, const gfx_framebuffer_t
 	if (pass == NULL || !gfx_framebuffer_valid(framebuffer)) {
 		return 0;
 	}
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE && (pass->clear_depth < 0.0f || pass->clear_depth > 1.0f)) {
+		return 0;
+	}
 	return 1;
 }
 

@@ -5,15 +5,21 @@
 
 typedef struct gfx_render_pass_config_s {
 	gfx_format_t color_format;
+	gfx_format_t depth_format;
 	gfx_load_op_t load;
 	gfx_store_op_t store;
+	gfx_load_op_t depth_load;
+	gfx_store_op_t depth_store;
 } gfx_render_pass_config_t;
 
 typedef struct gfx_render_pass_s {
 	gfx_t *gfx;
 	gfx_format_t color_format;
+	gfx_format_t depth_format;
 	gfx_load_op_t load;
 	gfx_store_op_t store;
+	gfx_load_op_t depth_load;
+	gfx_store_op_t depth_store;
 	void *data;
 } gfx_render_pass_t;
 

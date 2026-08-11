@@ -16,8 +16,11 @@ typedef struct gfx_d3d11_s {
 
 typedef struct gfx_d3d11_render_pass_s {
 	gfx_format_t color_format;
+	gfx_format_t depth_format;
 	gfx_load_op_t load;
 	gfx_store_op_t store;
+	gfx_load_op_t depth_load;
+	gfx_store_op_t depth_store;
 } gfx_d3d11_render_pass_t;
 
 typedef struct gfx_d3d11_memory_target_s {
@@ -35,6 +38,8 @@ typedef struct gfx_d3d11_swapchain_s {
 typedef struct gfx_d3d11_framebuffer_s {
 	ID3D11RenderTargetView *render_target;
 	ID3D11RenderTargetView **swapchain_render_targets;
+	ID3D11Texture2D *depth_texture;
+	ID3D11DepthStencilView *depth_view;
 	u32 swapchain_render_target_count;
 } gfx_d3d11_framebuffer_t;
 
@@ -57,6 +62,7 @@ typedef struct gfx_d3d11_pipeline_s {
 	ID3D11VertexShader *vertex_shader;
 	ID3D11PixelShader *pixel_shader;
 	UINT stride;
+	ID3D11DepthStencilState *depth_state;
 } gfx_d3d11_pipeline_t;
 
 static void gfx_d3d11_swapchain_free(gfx_swapchain_t *swapchain);
@@ -515,7 +521,8 @@ static void gfx_d3d11_render_pass_free(gfx_render_pass_t *render_pass)
 
 static int gfx_d3d11_render_pass_init(gfx_render_pass_t *render_pass, const gfx_render_pass_config_t *config)
 {
-	if (render_pass == NULL || render_pass->gfx == NULL || config == NULL || config->color_format != GFX_FORMAT_RGBA8) {
+	if (render_pass == NULL || render_pass->gfx == NULL || config == NULL || config->color_format != GFX_FORMAT_RGBA8 ||
+	    (config->depth_format != GFX_FORMAT_NONE && config->depth_format != GFX_FORMAT_D32_FLOAT)) {
 		return 1;
 	}
 
@@ -525,8 +532,11 @@ static int gfx_d3d11_render_pass_init(gfx_render_pass_t *render_pass, const gfx_
 	}
 	*d3d_render_pass = (gfx_d3d11_render_pass_t){
 		.color_format = config->color_format,
+		.depth_format = config->depth_format,
 		.load	      = config->load,
 		.store	      = config->store,
+		.depth_load   = config->depth_load,
+		.depth_store  = config->depth_store,
 	};
 	render_pass->data = d3d_render_pass;
 	return 0;
@@ -596,6 +606,14 @@ static void gfx_d3d11_framebuffer_free(gfx_framebuffer_t *framebuffer)
 		d3d11_release(d3d_framebuffer->render_target);
 		d3d_framebuffer->render_target = NULL;
 	}
+	if (d3d_framebuffer->depth_view != NULL) {
+		d3d11_release(d3d_framebuffer->depth_view);
+		d3d_framebuffer->depth_view = NULL;
+	}
+	if (d3d_framebuffer->depth_texture != NULL) {
+		d3d11_release(d3d_framebuffer->depth_texture);
+		d3d_framebuffer->depth_texture = NULL;
+	}
 	for (u32 i = 0; i < d3d_framebuffer->swapchain_render_target_count; i++) {
 		if (d3d_framebuffer->swapchain_render_targets[i] != NULL) {
 			d3d11_release(d3d_framebuffer->swapchain_render_targets[i]);
@@ -657,6 +675,31 @@ static int gfx_d3d11_framebuffer_init(gfx_framebuffer_t *framebuffer)
 		gfx_d3d11_framebuffer_free(framebuffer);
 		return 1;
 	}
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE) {
+		ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
+		if (device->CreateTexture2D == NULL || device->CreateDepthStencilView == NULL) {
+			gfx_d3d11_framebuffer_free(framebuffer);
+			return 1;
+		}
+		D3D11_TEXTURE2D_DESC desc = {
+			.Width	    = framebuffer->width,
+			.Height	    = framebuffer->height,
+			.MipLevels  = 1,
+			.ArraySize  = 1,
+			.Format	    = DXGI_FORMAT_D32_FLOAT,
+			.SampleDesc = {.Count = 1},
+			.Usage	    = D3D11_USAGE_DEFAULT,
+			.BindFlags  = D3D11_BIND_DEPTH_STENCIL,
+		};
+		if (!hresult_ok(device->CreateTexture2D(d3d11->device, &desc, NULL, &d3d_framebuffer->depth_texture)) ||
+		    d3d_framebuffer->depth_texture == NULL ||
+		    !hresult_ok(device->CreateDepthStencilView(
+			    d3d11->device, d3d_framebuffer->depth_texture, NULL, &d3d_framebuffer->depth_view)) ||
+		    d3d_framebuffer->depth_view == NULL) {
+			gfx_d3d11_framebuffer_free(framebuffer);
+			return 1;
+		}
+	}
 
 	return 0;
 }
@@ -702,7 +745,7 @@ static int gfx_d3d11_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_
 	}
 
 	ID3D11RenderTargetView *views[1] = {render_target};
-	context->OMSetRenderTargets(d3d11->context, 1, views, NULL);
+	context->OMSetRenderTargets(d3d11->context, 1, views, d3d_framebuffer->depth_view);
 	D3D11_VIEWPORT viewport = {
 		.TopLeftX = (float)frame->pass.viewport.x,
 		.TopLeftY = (float)frame->pass.viewport.y,
@@ -723,6 +766,12 @@ static int gfx_d3d11_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx_
 			frame->pass.clear.a,
 		};
 		context->ClearRenderTargetView(d3d11->context, render_target, color);
+	}
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE && framebuffer->render_pass->depth_load == GFX_LOAD_CLEAR) {
+		if (context->ClearDepthStencilView == NULL || d3d_framebuffer->depth_view == NULL) {
+			return 1;
+		}
+		context->ClearDepthStencilView(d3d11->context, d3d_framebuffer->depth_view, D3D11_CLEAR_DEPTH, frame->pass.clear_depth, 0);
 	}
 	return 0;
 }
@@ -1115,6 +1164,10 @@ static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 		d3d11_release(d3d_pipeline->input_layout);
 		d3d_pipeline->input_layout = NULL;
 	}
+	if (d3d_pipeline->depth_state != NULL) {
+		d3d11_release(d3d_pipeline->depth_state);
+		d3d_pipeline->depth_state = NULL;
+	}
 	alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
 	pipeline->data = NULL;
 }
@@ -1215,6 +1268,36 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 
 	d3d_pipeline->vertex_shader = vs->shader.vertex;
 	d3d_pipeline->pixel_shader  = fs->shader.pixel;
+	if (config->render_pass->depth_format != GFX_FORMAT_NONE) {
+		if (device->CreateDepthStencilState == NULL) {
+			gfx_d3d11_pipeline_free(pipeline);
+			return 1;
+		}
+		D3D11_DEPTH_STENCIL_DESC depth = {
+			.DepthEnable	= config->depth.test,
+			.DepthWriteMask = config->depth.write ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO,
+			.DepthFunc	= D3D11_COMPARISON_LESS,
+			.FrontFace =
+				{
+					.StencilFailOp	    = D3D11_STENCIL_OP_KEEP,
+					.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP,
+					.StencilPassOp	    = D3D11_STENCIL_OP_KEEP,
+					.StencilFunc	    = D3D11_COMPARISON_LESS,
+				},
+			.BackFace =
+				{
+					.StencilFailOp	    = D3D11_STENCIL_OP_KEEP,
+					.StencilDepthFailOp = D3D11_STENCIL_OP_KEEP,
+					.StencilPassOp	    = D3D11_STENCIL_OP_KEEP,
+					.StencilFunc	    = D3D11_COMPARISON_LESS,
+				},
+		};
+		if (!hresult_ok(device->CreateDepthStencilState(d3d11->device, &depth, &d3d_pipeline->depth_state)) ||
+		    d3d_pipeline->depth_state == NULL) {
+			gfx_d3d11_pipeline_free(pipeline);
+			return 1;
+		}
+	}
 
 	return 0;
 }
@@ -1235,6 +1318,12 @@ static int gfx_d3d11_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pip
 	context->IASetInputLayout(d3d11->context, d3d_pipeline->input_layout);
 	context->VSSetShader(d3d11->context, d3d_pipeline->vertex_shader, NULL, 0);
 	context->PSSetShader(d3d11->context, d3d_pipeline->pixel_shader, NULL, 0);
+	if (d3d_pipeline->depth_state != NULL) {
+		if (context->OMSetDepthStencilState == NULL) {
+			return 1;
+		}
+		context->OMSetDepthStencilState(d3d11->context, d3d_pipeline->depth_state, 0);
+	}
 
 	return 0;
 }

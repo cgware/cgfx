@@ -22,6 +22,17 @@ typedef struct t_gfx_software_surface_target_data_s {
 	gfx_surface_memory_t memory;
 } t_gfx_software_surface_target_data_t;
 
+typedef struct t_gfx_software_data_s {
+	gfx_image_t image;
+	gfx_swapchain_t *swapchain;
+	float *depth;
+	size_t depth_size;
+	u16 viewport_x;
+	u16 viewport_y;
+	u16 viewport_width;
+	u16 viewport_height;
+} t_gfx_software_data_t;
+
 typedef struct t_gfx_software_buffer_data_s {
 	buf_t buf;
 } t_gfx_software_buffer_data_t;
@@ -1581,6 +1592,218 @@ TEST(gfx_software_surface_pass_begin_reports_lazy_image_init_failure)
 	END;
 }
 
+TEST(gfx_software_depth_test_keeps_nearer_triangle)
+{
+	START;
+
+	u8 pixels[16]	  = {0};
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_PTR(gfx_image_init_memory(&target, &gfx, &memory_target_config), &target);
+
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_RGBA8,
+		.depth_format = GFX_FORMAT_D32_FLOAT,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+		.depth_load   = GFX_LOAD_CLEAR,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_shader_t shader = {0};
+	EXPECT_PTR(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = strv_cstr(t_gfx_software_color_shader_source)}),
+		   &shader);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass	= &render_pass,
+					     .vs		= shader,
+					     .fs		= shader,
+					     .input_layout	= t_gfx_software_layout_2d,
+					     .input_layout_size = sizeof(t_gfx_software_layout_2d),
+					     .depth		= {.test = 1, .write = 1, .compare = GFX_COMPARE_LESS},
+				     }),
+		   &pipeline);
+	gfx_buffer_t buffer = {0};
+	EXPECT_PTR(gfx_buffer_init(&buffer, &gfx, &(gfx_buffer_config_t){.type = GFX_BUFFER_VERTEX, .usage = GFX_BUFFER_USAGE_DYNAMIC}),
+		   &buffer);
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear	  = {0.0f, 0.0f, 0.0f, 1.0f},
+						     .clear_depth = 1.0f,
+					     }),
+		  0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+
+	gfx_vertex_2d_t near_vertices[3] = {
+		{.x = -1.0f, .y = -1.0f, .r = 0.0f, .g = 1.0f, .b = 0.25f, .a = 1.0f},
+		{.x = 3.0f, .y = -1.0f, .r = 0.0f, .g = 1.0f, .b = 0.25f, .a = 1.0f},
+		{.x = -1.0f, .y = 3.0f, .r = 0.0f, .g = 1.0f, .b = 0.25f, .a = 1.0f},
+	};
+	gfx_vertex_2d_t far_vertices[3] = {
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .g = 0.0f, .b = 0.75f, .a = 1.0f},
+		{.x = 3.0f, .y = -1.0f, .r = 1.0f, .g = 0.0f, .b = 0.75f, .a = 1.0f},
+		{.x = -1.0f, .y = 3.0f, .r = 1.0f, .g = 0.0f, .b = 0.75f, .a = 1.0f},
+	};
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, near_vertices, sizeof(near_vertices)), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_buffer_set_data(&buffer, far_vertices, sizeof(far_vertices)), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(pixels[0], 0);
+	EXPECT_EQ(pixels[1], 255);
+
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_depth_buffer_resizes_and_clears_when_disabled)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	u8 pixels_a[4]	     = {0};
+	u8 pixels_b[8]	     = {0};
+	gfx_image_t target_a = {0};
+	gfx_image_t target_b = {0};
+	EXPECT_PTR(gfx_image_init_memory(&target_a,
+					 &gfx,
+					 &(gfx_image_memory_config_t){
+						 .format = GFX_FORMAT_RGBA8,
+						 .data	 = pixels_a,
+						 .width	 = 1,
+						 .height = 1,
+						 .stride = 4,
+					 }),
+		   &target_a);
+	EXPECT_PTR(gfx_image_init_memory(&target_b,
+					 &gfx,
+					 &(gfx_image_memory_config_t){
+						 .format = GFX_FORMAT_RGBA8,
+						 .data	 = pixels_b,
+						 .width	 = 2,
+						 .height = 1,
+						 .stride = 8,
+					 }),
+		   &target_b);
+	gfx_render_pass_t depth_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&depth_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+						.depth_load   = GFX_LOAD_CLEAR,
+					}),
+		   &depth_pass);
+	gfx_render_pass_t color_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&color_pass, &gfx, &(gfx_render_pass_config_t){.color_format = GFX_FORMAT_RGBA8}), &color_pass);
+	gfx_framebuffer_t framebuffer_a = {0};
+	gfx_framebuffer_t framebuffer_b = {0};
+	gfx_framebuffer_t framebuffer_c = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer_a, &target_a, &depth_pass), &framebuffer_a);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer_b, &target_b, &depth_pass), &framebuffer_b);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer_c, &target_b, &color_pass), &framebuffer_c);
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer_a, &frame, &(gfx_pass_config_t){.clear_depth = 1.0f}), 0);
+	t_gfx_software_data_t *render = gfx.data;
+	EXPECT_NOT_NULL(render->depth);
+	EXPECT_EQ(render->depth_size, 1);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer_b, &frame, &(gfx_pass_config_t){.clear_depth = 0.5f}), 0);
+	EXPECT_NOT_NULL(render->depth);
+	EXPECT_EQ(render->depth_size, 2);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer_c, &frame, &(gfx_pass_config_t){0}), 0);
+	EXPECT_NULL(render->depth);
+	EXPECT_EQ(render->depth_size, 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	gfx_framebuffer_free(&framebuffer_c);
+	gfx_framebuffer_free(&framebuffer_b);
+	gfx_framebuffer_free(&framebuffer_a);
+	gfx_render_pass_free(&color_pass);
+	gfx_render_pass_free(&depth_pass);
+	gfx_image_free(&target_b);
+	gfx_image_free(&target_a);
+	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_depth_buffer_alloc_failure)
+{
+	START;
+
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	u8 pixels[4]	   = {0};
+	gfx_image_t target = {0};
+	EXPECT_PTR(gfx_image_init_memory(&target,
+					 &gfx,
+					 &(gfx_image_memory_config_t){
+						 .format = GFX_FORMAT_RGBA8,
+						 .data	 = pixels,
+						 .width	 = 1,
+						 .height = 1,
+						 .stride = 4,
+					 }),
+		   &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+					}),
+		   &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	alloc_t saved	  = gfx.alloc;
+	gfx.alloc	  = ALLOC_STD;
+	gfx.alloc.alloc	  = t_gfx_software_alloc_fail;
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}), 1);
+	gfx.alloc = saved;
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_driver_direct_branches)
 {
 	START;
@@ -1768,6 +1991,9 @@ STEST(gfx_software)
 	RUN(gfx_software_draw_indexed_rejects_invalid_target);
 	RUN(gfx_software_surface_pass_begin_and_draw_clips);
 	RUN(gfx_software_surface_pass_begin_reports_lazy_image_init_failure);
+	RUN(gfx_software_depth_test_keeps_nearer_triangle);
+	RUN(gfx_software_depth_buffer_resizes_and_clears_when_disabled);
+	RUN(gfx_software_depth_buffer_alloc_failure);
 	RUN(gfx_software_driver_direct_branches);
 	RUN(gfx_software_driver_callback_failures);
 	SEND;

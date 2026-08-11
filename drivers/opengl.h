@@ -45,7 +45,8 @@ typedef enum glDataType_e {
 } glDataType_t;
 
 typedef enum glFormat_e {
-	GL_RGBA = 0x1908,
+	GL_DEPTH_COMPONENT = 0x1902,
+	GL_RGBA		   = 0x1908,
 } glFormat_t;
 
 typedef enum glStringName_e {
@@ -68,7 +69,8 @@ typedef enum glTexParameteriName_e {
 } glTexParameteriName_t;
 
 typedef enum glInternalFormat_e {
-	GL_RGBA8 = 0x8058,
+	GL_DEPTH_COMPONENT32F = 0x8CAC,
+	GL_RGBA8	      = 0x8058,
 } glInternalFormat_t;
 
 typedef enum glBufferTarget_e {
@@ -96,11 +98,21 @@ typedef enum glParameterName_e {
 
 typedef enum glFramebufferAttachment_e {
 	GL_COLOR_ATTACHMENT0 = 0x8CE0,
+	GL_DEPTH_ATTACHMENT  = 0x8D00,
 } glFramebufferAttachment_t;
 
 typedef enum glClearMask_e {
+	GL_DEPTH_BUFFER_BIT = 0x00000100,
 	GL_COLOR_BUFFER_BIT = 0x00004000,
 } glClearMask_t;
+
+typedef enum glCapability_e {
+	GL_DEPTH_TEST = 0x0B71,
+} glCapability_t;
+
+typedef enum glCompareFunc_e {
+	GL_LESS = 0x0201,
+} glCompareFunc_t;
 
 typedef enum glFramebufferStatus_e {
 	GL_FRAMEBUFFER_COMPLETE = 0x8CD5,
@@ -398,6 +410,30 @@ typedef void (*PFN_glClearColor)(GLfloat red, GLfloat green, GLfloat blue, GLflo
  * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glClear.xhtml
  */
 typedef void (*PFN_glClear)(GLbitfield mask);
+
+/**
+ * @brief Specify the clear value for the depth buffer
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glClearDepth.xhtml
+ */
+typedef void (*PFN_glClearDepth)(double depth);
+
+/**
+ * @brief Enable server-side GL capability
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glEnable.xhtml
+ */
+typedef void (*PFN_glEnable)(GLenum cap);
+
+/**
+ * @brief Disable server-side GL capability
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDisable.xhtml
+ */
+typedef void (*PFN_glDisable)(GLenum cap);
+
+/**
+ * @brief Specify depth comparison function
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDepthFunc.xhtml
+ */
+typedef void (*PFN_glDepthFunc)(GLenum func);
 
 /**
  * @brief Set the viewport

@@ -17,17 +17,29 @@ typedef struct gfx_layout_s {
 	gfx_value_type_t type;
 } gfx_layout_t;
 
+typedef enum gfx_compare_op_e {
+	GFX_COMPARE_LESS,
+} gfx_compare_op_t;
+
+typedef struct gfx_depth_state_s {
+	int test;
+	int write;
+	gfx_compare_op_t compare;
+} gfx_depth_state_t;
+
 typedef struct gfx_pipeline_config_s {
 	const gfx_render_pass_t *render_pass;
 	gfx_shader_t vs;
 	gfx_shader_t fs;
 	const gfx_layout_t *input_layout;
 	size_t input_layout_size;
+	gfx_depth_state_t depth;
 } gfx_pipeline_config_t;
 
 typedef struct gfx_pipeline_s {
 	gfx_t *gfx;
 	const gfx_render_pass_t *render_pass;
+	gfx_depth_state_t depth;
 	void *data;
 } gfx_pipeline_t;
 

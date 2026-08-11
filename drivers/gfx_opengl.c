@@ -49,6 +49,10 @@ typedef struct gfx_opengl_s {
 	PFN_glVertexAttribPointer VertexAttribPointer;
 	PFN_glDrawArrays DrawArrays;
 	PFN_glDrawElements DrawElements;
+	PFN_glClearDepth ClearDepth;
+	PFN_glEnable Enable;
+	PFN_glDisable Disable;
+	PFN_glDepthFunc DepthFunc;
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_render_pass_s {
@@ -63,6 +67,7 @@ typedef struct gfx_opengl_target_s {
 
 typedef struct gfx_opengl_framebuffer_s {
 	unsigned int framebuffer;
+	unsigned int depth_texture;
 } gfx_opengl_framebuffer_t;
 
 typedef struct gfx_opengl_buffer_s {
@@ -200,6 +205,10 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetProgramInfoLog);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetError);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, GetString);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, ClearDepth);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, Enable);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, Disable);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, DepthFunc);
 
 	return 0;
 }
@@ -484,6 +493,10 @@ static void gfx_opengl_framebuffer_free(gfx_framebuffer_t *framebuffer)
 		opengl->DeleteFramebuffers(1, &gl_framebuffer->framebuffer);
 		gl_framebuffer->framebuffer = 0;
 	}
+	if (gl_framebuffer->depth_texture != 0 && opengl->DeleteTextures != NULL) {
+		opengl->DeleteTextures(1, &gl_framebuffer->depth_texture);
+		gl_framebuffer->depth_texture = 0;
+	}
 	if (opengl->framebuffer == framebuffer) {
 		opengl->framebuffer = NULL;
 	}
@@ -522,6 +535,24 @@ static int gfx_opengl_framebuffer_init(gfx_framebuffer_t *framebuffer)
 	opengl->GenFramebuffers(1, &gl_framebuffer->framebuffer);
 	opengl->BindFramebuffer(GL_FRAMEBUFFER, gl_framebuffer->framebuffer);
 	opengl->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl_target->texture, 0);
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE) {
+		opengl->GenTextures(1, &gl_framebuffer->depth_texture);
+		opengl->BindTexture(GL_TEXTURE_2D, gl_framebuffer->depth_texture);
+		opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		opengl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		opengl->TexImage2D(GL_TEXTURE_2D,
+				   0,
+				   GL_DEPTH_COMPONENT32F,
+				   framebuffer->width,
+				   framebuffer->height,
+				   0,
+				   GL_DEPTH_COMPONENT,
+				   GL_FLOAT,
+				   NULL);
+		opengl->FramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gl_framebuffer->depth_texture, 0);
+	}
 	if (opengl->CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
 		log_error("cgfx", "gfx_opengl", NULL, "failed to create complete framebuffer");
 		gfx_opengl_framebuffer_free(framebuffer);
@@ -548,9 +579,20 @@ static int gfx_opengl_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx
 		return 1;
 	}
 	opengl->Viewport(frame->pass.viewport.x, frame->pass.viewport.y, frame->pass.viewport.width, frame->pass.viewport.height);
+	GLbitfield clear = 0;
 	if (framebuffer->render_pass->load == GFX_LOAD_CLEAR) {
 		opengl->ClearColor(frame->pass.clear.r, frame->pass.clear.g, frame->pass.clear.b, frame->pass.clear.a);
-		opengl->Clear(GL_COLOR_BUFFER_BIT);
+		clear |= GL_COLOR_BUFFER_BIT;
+	}
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE && framebuffer->render_pass->depth_load == GFX_LOAD_CLEAR) {
+		if (opengl->ClearDepth == NULL) {
+			return 1;
+		}
+		opengl->ClearDepth(frame->pass.clear_depth);
+		clear |= GL_DEPTH_BUFFER_BIT;
+	}
+	if (clear != 0) {
+		opengl->Clear(clear);
 	}
 	return 0;
 }
@@ -1120,6 +1162,20 @@ static int gfx_opengl_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pi
 	}
 
 	opengl->UseProgram(gl_pipeline->program);
+	if (pipeline->render_pass->depth_format != GFX_FORMAT_NONE) {
+		if (pipeline->depth.test) {
+			if (opengl->Enable == NULL || opengl->DepthFunc == NULL) {
+				return 1;
+			}
+			opengl->Enable(GL_DEPTH_TEST);
+			opengl->DepthFunc(GL_LESS);
+		} else {
+			if (opengl->Disable == NULL) {
+				return 1;
+			}
+			opengl->Disable(GL_DEPTH_TEST);
+		}
+	}
 
 	return 0;
 }

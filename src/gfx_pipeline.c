@@ -5,12 +5,14 @@
 gfx_pipeline_t *gfx_pipeline_init(gfx_pipeline_t *pipeline, gfx_t *gfx, const gfx_pipeline_config_t *config)
 {
 	if (pipeline == NULL || gfx == NULL || gfx->drv == NULL || gfx->drv->pipeline_init == NULL || config == NULL ||
-	    config->render_pass == NULL || config->render_pass->gfx != gfx) {
+	    config->render_pass == NULL || config->render_pass->gfx != gfx || config->depth.compare != GFX_COMPARE_LESS ||
+	    ((config->depth.test || config->depth.write) && config->render_pass->depth_format == GFX_FORMAT_NONE)) {
 		return NULL;
 	}
 
 	pipeline->gfx	      = gfx;
 	pipeline->render_pass = config->render_pass;
+	pipeline->depth	      = config->depth;
 	if (gfx->drv->pipeline_init(pipeline, config)) {
 		*pipeline = (gfx_pipeline_t){0};
 		return NULL;

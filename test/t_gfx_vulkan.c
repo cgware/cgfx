@@ -63,6 +63,11 @@ static int t_vk_create_render_pass_calls;
 static int t_vk_destroy_render_pass_calls;
 static int t_vk_create_framebuffer_calls;
 static int t_vk_destroy_framebuffer_calls;
+static u32 t_vk_render_pass_attachment_count;
+static u32 t_vk_render_pass_depth_format;
+static u32 t_vk_render_pass_depth_load;
+static u32 t_vk_render_pass_depth_store;
+static u32 t_vk_framebuffer_attachment_count;
 static int t_vk_create_descriptor_set_layout_calls;
 static int t_vk_destroy_descriptor_set_layout_calls;
 static int t_vk_create_descriptor_pool_calls;
@@ -94,11 +99,13 @@ static u8 t_vk_memory[256];
 static float t_vk_clear_color[4];
 static u32 t_vk_clear_layout;
 static VkFramebuffer t_vk_begin_render_pass_framebuffer;
+static float t_vk_begin_render_pass_depth;
 static VkImage t_vk_destroyed_image;
 static VkDeviceMemory t_vk_freed_memory;
 static VkMappedMemoryRange t_vk_invalidate_range;
 static VkMappedMemoryRange t_vk_flush_range;
 static VkImageMemoryBarrier t_vk_last_barrier;
+static VkImageMemoryBarrier t_vk_barriers[2];
 static VkDeviceSize t_vk_buffer_size;
 static VkFlags t_vk_buffer_usage;
 static VkBuffer t_vk_bound_vertex_buffer;
@@ -241,6 +248,7 @@ typedef struct t_gfx_vulkan_swapchain_data_s {
 
 typedef struct t_gfx_vulkan_render_pass_data_s {
 	VkRenderPass render_pass;
+	int depth;
 } t_gfx_vulkan_render_pass_data_t;
 
 typedef struct t_gfx_vulkan_data_head_s {
@@ -252,6 +260,10 @@ typedef struct t_gfx_vulkan_data_head_s {
 typedef struct t_gfx_vulkan_framebuffer_data_s {
 	VkFramebuffer framebuffer;
 	VkFramebuffer *swapchain_framebuffers;
+	VkImage depth_image;
+	VkDeviceMemory depth_memory;
+	VkImageView depth_view;
+	VkImageLayout depth_layout;
 	u32 swapchain_framebuffer_count;
 } t_gfx_vulkan_framebuffer_data_t;
 
@@ -696,6 +708,9 @@ static void t_vkCmdPipelineBarrier(VkCommandBuffer buffer, VkFlags src_stage, Vk
 	t_vk_pipeline_barrier_calls++;
 	if (image_count > 0) {
 		t_vk_last_barrier = image_barriers[0];
+		if (t_vk_pipeline_barrier_calls <= 2) {
+			t_vk_barriers[t_vk_pipeline_barrier_calls - 1] = image_barriers[0];
+		}
 	}
 }
 
@@ -765,9 +780,15 @@ static void t_vkDestroyShaderModule(VkDevice device, VkShaderModule shader, cons
 static int t_vkCreateRenderPass(VkDevice device, const void *create, const void *alloc, VkRenderPass *render_pass)
 {
 	(void)device;
-	(void)create;
 	(void)alloc;
+	const VkRenderPassCreateInfo *info = create;
 	t_vk_create_render_pass_calls++;
+	t_vk_render_pass_attachment_count = info != NULL ? info->attachmentCount : 0;
+	if (info != NULL && info->attachmentCount > 1 && info->pAttachments != NULL) {
+		t_vk_render_pass_depth_format = info->pAttachments[1].format;
+		t_vk_render_pass_depth_load   = info->pAttachments[1].loadOp;
+		t_vk_render_pass_depth_store  = info->pAttachments[1].storeOp;
+	}
 	*render_pass = 30;
 	return t_vk_create_render_pass_ret;
 }
@@ -783,10 +804,11 @@ static void t_vkDestroyRenderPass(VkDevice device, VkRenderPass render_pass, con
 static int t_vkCreateFramebuffer(VkDevice device, const void *create, const void *alloc, VkFramebuffer *framebuffer)
 {
 	(void)device;
-	(void)create;
 	(void)alloc;
+	const VkFramebufferCreateInfo *info = create;
 	t_vk_create_framebuffer_calls++;
-	*framebuffer = 31 + (VkFramebuffer)t_vk_create_framebuffer_calls;
+	t_vk_framebuffer_attachment_count = info != NULL ? info->attachmentCount : 0;
+	*framebuffer			  = 31 + (VkFramebuffer)t_vk_create_framebuffer_calls;
 	return t_vk_create_framebuffer_ret;
 }
 
@@ -927,6 +949,9 @@ static void t_vkCmdBeginRenderPass(VkCommandBuffer buffer, const void *begin, u3
 		t_vk_clear_color[1]	       = clear->float32[1];
 		t_vk_clear_color[2]	       = clear->float32[2];
 		t_vk_clear_color[3]	       = clear->float32[3];
+		if (info->clearValueCount > 1) {
+			t_vk_begin_render_pass_depth = info->pClearValues[1].depthStencil.depth;
+		}
 	}
 }
 
@@ -1193,6 +1218,11 @@ static void t_vkReset(void)
 	t_vk_destroy_render_pass_calls		   = 0;
 	t_vk_create_framebuffer_calls		   = 0;
 	t_vk_destroy_framebuffer_calls		   = 0;
+	t_vk_render_pass_attachment_count	   = 0;
+	t_vk_render_pass_depth_format		   = 0;
+	t_vk_render_pass_depth_load		   = 0;
+	t_vk_render_pass_depth_store		   = 0;
+	t_vk_framebuffer_attachment_count	   = 0;
 	t_vk_create_descriptor_set_layout_calls	   = 0;
 	t_vk_destroy_descriptor_set_layout_calls   = 0;
 	t_vk_create_descriptor_pool_calls	   = 0;
@@ -1206,6 +1236,7 @@ static void t_vkReset(void)
 	t_vk_destroy_pipeline_calls		   = 0;
 	t_vk_begin_render_pass_calls		   = 0;
 	t_vk_begin_render_pass_clear_value_count   = 0;
+	t_vk_begin_render_pass_depth		   = 0.0f;
 	t_vk_end_render_pass_calls		   = 0;
 	t_vk_bind_pipeline_calls		   = 0;
 	t_vk_bind_vertex_buffers_calls		   = 0;
@@ -1225,6 +1256,8 @@ static void t_vkReset(void)
 	t_vk_invalidate_range			   = (VkMappedMemoryRange){0};
 	t_vk_flush_range			   = (VkMappedMemoryRange){0};
 	t_vk_last_barrier			   = (VkImageMemoryBarrier){0};
+	t_vk_barriers[0]			   = (VkImageMemoryBarrier){0};
+	t_vk_barriers[1]			   = (VkImageMemoryBarrier){0};
 	t_vk_buffer_size			   = 0;
 	t_vk_buffer_usage			   = 0;
 	t_vk_begin_render_pass_framebuffer	   = 0;
@@ -6719,6 +6752,173 @@ TEST(gfx_vulkan_framebuffer_init_surface_image_view_failure)
 	END;
 }
 
+TEST(gfx_vulkan_framebuffer_depth_pass_begin)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+		.depth_format = GFX_FORMAT_D32_FLOAT,
+		.depth_load   = GFX_LOAD_CLEAR,
+		.depth_store  = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	EXPECT_EQ(t_vk_render_pass_attachment_count, 2);
+	EXPECT_EQ(t_vk_render_pass_depth_format, VK_FORMAT_D32_SFLOAT);
+	EXPECT_EQ(t_vk_render_pass_depth_load, VK_ATTACHMENT_LOAD_OP_CLEAR);
+	EXPECT_EQ(t_vk_render_pass_depth_store, VK_ATTACHMENT_STORE_OP_STORE);
+	t_gfx_vulkan_render_pass_data_t *pass_data = render_pass.data;
+	EXPECT_EQ(pass_data->depth, 1);
+
+	t_vk_memory_flags	      = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	EXPECT_EQ(t_vk_framebuffer_attachment_count, 2);
+	t_gfx_vulkan_framebuffer_data_t *framebuffer_data = framebuffer.data;
+	EXPECT_NOT_NULL(framebuffer_data);
+	EXPECT_NE(framebuffer_data->depth_image, 0);
+	EXPECT_NE(framebuffer_data->depth_memory, 0);
+	EXPECT_NE(framebuffer_data->depth_view, 0);
+
+	t_vk_pipeline_barrier_calls = 0;
+	t_vk_barriers[0]	    = (VkImageMemoryBarrier){0};
+	t_vk_barriers[1]	    = (VkImageMemoryBarrier){0};
+	gfx_frame_t frame	    = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear	  = {.r = 0.1f, .g = 0.2f, .b = 0.3f, .a = 0.4f},
+						     .clear_depth = 0.25f,
+						     .viewport	  = {.width = 2, .height = 1},
+					     }),
+		  0);
+	EXPECT_EQ(t_vk_pipeline_barrier_calls, 2);
+	EXPECT_EQ(t_vk_barriers[1].image, framebuffer_data->depth_image);
+	EXPECT_EQ(t_vk_barriers[1].newLayout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	EXPECT_EQ(framebuffer_data->depth_layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+	EXPECT_EQ(t_vk_begin_render_pass_clear_value_count, 2);
+	EXPECT_EQ(t_vk_begin_render_pass_depth, 0.25f);
+
+	EXPECT_EQ(gfx_end(&frame), 0);
+	gfx_framebuffer_free(&framebuffer);
+	EXPECT_EQ(t_vk_destroy_image_view_calls > 0, 1);
+	EXPECT_EQ(t_vk_destroy_image_calls > 0, 1);
+	EXPECT_EQ(t_vk_free_memory_calls > 0, 1);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_framebuffer_depth_memory_type_fallback)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+					}),
+		   &render_pass);
+
+	t_vk_memory_flags	      = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_framebuffer_depth_attachment_failures)
+{
+	START;
+
+	u8 pixels[4] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 1,
+		.height = 1,
+		.stride = 4,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = target.format,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+					}),
+		   &render_pass);
+
+	gfx_framebuffer_t framebuffer = {0};
+	t_vk_create_image_ret	      = 1;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_vk_create_image_ret = VK_SUCCESS;
+
+	t_vk_memory_type_bits = 0;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_vk_memory_type_bits = 1;
+
+	t_vk_allocate_memory_ret = 1;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_vk_allocate_memory_ret = VK_SUCCESS;
+
+	t_vk_bind_image_memory_ret = 1;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_vk_bind_image_memory_ret = VK_SUCCESS;
+
+	t_vk_create_image_view_ret = 1;
+	EXPECT_NULL(gfx_framebuffer_init(&framebuffer, &target, &render_pass));
+	t_vk_create_image_view_ret = VK_SUCCESS;
+
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_framebuffer_init_unknown_target_type_direct)
 {
 	START;
@@ -7739,6 +7939,9 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_framebuffer_init_surface_requires_swapchain_data_direct);
 	RUN(gfx_vulkan_framebuffer_init_surface_framebuffer_array_alloc_failure);
 	RUN(gfx_vulkan_framebuffer_init_surface_image_view_failure);
+	RUN(gfx_vulkan_framebuffer_depth_pass_begin);
+	RUN(gfx_vulkan_framebuffer_depth_memory_type_fallback);
+	RUN(gfx_vulkan_framebuffer_depth_attachment_failures);
 	RUN(gfx_vulkan_framebuffer_init_unknown_target_type_direct);
 	RUN(gfx_vulkan_framebuffer_pass_begin_requires_target_data_direct);
 	RUN(gfx_vulkan_framebuffer_pass_begin_surface_requires_target_data_direct);

@@ -3,7 +3,8 @@
 static int gfx_render_pass_config_valid(const gfx_render_pass_config_t *config)
 {
 	return config != NULL && config->color_format != GFX_FORMAT_NONE && config->load <= GFX_LOAD_LOAD &&
-	       config->store <= GFX_STORE_STORE;
+	       config->store <= GFX_STORE_STORE && config->depth_load <= GFX_LOAD_LOAD && config->depth_store <= GFX_STORE_STORE &&
+	       (config->depth_format == GFX_FORMAT_NONE || config->depth_format == GFX_FORMAT_D32_FLOAT);
 }
 
 gfx_render_pass_t *gfx_render_pass_init(gfx_render_pass_t *render_pass, gfx_t *gfx, const gfx_render_pass_config_t *config)
@@ -18,8 +19,11 @@ gfx_render_pass_t *gfx_render_pass_init(gfx_render_pass_t *render_pass, gfx_t *g
 	*render_pass = (gfx_render_pass_t){
 		.gfx	      = gfx,
 		.color_format = config->color_format,
+		.depth_format = config->depth_format,
 		.load	      = config->load,
 		.store	      = config->store,
+		.depth_load   = config->depth_load,
+		.depth_store  = config->depth_store,
 	};
 	if (gfx->drv->render_pass_init != NULL && gfx->drv->render_pass_init(render_pass, config)) {
 		if (gfx->drv->render_pass_free != NULL) {

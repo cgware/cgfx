@@ -98,6 +98,8 @@ typedef struct ID3D11PixelShaderVTable_s {
  */
 
 typedef void *ID3D11RenderTargetView;
+typedef void *ID3D11DepthStencilView;
+typedef void *ID3D11DepthStencilState;
 
 typedef HRESULT (*PFN_RenderTargetView_QueryInterface)(ID3D11RenderTargetView *This, REFIID riid, void **ppvObject);
 typedef ULONG (*PFN_RenderTargetView_AddRef)(ID3D11RenderTargetView *This);
@@ -259,7 +261,9 @@ typedef void (*PFN_IASetPrimitiveTopology)(ID3D11DeviceContext *This, D3D11_PRIM
  * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-omsetrendertargets
  */
 typedef void (*PFN_OMSetRenderTargets)(ID3D11DeviceContext *This, UINT NumViews, ID3D11RenderTargetView *const *ppRenderTargetViews,
-				       void *pDepthStencilView);
+				       ID3D11DepthStencilView pDepthStencilView);
+
+typedef void (*PFN_OMSetDepthStencilState)(ID3D11DeviceContext *This, ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef);
 
 typedef struct D3D11_VIEWPORT_s {
 	float TopLeftX;
@@ -294,6 +298,14 @@ typedef void (*PFN_UpdateSubresource)(ID3D11DeviceContext *This, ID3D11Buffer *p
  * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-clearrendertargetview
  */
 typedef void (*PFN_ClearRenderTargetView)(ID3D11DeviceContext *This, ID3D11RenderTargetView *pRenderTargetView, const float ColorRGBA[4]);
+
+typedef enum D3D11_CLEAR_FLAG_e {
+	D3D11_CLEAR_DEPTH = 0x1,
+} D3D11_CLEAR_FLAG_t;
+typedef UINT D3D11_CLEAR_FLAG;
+
+typedef void (*PFN_ClearDepthStencilView)(ID3D11DeviceContext *This, ID3D11DepthStencilView pDepthStencilView, D3D11_CLEAR_FLAG ClearFlags,
+					  float Depth, u8 Stencil);
 
 typedef struct ID3D11DeviceContextVTable_s {
 	PFN_DeviceContext_QueryInterface QueryInterface;
@@ -332,7 +344,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	PFN_OMSetRenderTargets OMSetRenderTargets;
 	void (*unused_34)(void);
 	void (*unused_35)(void);
-	void (*unused_36)(void);
+	PFN_OMSetDepthStencilState OMSetDepthStencilState;
 	void (*unused_37)(void);
 	void (*unused_38)(void);
 	void (*unused_39)(void);
@@ -347,6 +359,9 @@ typedef struct ID3D11DeviceContextVTable_s {
 	PFN_UpdateSubresource UpdateSubresource;
 	void (*unused_49)(void);
 	PFN_ClearRenderTargetView ClearRenderTargetView;
+	void (*unused_51)(void);
+	void (*unused_52)(void);
+	PFN_ClearDepthStencilView ClearDepthStencilView;
 } ID3D11DeviceContextVTable;
 
 /**
@@ -422,6 +437,7 @@ typedef enum D3D11_BIND_FLAG_e {
 	D3D11_BIND_INDEX_BUFFER	   = 0x00000002,
 	D3D11_BIND_CONSTANT_BUFFER = 0x00000004,
 	D3D11_BIND_RENDER_TARGET   = 0x00000020,
+	D3D11_BIND_DEPTH_STENCIL   = 0x00000040,
 } D3D11_BIND_FLAG_t;
 typedef UINT D3D11_BIND_FLAG;
 
@@ -478,7 +494,45 @@ typedef HRESULT (*PFN_CreateRenderTargetView)(ID3D11Device *This, void *pResourc
  * @brief Create a depth-stencil view for accessing resource data.
  * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createdepthstencilview
  */
-typedef HRESULT (*PFN_CreateDepthStencilView)(void);
+typedef HRESULT (*PFN_CreateDepthStencilView)(ID3D11Device *This, void *pResource, const void *pDesc,
+					      ID3D11DepthStencilView **ppDepthStencilView);
+
+typedef enum D3D11_DEPTH_WRITE_MASK_e {
+	D3D11_DEPTH_WRITE_MASK_ZERO = 0,
+	D3D11_DEPTH_WRITE_MASK_ALL  = 1,
+} D3D11_DEPTH_WRITE_MASK_t;
+typedef UINT D3D11_DEPTH_WRITE_MASK;
+
+typedef enum D3D11_COMPARISON_FUNC_e {
+	D3D11_COMPARISON_LESS = 2,
+} D3D11_COMPARISON_FUNC_t;
+typedef UINT D3D11_COMPARISON_FUNC;
+
+typedef enum D3D11_STENCIL_OP_e {
+	D3D11_STENCIL_OP_KEEP = 1,
+} D3D11_STENCIL_OP_t;
+typedef UINT D3D11_STENCIL_OP;
+
+typedef struct D3D11_DEPTH_STENCILOP_DESC_s {
+	D3D11_STENCIL_OP StencilFailOp;
+	D3D11_STENCIL_OP StencilDepthFailOp;
+	D3D11_STENCIL_OP StencilPassOp;
+	D3D11_COMPARISON_FUNC StencilFunc;
+} D3D11_DEPTH_STENCILOP_DESC;
+
+typedef struct D3D11_DEPTH_STENCIL_DESC_s {
+	int DepthEnable;
+	D3D11_DEPTH_WRITE_MASK DepthWriteMask;
+	D3D11_COMPARISON_FUNC DepthFunc;
+	int StencilEnable;
+	u8 StencilReadMask;
+	u8 StencilWriteMask;
+	D3D11_DEPTH_STENCILOP_DESC FrontFace;
+	D3D11_DEPTH_STENCILOP_DESC BackFace;
+} D3D11_DEPTH_STENCIL_DESC;
+
+typedef HRESULT (*PFN_CreateDepthStencilState)(ID3D11Device *This, const D3D11_DEPTH_STENCIL_DESC *pDepthStencilDesc,
+					       ID3D11DepthStencilState **ppDepthStencilState);
 
 typedef enum DXGI_FORMAT_e {
 	DXGI_FORMAT_UNKNOWN	       = 0,
@@ -486,6 +540,7 @@ typedef enum DXGI_FORMAT_e {
 	DXGI_FORMAT_R32G32B32_FLOAT    = 6,
 	DXGI_FORMAT_R32G32_FLOAT       = 16,
 	DXGI_FORMAT_R8G8B8A8_UNORM     = 28,
+	DXGI_FORMAT_D32_FLOAT	       = 40,
 	DXGI_FORMAT_R32_UINT	       = 42,
 	DXGI_FORMAT_R8_UINT	       = 62,
 } DXGI_FORMAT_t;
@@ -561,6 +616,12 @@ typedef struct ID3D11DeviceVTable_s {
 	PFN_CreateGeometryShader CreateGeometryShader;
 	PFN_CreateGeometryShaderWithStreamOutput CreateGeometryShaderWithStreamOutput;
 	PFN_CreatePixelShader CreatePixelShader;
+	void (*CreateHullShader)(void);
+	void (*CreateDomainShader)(void);
+	void (*CreateComputeShader)(void);
+	void (*CreateClassLinkage)(void);
+	void (*CreateBlendState)(void);
+	PFN_CreateDepthStencilState CreateDepthStencilState;
 } ID3D11DeviceVTable;
 
 /**

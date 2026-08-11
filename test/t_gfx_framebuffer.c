@@ -715,6 +715,25 @@ TEST(gfx_framebuffer_pass_begin_driver_failure_clears_frame)
 	END;
 }
 
+TEST(gfx_framebuffer_pass_begin_rejects_invalid_clear_depth)
+{
+	START;
+
+	t_gfx_framebuffer_reset();
+	gfx_t gfx		      = {.drv = &t_gfx_framebuffer_driver};
+	gfx_image_t target	      = t_gfx_framebuffer_memory_target(&gfx);
+	gfx_render_pass_t render_pass = t_gfx_framebuffer_render_pass(&gfx);
+	render_pass.depth_format      = GFX_FORMAT_D32_FLOAT;
+	gfx_framebuffer_t framebuffer = t_gfx_framebuffer_valid(&gfx, &target, &render_pass);
+	gfx_frame_t frame	      = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear_depth = -0.1f}), 1);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear_depth = 1.1f}), 1);
+	EXPECT_EQ(t_gfx_framebuffer_pass_begin_calls, 0);
+
+	END;
+}
+
 STEST(gfx_framebuffer)
 {
 	SSTART;
@@ -741,5 +760,6 @@ STEST(gfx_framebuffer)
 	RUN(gfx_framebuffer_pass_begin_retries_after_stale_driver_failure);
 	RUN(gfx_framebuffer_pass_begin_success_defaults_viewport);
 	RUN(gfx_framebuffer_pass_begin_driver_failure_clears_frame);
+	RUN(gfx_framebuffer_pass_begin_rejects_invalid_clear_depth);
 	SEND;
 }

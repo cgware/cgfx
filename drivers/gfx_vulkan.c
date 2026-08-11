@@ -19,8 +19,10 @@ typedef struct gfx_vulkan_buffer_resource_s {
 
 typedef struct gfx_vulkan_frame_s {
 	VkImage image;
+	VkImage depth_image;
 	VkImageView *view;
 	VkFramebuffer *framebuffer;
+	VkImageLayout *depth_layout;
 	u32 image_index;
 	VkImageLayout old_layout;
 	VkImageLayout final_layout;
@@ -41,6 +43,7 @@ typedef struct gfx_vulkan_s {
 	VkCommandBuffer command_buffer;
 	VkFence fence;
 	VkClearValue clear_color;
+	float clear_depth;
 	gfx_vulkan_frame_t frame;
 	int surface_enabled;
 	int swapchain_enabled;
@@ -126,6 +129,7 @@ typedef struct gfx_vulkan_s {
 
 typedef struct gfx_vulkan_render_pass_s {
 	VkRenderPass render_pass;
+	int depth;
 } gfx_vulkan_render_pass_t;
 
 typedef struct gfx_vulkan_memory_target_s {
@@ -151,6 +155,10 @@ typedef struct gfx_vulkan_swapchain_s {
 typedef struct gfx_vulkan_framebuffer_s {
 	VkFramebuffer framebuffer;
 	VkFramebuffer *swapchain_framebuffers;
+	VkImage depth_image;
+	VkDeviceMemory depth_memory;
+	VkImageView depth_view;
+	VkImageLayout depth_layout;
 	u32 swapchain_framebuffer_count;
 } gfx_vulkan_framebuffer_t;
 
@@ -758,6 +766,8 @@ static u32 gfx_vulkan_format(gfx_format_t format)
 		return VK_FORMAT_R8G8B8A8_SRGB;
 	case GFX_FORMAT_BGRA8_SRGB:
 		return VK_FORMAT_B8G8R8A8_SRGB;
+	case GFX_FORMAT_D32_FLOAT:
+		return VK_FORMAT_D32_SFLOAT;
 	default:
 		return 0;
 	}
@@ -783,7 +793,8 @@ static u32 gfx_vulkan_store_op(gfx_store_op_t store)
 static int gfx_vulkan_render_pass_init(gfx_render_pass_t *render_pass, const gfx_render_pass_config_t *config)
 {
 	if (render_pass == NULL || render_pass->gfx == NULL || render_pass->gfx->data == NULL || config == NULL ||
-	    gfx_vulkan_format(config->color_format) == 0) {
+	    gfx_vulkan_format(config->color_format) == 0 ||
+	    (config->depth_format != GFX_FORMAT_NONE && gfx_vulkan_format(config->depth_format) == 0)) {
 		return 1;
 	}
 
@@ -796,29 +807,49 @@ static int gfx_vulkan_render_pass_init(gfx_render_pass_t *render_pass, const gfx
 
 	gfx_vulkan_t *vulkan = render_pass->gfx->data;
 
-	VkAttachmentDescription attachment = {
-		.format		= gfx_vulkan_format(config->color_format),
-		.samples	= VK_SAMPLE_COUNT_1_BIT,
-		.loadOp		= gfx_vulkan_load_op(config->load),
-		.storeOp	= gfx_vulkan_store_op(config->store),
-		.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-		.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-		.initialLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-		.finalLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+	VkAttachmentDescription attachments[2] = {
+		{
+			.format		= gfx_vulkan_format(config->color_format),
+			.samples	= VK_SAMPLE_COUNT_1_BIT,
+			.loadOp		= gfx_vulkan_load_op(config->load),
+			.storeOp	= gfx_vulkan_store_op(config->store),
+			.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			.initialLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+			.finalLayout	= VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+		},
 	};
+	if (config->depth_format != GFX_FORMAT_NONE) {
+		attachments[1] = (VkAttachmentDescription){
+			.format		= gfx_vulkan_format(config->depth_format),
+			.samples	= VK_SAMPLE_COUNT_1_BIT,
+			.loadOp		= gfx_vulkan_load_op(config->depth_load),
+			.storeOp	= gfx_vulkan_store_op(config->depth_store),
+			.stencilLoadOp	= VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+			.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+			.initialLayout	= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+			.finalLayout	= VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+		};
+		vk_render_pass->depth = 1;
+	}
 	VkAttachmentReference color = {
 		.attachment = 0,
 		.layout	    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 	};
+	VkAttachmentReference depth = {
+		.attachment = 1,
+		.layout	    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+	};
 	VkSubpassDescription subpass = {
-		.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS,
-		.colorAttachmentCount = 1,
-		.pColorAttachments    = &color,
+		.pipelineBindPoint	 = VK_PIPELINE_BIND_POINT_GRAPHICS,
+		.colorAttachmentCount	 = 1,
+		.pColorAttachments	 = &color,
+		.pDepthStencilAttachment = config->depth_format != GFX_FORMAT_NONE ? &depth : NULL,
 	};
 	VkRenderPassCreateInfo create = {
 		.sType		 = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-		.attachmentCount = 1,
-		.pAttachments	 = &attachment,
+		.attachmentCount = config->depth_format != GFX_FORMAT_NONE ? 2 : 1,
+		.pAttachments	 = attachments,
 		.subpassCount	 = 1,
 		.pSubpasses	 = &subpass,
 	};
@@ -1389,6 +1420,82 @@ static int gfx_vulkan_create_image_view(gfx_vulkan_t *vulkan, const gfx_image_t 
 	return !vk_ok(vulkan->CreateImageView(vulkan->device, &create, NULL, view));
 }
 
+static int gfx_vulkan_create_depth_view(gfx_vulkan_t *vulkan, VkImage image, VkImageView *view)
+{
+	VkImageViewCreateInfo create = {
+		.sType	  = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+		.image	  = image,
+		.viewType = VK_IMAGE_VIEW_TYPE_2D,
+		.format	  = VK_FORMAT_D32_SFLOAT,
+		.subresourceRange =
+			{
+				.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+				.levelCount = 1,
+				.layerCount = 1,
+			},
+	};
+	return !vk_ok(vulkan->CreateImageView(vulkan->device, &create, NULL, view));
+}
+
+static int gfx_vulkan_create_depth_attachment(gfx_vulkan_t *vulkan, gfx_framebuffer_t *framebuffer,
+					      gfx_vulkan_framebuffer_t *vk_framebuffer)
+{
+	VkImageCreateInfo create = {
+		.sType	       = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+		.imageType     = VK_IMAGE_TYPE_2D,
+		.format	       = VK_FORMAT_D32_SFLOAT,
+		.extent	       = {.width = framebuffer->width, .height = framebuffer->height, .depth = 1},
+		.mipLevels     = 1,
+		.arrayLayers   = 1,
+		.samples       = VK_SAMPLE_COUNT_1_BIT,
+		.tiling	       = VK_IMAGE_TILING_OPTIMAL,
+		.usage	       = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		.sharingMode   = VK_SHARING_MODE_EXCLUSIVE,
+		.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+	};
+	if (!vk_ok(vulkan->CreateImage(vulkan->device, &create, NULL, &vk_framebuffer->depth_image))) {
+		return 1;
+	}
+
+	VkMemoryRequirements req = {0};
+	vulkan->GetImageMemoryRequirements(vulkan->device, vk_framebuffer->depth_image, &req);
+	u32 memory_type				      = 0;
+	VkPhysicalDeviceMemoryProperties memory_props = {0};
+	vulkan->GetPhysicalDeviceMemoryProperties(vulkan->physical_device, &memory_props);
+	int found = 0;
+	for (u32 i = 0; i < memory_props.memoryTypeCount; i++) {
+		if ((req.memoryTypeBits & (1u << i)) && (memory_props.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+			memory_type = i;
+			found	    = 1;
+			break;
+		}
+	}
+	if (!found) {
+		for (u32 i = 0; i < memory_props.memoryTypeCount; i++) {
+			if (req.memoryTypeBits & (1u << i)) {
+				memory_type = i;
+				found	    = 1;
+				break;
+			}
+		}
+	}
+	if (!found) {
+		return 1;
+	}
+
+	VkMemoryAllocateInfo memory = {
+		.sType		 = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+		.allocationSize	 = req.size,
+		.memoryTypeIndex = memory_type,
+	};
+	if (!vk_ok(vulkan->AllocateMemory(vulkan->device, &memory, NULL, &vk_framebuffer->depth_memory)) ||
+	    !vk_ok(vulkan->BindImageMemory(vulkan->device, vk_framebuffer->depth_image, vk_framebuffer->depth_memory, 0)) ||
+	    gfx_vulkan_create_depth_view(vulkan, vk_framebuffer->depth_image, &vk_framebuffer->depth_view)) {
+		return 1;
+	}
+	return 0;
+}
+
 static int gfx_vulkan_copy_memory(gfx_vulkan_t *vulkan, const gfx_memory_readback_config_t *config)
 {
 	gfx_vulkan_memory_target_t *target = vulkan->image != NULL ? vulkan->image->driver_data : NULL;
@@ -1605,6 +1712,18 @@ static void gfx_vulkan_framebuffer_free(gfx_framebuffer_t *framebuffer)
 			vk_framebuffer->swapchain_framebuffers[i] = 0;
 		}
 	}
+	if (vk_framebuffer->depth_view != 0) {
+		vulkan->DestroyImageView(vulkan->device, vk_framebuffer->depth_view, NULL);
+		vk_framebuffer->depth_view = 0;
+	}
+	if (vk_framebuffer->depth_image != 0) {
+		vulkan->DestroyImage(vulkan->device, vk_framebuffer->depth_image, NULL);
+		vk_framebuffer->depth_image = 0;
+	}
+	if (vk_framebuffer->depth_memory != 0) {
+		vulkan->FreeMemory(vulkan->device, vk_framebuffer->depth_memory, NULL);
+		vk_framebuffer->depth_memory = 0;
+	}
 	if (vk_framebuffer->swapchain_framebuffers != NULL) {
 		alloc_free(&framebuffer->gfx->alloc,
 			   vk_framebuffer->swapchain_framebuffers,
@@ -1624,11 +1743,21 @@ static int gfx_vulkan_create_framebuffer(gfx_vulkan_t *vulkan, const gfx_framebu
 
 	gfx_vulkan_render_pass_t *vk_render_pass = framebuffer->render_pass->data;
 
+	VkImageView attachments[2]     = {view};
+	u32 attachment_count	       = 1;
+	gfx_vulkan_framebuffer_t *data = framebuffer->data;
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE) {
+		if (data == NULL || data->depth_view == 0) {
+			return 1; // LCOV_EXCL_LINE
+		}
+		attachments[attachment_count++] = data->depth_view;
+	}
+
 	VkFramebufferCreateInfo create = {
 		.sType		 = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
 		.renderPass	 = vk_render_pass->render_pass,
-		.attachmentCount = 1,
-		.pAttachments	 = &view,
+		.attachmentCount = attachment_count,
+		.pAttachments	 = attachments,
 		.width		 = framebuffer->image->width,
 		.height		 = framebuffer->image->height,
 		.layers		 = 1,
@@ -1650,6 +1779,11 @@ static int gfx_vulkan_framebuffer_init(gfx_framebuffer_t *framebuffer)
 	}
 	*vk_framebuffer	  = (gfx_vulkan_framebuffer_t){0};
 	framebuffer->data = vk_framebuffer;
+	if (framebuffer->render_pass->depth_format != GFX_FORMAT_NONE &&
+	    gfx_vulkan_create_depth_attachment(vulkan, framebuffer, vk_framebuffer)) {
+		gfx_vulkan_framebuffer_free(framebuffer);
+		return 1;
+	}
 
 	switch (framebuffer->image->origin) {
 	case GFX_IMAGE_ORIGIN_MEMORY: {
@@ -1732,8 +1866,10 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 			return 1;
 		}
 		vulkan->frame.image	   = target->image;
+		vulkan->frame.depth_image  = vk_framebuffer->depth_image;
 		vulkan->frame.view	   = &target->image_view;
 		vulkan->frame.framebuffer  = &vk_framebuffer->framebuffer;
+		vulkan->frame.depth_layout = &vk_framebuffer->depth_layout;
 		vulkan->frame.old_layout   = VK_IMAGE_LAYOUT_UNDEFINED;
 		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		break;
@@ -1753,8 +1889,10 @@ static int gfx_vulkan_frame_prepare(gfx_vulkan_t *vulkan, gfx_framebuffer_t *fra
 			return 1;
 		}
 		vulkan->frame.image	   = image->image;
+		vulkan->frame.depth_image  = vk_framebuffer->depth_image;
 		vulkan->frame.view	   = &image->view;
 		vulkan->frame.framebuffer  = &vk_framebuffer->swapchain_framebuffers[i];
+		vulkan->frame.depth_layout = &vk_framebuffer->depth_layout;
 		vulkan->frame.image_index  = i;
 		vulkan->frame.old_layout   = image->layout != 0 ? image->layout : VK_IMAGE_LAYOUT_UNDEFINED;
 		vulkan->frame.final_layout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -1817,6 +1955,41 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan, const gfx_re
 				   NULL,
 				   1,
 				   &to_color);
+	if (vulkan->frame.depth_image != 0) {
+		VkImageSubresourceRange depth_range = {
+			.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+			.levelCount = 1,
+			.layerCount = 1,
+		};
+		VkImageMemoryBarrier to_depth = {
+			.sType	       = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+			.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+			.oldLayout = vulkan->frame.depth_layout != NULL && *vulkan->frame.depth_layout != 0 ? *vulkan->frame.depth_layout
+													    : VK_IMAGE_LAYOUT_UNDEFINED,
+			.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+			.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+			.image		     = vulkan->frame.depth_image,
+			.subresourceRange    = depth_range,
+		};
+		vulkan->CmdPipelineBarrier(vulkan->command_buffer,
+					   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+					   VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+					   0,
+					   0,
+					   NULL,
+					   0,
+					   NULL,
+					   1,
+					   &to_depth);
+		if (vulkan->frame.depth_layout != NULL) {
+			*vulkan->frame.depth_layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		}
+	}
+	VkClearValue clears[2] = {
+		vulkan->clear_color,
+		{.depthStencil = {.depth = vulkan->clear_depth}},
+	};
 	VkRenderPassBeginInfo render = {
 		.sType	     = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
 		.renderPass  = vk_render_pass->render_pass,
@@ -1825,8 +1998,10 @@ static int gfx_vulkan_frame_begin_render_pass(gfx_vulkan_t *vulkan, const gfx_re
 			{
 				.extent = {.width = vulkan->image->width, .height = vulkan->image->height},
 			},
-		.clearValueCount = render_pass->load == GFX_LOAD_CLEAR ? 1 : 0,
-		.pClearValues	 = render_pass->load == GFX_LOAD_CLEAR ? &vulkan->clear_color : NULL,
+		.clearValueCount = render_pass->depth_format != GFX_FORMAT_NONE ? 2
+				   : render_pass->load == GFX_LOAD_CLEAR	? 1
+										: 0,
+		.pClearValues	 = render_pass->depth_format != GFX_FORMAT_NONE || render_pass->load == GFX_LOAD_CLEAR ? clears : NULL,
 	};
 
 	vulkan->CmdBeginRenderPass(vulkan->command_buffer, &render, VK_SUBPASS_CONTENTS_INLINE);
@@ -1846,6 +2021,7 @@ static int gfx_vulkan_framebuffer_pass_begin(gfx_framebuffer_t *framebuffer, gfx
 	vulkan->clear_color.color.float32[1] = frame->pass.clear.g;
 	vulkan->clear_color.color.float32[2] = frame->pass.clear.b;
 	vulkan->clear_color.color.float32[3] = frame->pass.clear.a;
+	vulkan->clear_depth		     = frame->pass.clear_depth;
 	vulkan->image			     = framebuffer->image;
 	vulkan->swapchain = framebuffer->image->origin == GFX_IMAGE_ORIGIN_SURFACE ? framebuffer->image->swapchain : NULL;
 	if (gfx_vulkan_frame_prepare(vulkan, framebuffer) || gfx_vulkan_frame_begin_commands(vulkan) ||
@@ -2468,6 +2644,12 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.attachmentCount = 1,
 		.pAttachments	 = &blend_attachment,
 	};
+	VkPipelineDepthStencilStateCreateInfo depth = {
+		.sType		  = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+		.depthTestEnable  = config->depth.test,
+		.depthWriteEnable = config->depth.write,
+		.depthCompareOp	  = VK_COMPARE_OP_LESS,
+	};
 	VkDynamicState dynamic_states[2]	 = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
 	VkPipelineDynamicStateCreateInfo dynamic = {
 		.sType		   = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -2483,6 +2665,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 		.pViewportState	     = &viewport,
 		.pRasterizationState = &raster,
 		.pMultisampleState   = &multisample,
+		.pDepthStencilState  = config->render_pass->depth_format != GFX_FORMAT_NONE ? &depth : NULL,
 		.pColorBlendState    = &blend,
 		.pDynamicState	     = &dynamic,
 		.layout		     = vk_pipeline->pipeline_layout,
