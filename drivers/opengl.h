@@ -430,7 +430,7 @@ typedef void (*PFN_glEnable)(GLenum cap);
 typedef void (*PFN_glDisable)(GLenum cap);
 
 /**
- * @brief Specify depth comparison function
+ * @brief Specify the value used for depth buffer comparisons
  * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDepthFunc.xhtml
  */
 typedef void (*PFN_glDepthFunc)(GLenum func);

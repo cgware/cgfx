@@ -98,8 +98,6 @@ typedef struct ID3D11PixelShaderVTable_s {
  */
 
 typedef void *ID3D11RenderTargetView;
-typedef void *ID3D11DepthStencilView;
-typedef void *ID3D11DepthStencilState;
 
 typedef HRESULT (*PFN_RenderTargetView_QueryInterface)(ID3D11RenderTargetView *This, REFIID riid, void **ppvObject);
 typedef ULONG (*PFN_RenderTargetView_AddRef)(ID3D11RenderTargetView *This);
@@ -151,221 +149,6 @@ typedef struct ID3D11VertexShaderVTable_s {
 
 /**
  * @}
- * @defgroup d3d11_devicecontext DeviceContext
- * @ingroup d3d11
- * @{
- */
-
-typedef void *ID3D11DeviceContext;
-
-typedef HRESULT (*PFN_DeviceContext_QueryInterface)(ID3D11DeviceContext *This, REFIID riid, void **ppvObject);
-typedef ULONG (*PFN_DeviceContext_AddRef)(ID3D11DeviceContext *This);
-typedef ULONG (*PFN_DeviceContext_Release)(ID3D11DeviceContext *This);
-
-/**
- * @brief Sets a pixel shader to the device.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-pssetshader
- */
-typedef void (*PFN_PSSetShader)(ID3D11DeviceContext *This, ID3D11PixelShader *pPixelShader, void *const *ppClassInstances,
-				UINT NumClassInstances);
-
-/**
- * @brief Set a vertex shader to the device.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetshader
- */
-typedef void (*PFN_VSSetShader)(ID3D11DeviceContext *This, ID3D11VertexShader *pVertexShader, void *const *ppClassInstances,
-				UINT NumClassInstances);
-
-/**
- * @brief Draw indexed, non-instanced primitives.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-drawindexed
- */
-typedef void (*PFN_DrawIndexed)(ID3D11DeviceContext *This, UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation);
-
-/**
- * @brief Draw non-indexed, non-instanced primitives.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-draw
- */
-typedef void (*PFN_Draw)(ID3D11DeviceContext *This, UINT VertexCount, UINT StartVertexLocation);
-
-typedef enum D3D11_MAP_e {
-	D3D11_MAP_READ = 1,
-} D3D11_MAP_t;
-typedef UINT D3D11_MAP;
-
-typedef struct D3D11_MAPPED_SUBRESOURCE_s {
-	void *pData;
-	UINT RowPitch;
-	UINT DepthPitch;
-} D3D11_MAPPED_SUBRESOURCE;
-
-/**
- * @brief Gets a pointer to the data contained in a subresource, and denies the GPU access to that subresource.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-map
- */
-typedef HRESULT (*PFN_Map)(ID3D11DeviceContext *This, void *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
-			   D3D11_MAPPED_SUBRESOURCE *pMappedResource);
-
-/**
- * @brief Invalidate the pointer to a resource and reenable the GPU's access to that resource.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-unmap
- */
-typedef void (*PFN_Unmap)(ID3D11DeviceContext *This, void *pResource, UINT Subresource);
-
-/**
- * @brief Bind an input-layout object to the input-assembler stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetinputlayout
- */
-typedef void (*PFN_IASetInputLayout)(ID3D11DeviceContext *This, ID3D11InputLayout *pInputLayout);
-
-/**
- * @brief Bind an array of vertex buffers to the input-assembler stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetvertexbuffers
- */
-typedef void (*PFN_IASetVertexBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers,
-				       const UINT *pStrides, const UINT *pOffsets);
-
-/**
- * @brief Bind an index buffer to the input-assembler stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetindexbuffer
- */
-typedef void (*PFN_IASetIndexBuffer)(ID3D11DeviceContext *This, ID3D11Buffer *pIndexBuffer, UINT Format, UINT Offset);
-
-/**
- * @brief Sets the constant buffers used by the vertex shader pipeline stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetconstantbuffers
- */
-typedef void (*PFN_VSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
-					 ID3D11Buffer *const *ppConstantBuffers);
-
-/**
- * @brief Sets the constant buffers used by the pixel shader pipeline stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-pssetconstantbuffers
- */
-typedef void (*PFN_PSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
-					 ID3D11Buffer *const *ppConstantBuffers);
-
-typedef enum D3D11_PRIMITIVE_TOPOLOGY_e {
-	D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
-} D3D11_PRIMITIVE_TOPOLOGY_t;
-typedef UINT D3D11_PRIMITIVE_TOPOLOGY;
-
-/**
- * @brief Bind information about the primitive type, and data order that describes input data for the input assembler stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetprimitivetopology
- */
-typedef void (*PFN_IASetPrimitiveTopology)(ID3D11DeviceContext *This, D3D11_PRIMITIVE_TOPOLOGY Topology);
-
-/**
- * @brief Bind one or more render targets atomically and the depth-stencil buffer to the output-merger stage.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-omsetrendertargets
- */
-typedef void (*PFN_OMSetRenderTargets)(ID3D11DeviceContext *This, UINT NumViews, ID3D11RenderTargetView *const *ppRenderTargetViews,
-				       ID3D11DepthStencilView pDepthStencilView);
-
-typedef void (*PFN_OMSetDepthStencilState)(ID3D11DeviceContext *This, ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef);
-
-typedef struct D3D11_VIEWPORT_s {
-	float TopLeftX;
-	float TopLeftY;
-	float Width;
-	float Height;
-	float MinDepth;
-	float MaxDepth;
-} D3D11_VIEWPORT;
-
-/**
- * @brief Bind an array of viewports to the rasterizer stage of the pipeline.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-rssetviewports
- */
-typedef void (*PFN_RSSetViewports)(ID3D11DeviceContext *This, UINT NumViewports, const D3D11_VIEWPORT *pViewports);
-
-/**
- * @brief Copy the entire contents of the source resource to the destination resource using the GPU.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copyresource
- */
-typedef void (*PFN_CopyResource)(ID3D11DeviceContext *This, void *pDstResource, void *pSrcResource);
-
-/**
- * @brief The CPU copies data from memory to a subresource created in non-mappable memory.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-updatesubresource
- */
-typedef void (*PFN_UpdateSubresource)(ID3D11DeviceContext *This, ID3D11Buffer *pDstResource, UINT DstSubresource, const void *pDstBox,
-				      const void *pSrcData, UINT SrcRowPitch, UINT SrcDepthPitch);
-
-/**
- * @brief Set all the elements in a render target to one value.
- * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-clearrendertargetview
- */
-typedef void (*PFN_ClearRenderTargetView)(ID3D11DeviceContext *This, ID3D11RenderTargetView *pRenderTargetView, const float ColorRGBA[4]);
-
-typedef enum D3D11_CLEAR_FLAG_e {
-	D3D11_CLEAR_DEPTH = 0x1,
-} D3D11_CLEAR_FLAG_t;
-typedef UINT D3D11_CLEAR_FLAG;
-
-typedef void (*PFN_ClearDepthStencilView)(ID3D11DeviceContext *This, ID3D11DepthStencilView pDepthStencilView, D3D11_CLEAR_FLAG ClearFlags,
-					  float Depth, u8 Stencil);
-
-typedef struct ID3D11DeviceContextVTable_s {
-	PFN_DeviceContext_QueryInterface QueryInterface;
-	PFN_DeviceContext_AddRef AddRef;
-	PFN_DeviceContext_Release Release;
-	void (*GetDevice)(void);
-	void (*GetPrivateData)(void);
-	void (*SetPrivateData)(void);
-	void (*SetPrivateDataInterface)(void);
-	PFN_VSSetConstantBuffers VSSetConstantBuffers;
-	void (*unused_08)(void);
-	PFN_PSSetShader PSSetShader;
-	void (*unused_10)(void);
-	PFN_VSSetShader VSSetShader;
-	PFN_DrawIndexed DrawIndexed;
-	PFN_Draw Draw;
-	PFN_Map Map;
-	PFN_Unmap Unmap;
-	PFN_PSSetConstantBuffers PSSetConstantBuffers;
-	PFN_IASetInputLayout IASetInputLayout;
-	PFN_IASetVertexBuffers IASetVertexBuffers;
-	PFN_IASetIndexBuffer IASetIndexBuffer;
-	void (*unused_20)(void);
-	void (*unused_21)(void);
-	void (*unused_22)(void);
-	void (*unused_23)(void);
-	PFN_IASetPrimitiveTopology IASetPrimitiveTopology;
-	void (*unused_25)(void);
-	void (*unused_26)(void);
-	void (*unused_27)(void);
-	void (*unused_28)(void);
-	void (*unused_29)(void);
-	void (*unused_30)(void);
-	void (*unused_31)(void);
-	void (*unused_32)(void);
-	PFN_OMSetRenderTargets OMSetRenderTargets;
-	void (*unused_34)(void);
-	void (*unused_35)(void);
-	PFN_OMSetDepthStencilState OMSetDepthStencilState;
-	void (*unused_37)(void);
-	void (*unused_38)(void);
-	void (*unused_39)(void);
-	void (*unused_40)(void);
-	void (*unused_41)(void);
-	void (*unused_42)(void);
-	void (*unused_43)(void);
-	PFN_RSSetViewports RSSetViewports;
-	void (*unused_45)(void);
-	void (*unused_46)(void);
-	PFN_CopyResource CopyResource;
-	PFN_UpdateSubresource UpdateSubresource;
-	void (*unused_49)(void);
-	PFN_ClearRenderTargetView ClearRenderTargetView;
-	void (*unused_51)(void);
-	void (*unused_52)(void);
-	PFN_ClearDepthStencilView ClearDepthStencilView;
-} ID3D11DeviceContextVTable;
-
-/**
- * @}
  * @defgroup d3d11_device Device
  * @ingroup d3d11
  * @{
@@ -379,6 +162,8 @@ typedef enum D3D_DRIVER_TYPE_e {
 	D3D_DRIVER_TYPE_HARDWARE = 1,
 } D3D_DRIVER_TYPE_t;
 typedef UINT D3D_DRIVER_TYPE;
+
+typedef void *ID3D11DeviceContext;
 
 /**
  * @brief Creates a device that represents the display adapter.
@@ -490,6 +275,8 @@ typedef HRESULT (*PFN_CreateUnorderedAccessView)(void);
  */
 typedef HRESULT (*PFN_CreateRenderTargetView)(ID3D11Device *This, void *pResource, const void *pDesc, ID3D11RenderTargetView **ppRTView);
 
+typedef void *ID3D11DepthStencilView;
+
 /**
  * @brief Create a depth-stencil view for accessing resource data.
  * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createdepthstencilview
@@ -531,6 +318,12 @@ typedef struct D3D11_DEPTH_STENCIL_DESC_s {
 	D3D11_DEPTH_STENCILOP_DESC BackFace;
 } D3D11_DEPTH_STENCIL_DESC;
 
+typedef void *ID3D11DepthStencilState;
+
+/**
+ * @brief Create a depth-stencil state object that encapsulates depth-stencil test information for the output-merger stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createdepthstencilstate
+ */
 typedef HRESULT (*PFN_CreateDepthStencilState)(ID3D11Device *This, const D3D11_DEPTH_STENCIL_DESC *pDepthStencilDesc,
 					       ID3D11DepthStencilState **ppDepthStencilState);
 
@@ -623,6 +416,227 @@ typedef struct ID3D11DeviceVTable_s {
 	void (*CreateBlendState)(void);
 	PFN_CreateDepthStencilState CreateDepthStencilState;
 } ID3D11DeviceVTable;
+
+/**
+ * @}
+ * @defgroup d3d11_devicecontext DeviceContext
+ * @ingroup d3d11
+ * @{
+ */
+
+typedef HRESULT (*PFN_DeviceContext_QueryInterface)(ID3D11DeviceContext *This, REFIID riid, void **ppvObject);
+typedef ULONG (*PFN_DeviceContext_AddRef)(ID3D11DeviceContext *This);
+typedef ULONG (*PFN_DeviceContext_Release)(ID3D11DeviceContext *This);
+
+/**
+ * @brief Sets a pixel shader to the device.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-pssetshader
+ */
+typedef void (*PFN_PSSetShader)(ID3D11DeviceContext *This, ID3D11PixelShader *pPixelShader, void *const *ppClassInstances,
+				UINT NumClassInstances);
+
+/**
+ * @brief Set a vertex shader to the device.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetshader
+ */
+typedef void (*PFN_VSSetShader)(ID3D11DeviceContext *This, ID3D11VertexShader *pVertexShader, void *const *ppClassInstances,
+				UINT NumClassInstances);
+
+/**
+ * @brief Draw indexed, non-instanced primitives.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-drawindexed
+ */
+typedef void (*PFN_DrawIndexed)(ID3D11DeviceContext *This, UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation);
+
+/**
+ * @brief Draw non-indexed, non-instanced primitives.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-draw
+ */
+typedef void (*PFN_Draw)(ID3D11DeviceContext *This, UINT VertexCount, UINT StartVertexLocation);
+
+typedef enum D3D11_MAP_e {
+	D3D11_MAP_READ = 1,
+} D3D11_MAP_t;
+typedef UINT D3D11_MAP;
+
+typedef struct D3D11_MAPPED_SUBRESOURCE_s {
+	void *pData;
+	UINT RowPitch;
+	UINT DepthPitch;
+} D3D11_MAPPED_SUBRESOURCE;
+
+/**
+ * @brief Gets a pointer to the data contained in a subresource, and denies the GPU access to that subresource.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-map
+ */
+typedef HRESULT (*PFN_Map)(ID3D11DeviceContext *This, void *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
+			   D3D11_MAPPED_SUBRESOURCE *pMappedResource);
+
+/**
+ * @brief Invalidate the pointer to a resource and reenable the GPU's access to that resource.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-unmap
+ */
+typedef void (*PFN_Unmap)(ID3D11DeviceContext *This, void *pResource, UINT Subresource);
+
+/**
+ * @brief Bind an input-layout object to the input-assembler stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetinputlayout
+ */
+typedef void (*PFN_IASetInputLayout)(ID3D11DeviceContext *This, ID3D11InputLayout *pInputLayout);
+
+/**
+ * @brief Bind an array of vertex buffers to the input-assembler stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetvertexbuffers
+ */
+typedef void (*PFN_IASetVertexBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers,
+				       const UINT *pStrides, const UINT *pOffsets);
+
+/**
+ * @brief Bind an index buffer to the input-assembler stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetindexbuffer
+ */
+typedef void (*PFN_IASetIndexBuffer)(ID3D11DeviceContext *This, ID3D11Buffer *pIndexBuffer, UINT Format, UINT Offset);
+
+/**
+ * @brief Sets the constant buffers used by the vertex shader pipeline stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetconstantbuffers
+ */
+typedef void (*PFN_VSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
+					 ID3D11Buffer *const *ppConstantBuffers);
+
+/**
+ * @brief Sets the constant buffers used by the pixel shader pipeline stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-pssetconstantbuffers
+ */
+typedef void (*PFN_PSSetConstantBuffers)(ID3D11DeviceContext *This, UINT StartSlot, UINT NumBuffers,
+					 ID3D11Buffer *const *ppConstantBuffers);
+
+typedef enum D3D11_PRIMITIVE_TOPOLOGY_e {
+	D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST = 4,
+} D3D11_PRIMITIVE_TOPOLOGY_t;
+typedef UINT D3D11_PRIMITIVE_TOPOLOGY;
+
+/**
+ * @brief Bind information about the primitive type, and data order that describes input data for the input assembler stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-iasetprimitivetopology
+ */
+typedef void (*PFN_IASetPrimitiveTopology)(ID3D11DeviceContext *This, D3D11_PRIMITIVE_TOPOLOGY Topology);
+
+/**
+ * @brief Bind one or more render targets atomically and the depth-stencil buffer to the output-merger stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-omsetrendertargets
+ */
+typedef void (*PFN_OMSetRenderTargets)(ID3D11DeviceContext *This, UINT NumViews, ID3D11RenderTargetView *const *ppRenderTargetViews,
+				       ID3D11DepthStencilView pDepthStencilView);
+
+/**
+ * @brief Sets the depth-stencil state of the output-merger stage.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-omsetdepthstencilstate
+ */
+typedef void (*PFN_OMSetDepthStencilState)(ID3D11DeviceContext *This, ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef);
+
+typedef struct D3D11_VIEWPORT_s {
+	float TopLeftX;
+	float TopLeftY;
+	float Width;
+	float Height;
+	float MinDepth;
+	float MaxDepth;
+} D3D11_VIEWPORT;
+
+/**
+ * @brief Bind an array of viewports to the rasterizer stage of the pipeline.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-rssetviewports
+ */
+typedef void (*PFN_RSSetViewports)(ID3D11DeviceContext *This, UINT NumViewports, const D3D11_VIEWPORT *pViewports);
+
+/**
+ * @brief Copy the entire contents of the source resource to the destination resource using the GPU.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copyresource
+ */
+typedef void (*PFN_CopyResource)(ID3D11DeviceContext *This, void *pDstResource, void *pSrcResource);
+
+/**
+ * @brief The CPU copies data from memory to a subresource created in non-mappable memory.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-updatesubresource
+ */
+typedef void (*PFN_UpdateSubresource)(ID3D11DeviceContext *This, ID3D11Buffer *pDstResource, UINT DstSubresource, const void *pDstBox,
+				      const void *pSrcData, UINT SrcRowPitch, UINT SrcDepthPitch);
+
+/**
+ * @brief Set all the elements in a render target to one value.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-clearrendertargetview
+ */
+typedef void (*PFN_ClearRenderTargetView)(ID3D11DeviceContext *This, ID3D11RenderTargetView *pRenderTargetView, const float ColorRGBA[4]);
+
+typedef enum D3D11_CLEAR_FLAG_e {
+	D3D11_CLEAR_DEPTH = 0x1,
+} D3D11_CLEAR_FLAG_t;
+typedef UINT D3D11_CLEAR_FLAG;
+
+/**
+ * @brief Clears the depth-stencil resource.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-cleardepthstencilview
+ */
+typedef void (*PFN_ClearDepthStencilView)(ID3D11DeviceContext *This, ID3D11DepthStencilView pDepthStencilView, D3D11_CLEAR_FLAG ClearFlags,
+					  float Depth, u8 Stencil);
+
+typedef struct ID3D11DeviceContextVTable_s {
+	PFN_DeviceContext_QueryInterface QueryInterface;
+	PFN_DeviceContext_AddRef AddRef;
+	PFN_DeviceContext_Release Release;
+	void (*GetDevice)(void);
+	void (*GetPrivateData)(void);
+	void (*SetPrivateData)(void);
+	void (*SetPrivateDataInterface)(void);
+	PFN_VSSetConstantBuffers VSSetConstantBuffers;
+	void (*unused_08)(void);
+	PFN_PSSetShader PSSetShader;
+	void (*unused_10)(void);
+	PFN_VSSetShader VSSetShader;
+	PFN_DrawIndexed DrawIndexed;
+	PFN_Draw Draw;
+	PFN_Map Map;
+	PFN_Unmap Unmap;
+	PFN_PSSetConstantBuffers PSSetConstantBuffers;
+	PFN_IASetInputLayout IASetInputLayout;
+	PFN_IASetVertexBuffers IASetVertexBuffers;
+	PFN_IASetIndexBuffer IASetIndexBuffer;
+	void (*unused_20)(void);
+	void (*unused_21)(void);
+	void (*unused_22)(void);
+	void (*unused_23)(void);
+	PFN_IASetPrimitiveTopology IASetPrimitiveTopology;
+	void (*unused_25)(void);
+	void (*unused_26)(void);
+	void (*unused_27)(void);
+	void (*unused_28)(void);
+	void (*unused_29)(void);
+	void (*unused_30)(void);
+	void (*unused_31)(void);
+	void (*unused_32)(void);
+	PFN_OMSetRenderTargets OMSetRenderTargets;
+	void (*unused_34)(void);
+	void (*unused_35)(void);
+	PFN_OMSetDepthStencilState OMSetDepthStencilState;
+	void (*unused_37)(void);
+	void (*unused_38)(void);
+	void (*unused_39)(void);
+	void (*unused_40)(void);
+	void (*unused_41)(void);
+	void (*unused_42)(void);
+	void (*unused_43)(void);
+	PFN_RSSetViewports RSSetViewports;
+	void (*unused_45)(void);
+	void (*unused_46)(void);
+	PFN_CopyResource CopyResource;
+	PFN_UpdateSubresource UpdateSubresource;
+	void (*unused_49)(void);
+	PFN_ClearRenderTargetView ClearRenderTargetView;
+	void (*unused_51)(void);
+	void (*unused_52)(void);
+	PFN_ClearDepthStencilView ClearDepthStencilView;
+} ID3D11DeviceContextVTable;
 
 /**
  * @}
