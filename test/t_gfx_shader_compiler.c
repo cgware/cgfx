@@ -24,6 +24,8 @@ static const char *t_gfx_shader_compiler_contains(const char *text, strv_t patte
 
 enum {
 	T_GFX_SHADER_SPV_OP_F_NEGATE		= 127,
+	T_GFX_SHADER_SPV_OP_F_ADD		= 129,
+	T_GFX_SHADER_SPV_OP_F_MUL		= 133,
 	T_GFX_SHADER_SPV_OP_MATRIX_TIMES_VECTOR = 145,
 	T_GFX_SHADER_SPV_OP_MATRIX_TIMES_MATRIX = 146,
 };
@@ -720,6 +722,7 @@ TEST(gfx_shader_compiler_transpile_outputs)
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2 position : POSITION;"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4 position : SV_POSITION;"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float2 local = float2"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "output.position.z = (output.position.z + output.position.w) * 0.5f;"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "return output;"));
 	}
 	gfx_shader_code_free(&shader);
@@ -747,6 +750,8 @@ TEST(gfx_shader_compiler_transpile_outputs)
 		EXPECT_EQ(shader.stage, GFX_SHADER_STAGE_VERTEX);
 		EXPECT_NE(shader.code.used, 0);
 		EXPECT_EQ(t_gfx_shader_spv_has_op(&shader, T_GFX_SHADER_SPV_OP_F_NEGATE), 1);
+		EXPECT_EQ(t_gfx_shader_spv_has_op(&shader, T_GFX_SHADER_SPV_OP_F_ADD), 1);
+		EXPECT_EQ(t_gfx_shader_spv_has_op(&shader, T_GFX_SHADER_SPV_OP_F_MUL), 1);
 	}
 
 	gfx_shader_code_free(&shader);
@@ -822,6 +827,7 @@ TEST(gfx_shader_compiler_transpile_uniform_block_outputs)
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "model"));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "float4("));
 		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "mul(mul(mul(projection, view), model), float4("));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "output.position.z = (output.position.z + output.position.w) * 0.5f;"));
 	}
 	gfx_shader_code_free(&shader);
 
@@ -841,6 +847,54 @@ TEST(gfx_shader_compiler_transpile_uniform_block_outputs)
 	}
 	gfx_shader_code_free(&shader);
 
+	gfx_shader_compiler_free(&compiler);
+	END;
+}
+
+TEST(gfx_shader_compiler_transpile_hlsl_local_assignment)
+{
+	START;
+
+	static const char *source = "vs_in 0 VertexIn {\n"
+				    "\tvec2f position : POSITION;\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "vs_out VertexOut {\n"
+				    "\tvec4f position : POSITION;\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "fs_in FragmentIn {\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "fs_out FragmentOut {\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "VertexOut vertex(VertexIn input) {\n"
+				    "\tVertexOut output;\n"
+				    "\tvec2f local = vec2f(0.0f, 0.0f);\n"
+				    "\tlocal = input.position;\n"
+				    "\toutput.position = vec4f(local.x, local.y, 0.0f, 1.0f);\n"
+				    "\toutput.color = input.color;\n"
+				    "\treturn output;\n"
+				    "}\n"
+				    "FragmentOut fragment(FragmentIn input) {\n"
+				    "\tFragmentOut output;\n"
+				    "\toutput.color = input.color;\n"
+				    "\treturn output;\n"
+				    "}\n";
+
+	gfx_shader_compiler_t compiler = {0};
+	EXPECT_PTR(gfx_shader_compiler_init(&compiler, ALLOC_STD), &compiler);
+
+	gfx_shader_code_t shader = {0};
+	int ret = gfx_shader_compiler_transpile(&compiler, strv_cstr(source), GFX_SHADER_STAGE_VERTEX, GFX_SHADER_LANGUAGE_HLSL, &shader);
+
+	EXPECT_EQ(ret, 0);
+	if (ret == 0) {
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "local = input.position;"));
+		EXPECT_NOT_NULL(T_CONTAINS(shader.text, "output.position.z = (output.position.z + output.position.w) * 0.5f;"));
+	}
+	gfx_shader_code_free(&shader);
 	gfx_shader_compiler_free(&compiler);
 	END;
 }
@@ -1197,6 +1251,7 @@ STEST(gfx_shader_compiler)
 	RUN(gfx_shader_compiler_transpile_alloc_failure);
 	RUN(gfx_shader_compiler_transpile_outputs);
 	RUN(gfx_shader_compiler_transpile_uniform_block_outputs);
+	RUN(gfx_shader_compiler_transpile_hlsl_local_assignment);
 	RUN(gfx_shader_compiler_transpile_rejects_invalid_buffer_member);
 	RUN(gfx_shader_compiler_transpile_vec3_mat4_outputs);
 	RUN(gfx_shader_compiler_transpile_spirv_extra_input_types);

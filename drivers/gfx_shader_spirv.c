@@ -1,13 +1,14 @@
 #include "gfx_shader_driver.h"
 
 enum {
-	GFX_SHADER_SPV_MAGIC	 = 0x07230203,
-	GFX_SHADER_SPV_VERSION	 = 0x00010000,
-	GFX_SHADER_SPV_GENERATOR = 0,
-	GFX_SHADER_SPV_SCHEMA	 = 0,
-	GFX_SHADER_SPV_WORD_MAIN = 0x6e69616d,
-	GFX_SHADER_SPV_WORD_ZERO = 0,
-	GFX_SHADER_SPV_FLOAT_ONE = 0x3f800000,
+	GFX_SHADER_SPV_MAGIC	  = 0x07230203,
+	GFX_SHADER_SPV_VERSION	  = 0x00010000,
+	GFX_SHADER_SPV_GENERATOR  = 0,
+	GFX_SHADER_SPV_SCHEMA	  = 0,
+	GFX_SHADER_SPV_WORD_MAIN  = 0x6e69616d,
+	GFX_SHADER_SPV_WORD_ZERO  = 0,
+	GFX_SHADER_SPV_FLOAT_HALF = 0x3f000000,
+	GFX_SHADER_SPV_FLOAT_ONE  = 0x3f800000,
 };
 
 enum {
@@ -36,6 +37,8 @@ enum {
 	GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT = 80,
 	GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT   = 81,
 	GFX_SHADER_SPV_OP_F_NEGATE	      = 127,
+	GFX_SHADER_SPV_OP_F_ADD		      = 129,
+	GFX_SHADER_SPV_OP_F_MUL		      = 133,
 	GFX_SHADER_SPV_OP_MATRIX_TIMES_VECTOR = 145,
 	GFX_SHADER_SPV_OP_MATRIX_TIMES_MATRIX = 146,
 	GFX_SHADER_SPV_OP_LABEL		      = 248,
@@ -139,6 +142,7 @@ typedef struct gfx_shader_spv_s {
 	u32 uniform_var_id;
 	u32 ptr_uniform_mat4_id;
 	u32 uniform_slot;
+	u32 float_half_id;
 	const gfx_shader_struct_ir_t *uniform_block;
 	u32 int_ids[16];
 	gfx_shader_spv_var_t inputs[16];
@@ -371,6 +375,8 @@ static int gfx_shader_spv_emit_types(buf_t *code, const gfx_shader_spv_t *spv, g
 		}
 		ret |= gfx_shader_spv_inst(
 			code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->float_id, spv->float_zero_id, GFX_SHADER_SPV_WORD_ZERO);
+		ret |= gfx_shader_spv_inst(
+			code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->float_id, spv->float_half_id, GFX_SHADER_SPV_FLOAT_HALF);
 		ret |= gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_CONSTANT, 4, spv->float_id, spv->float_one_id, GFX_SHADER_SPV_FLOAT_ONE);
 		ret |= gfx_shader_spv_inst(
 			code, GFX_SHADER_SPV_OP_TYPE_POINTER, 4, spv->ptr_output_position_id, GFX_SHADER_SPV_STORAGE_OUTPUT, spv->vec4_id);
@@ -406,27 +412,18 @@ static int gfx_shader_spv_emit_copy(buf_t *code, gfx_shader_spv_t *spv, const gf
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_STORE, 3, output->var_id, loaded);
 }
 
-static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_spv_var_t *input)
+static int gfx_shader_spv_store_position_components(buf_t *code, gfx_shader_spv_t *spv, u32 x, u32 y, u32 z, u32 w)
 {
-	u32 loaded = gfx_shader_spv_id(spv);
-	u32 x	   = gfx_shader_spv_id(spv);
-	u32 y	   = gfx_shader_spv_id(spv);
-	u32 neg_y  = gfx_shader_spv_id(spv);
-	u32 pos	   = gfx_shader_spv_id(spv);
-	u32 ptr	   = gfx_shader_spv_id(spv);
-	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LOAD, 4, input->type_id, loaded, input->var_id) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, x, loaded, 0) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, y, loaded, 1) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_NEGATE, 4, spv->float_id, neg_y, y) ||
-	       gfx_shader_spv_inst(code,
-				   GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT,
-				   7,
-				   spv->vec4_id,
-				   pos,
-				   x,
-				   neg_y,
-				   spv->float_zero_id,
-				   spv->float_one_id) ||
+	u32 neg_y    = gfx_shader_spv_id(spv);
+	u32 z_plus_w = gfx_shader_spv_id(spv);
+	u32 vk_z     = gfx_shader_spv_id(spv);
+	u32 pos	     = gfx_shader_spv_id(spv);
+	u32 ptr	     = gfx_shader_spv_id(spv);
+
+	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_NEGATE, 4, spv->float_id, neg_y, y) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_ADD, 5, spv->float_id, z_plus_w, z, w) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_MUL, 5, spv->float_id, vk_z, z_plus_w, spv->float_half_id) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT, 7, spv->vec4_id, pos, x, neg_y, vk_z, w) ||
 	       gfx_shader_spv_inst(code,
 				   GFX_SHADER_SPV_OP_ACCESS_CHAIN,
 				   5,
@@ -435,6 +432,17 @@ static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, cons
 				   spv->gl_per_vertex_var_id,
 				   spv->int_zero_id) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_STORE, 3, ptr, pos);
+}
+
+static int gfx_shader_spv_emit_position(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_spv_var_t *input)
+{
+	u32 loaded = gfx_shader_spv_id(spv);
+	u32 x	   = gfx_shader_spv_id(spv);
+	u32 y	   = gfx_shader_spv_id(spv);
+	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_LOAD, 4, input->type_id, loaded, input->var_id) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, x, loaded, 0) ||
+	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, y, loaded, 1) ||
+	       gfx_shader_spv_store_position_components(code, spv, x, y, spv->float_zero_id, spv->float_one_id);
 }
 
 typedef enum gfx_shader_spv_expr_type_e {
@@ -598,27 +606,15 @@ static int gfx_shader_spv_emit_expr(buf_t *code, gfx_shader_spv_t *spv, const gf
 
 static int gfx_shader_spv_store_position(buf_t *code, gfx_shader_spv_t *spv, u32 value)
 {
-	u32 x	  = gfx_shader_spv_id(spv);
-	u32 y	  = gfx_shader_spv_id(spv);
-	u32 z	  = gfx_shader_spv_id(spv);
-	u32 w	  = gfx_shader_spv_id(spv);
-	u32 neg_y = gfx_shader_spv_id(spv);
-	u32 pos	  = gfx_shader_spv_id(spv);
-	u32 ptr	  = gfx_shader_spv_id(spv);
+	u32 x = gfx_shader_spv_id(spv);
+	u32 y = gfx_shader_spv_id(spv);
+	u32 z = gfx_shader_spv_id(spv);
+	u32 w = gfx_shader_spv_id(spv);
 	return gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, x, value, 0) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, y, value, 1) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, z, value, 2) ||
 	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_EXTRACT, 5, spv->float_id, w, value, 3) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_F_NEGATE, 4, spv->float_id, neg_y, y) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_COMPOSITE_CONSTRUCT, 7, spv->vec4_id, pos, x, neg_y, z, w) ||
-	       gfx_shader_spv_inst(code,
-				   GFX_SHADER_SPV_OP_ACCESS_CHAIN,
-				   5,
-				   spv->ptr_output_position_id,
-				   ptr,
-				   spv->gl_per_vertex_var_id,
-				   spv->int_zero_id) ||
-	       gfx_shader_spv_inst(code, GFX_SHADER_SPV_OP_STORE, 3, ptr, pos);
+	       gfx_shader_spv_store_position_components(code, spv, x, y, z, w);
 }
 
 static int gfx_shader_spv_emit_function(buf_t *code, gfx_shader_spv_t *spv, const gfx_shader_ir_t *ir, gfx_shader_stage_t stage)
@@ -708,6 +704,7 @@ static int gfx_shader_spirv_build(buf_t *code, gfx_shader_spv_t *spv, const gfx_
 		spv->int_id			 = gfx_shader_spv_id(spv);
 		spv->int_zero_id		 = gfx_shader_spv_id(spv);
 		spv->float_zero_id		 = gfx_shader_spv_id(spv);
+		spv->float_half_id		 = gfx_shader_spv_id(spv);
 		spv->float_one_id		 = gfx_shader_spv_id(spv);
 		spv->gl_per_vertex_id		 = gfx_shader_spv_id(spv);
 		spv->ptr_output_gl_per_vertex_id = gfx_shader_spv_id(spv);

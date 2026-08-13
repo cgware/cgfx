@@ -6,7 +6,8 @@
 #include "mem.h"
 
 enum {
-	GFX_SOFTWARE_MAX_ATTRIBUTES = 16,
+	GFX_SOFTWARE_MAX_ATTRIBUTES    = 16,
+	GFX_SOFTWARE_MAX_CLIP_VERTICES = 16,
 };
 
 typedef struct gfx_software_buffer_s {
@@ -50,6 +51,7 @@ typedef struct gfx_software_vertex_s {
 	float x;
 	float y;
 	float z;
+	float w;
 	float r;
 	float g;
 	float b;
@@ -367,19 +369,15 @@ static int gfx_software_run_vertex_shader(const gfx_frame_t *frame, const gfx_so
 		}
 	}
 
-	if (position.w != 0.0f) {
-		position.x /= position.w;
-		position.y /= position.w;
-		position.z /= position.w;
-	}
 	*out = (gfx_software_vertex_t){
 		.x = position.x,
 		.y = position.y,
+		.z = position.z,
+		.w = position.w,
 		.r = color.x,
 		.g = color.y,
 		.b = color.z,
 		.a = color.w,
-		.z = position.z,
 	};
 	return 0;
 }
@@ -702,20 +700,100 @@ static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 	pixel[3]  = color[3];
 }
 
-static void vertex_to_screen(gfx_software_vertex_t *out, const gfx_software_vertex_t *vertex, const gfx_software_t *render)
+static float clip_distance(const gfx_software_vertex_t *vertex, u32 plane)
 {
-	*out = (gfx_software_vertex_t){
-		.x = (float)render->viewport_x + (vertex->x + 1.0f) * 0.5f * (float)render->viewport_width,
-		.y = (float)render->viewport_y + (1.0f - vertex->y) * 0.5f * (float)render->viewport_height,
-		.r = vertex->r,
-		.g = vertex->g,
-		.b = vertex->b,
-		.a = vertex->a,
-		.z = vertex->z,
+	switch (plane) {
+	case 0:
+		return vertex->x + vertex->w;
+	case 1:
+		return vertex->w - vertex->x;
+	case 2:
+		return vertex->y + vertex->w;
+	case 3:
+		return vertex->w - vertex->y;
+	case 4:
+		return vertex->z + vertex->w;
+	default:
+		return vertex->w - vertex->z;
+	}
+}
+
+static gfx_software_vertex_t vertex_lerp(const gfx_software_vertex_t *a, const gfx_software_vertex_t *b, float t)
+{
+	return (gfx_software_vertex_t){
+		.x = a->x + (b->x - a->x) * t,
+		.y = a->y + (b->y - a->y) * t,
+		.z = a->z + (b->z - a->z) * t,
+		.w = a->w + (b->w - a->w) * t,
+		.r = a->r + (b->r - a->r) * t,
+		.g = a->g + (b->g - a->g) * t,
+		.b = a->b + (b->b - a->b) * t,
+		.a = a->a + (b->a - a->a) * t,
 	};
 }
 
-static void draw_triangle(gfx_software_t *render, const gfx_frame_t *frame, const gfx_software_vertex_t *src_vertices)
+static u32 clip_polygon_plane(gfx_software_vertex_t *out, const gfx_software_vertex_t *in, u32 count, u32 plane)
+{
+	u32 out_count			  = 0;
+	const gfx_software_vertex_t *prev = &in[count - 1];
+	float prev_distance		  = clip_distance(prev, plane);
+	int prev_inside			  = prev_distance >= 0.0f;
+	for (u32 i = 0; i < count; i++) {
+		const gfx_software_vertex_t *cur = &in[i];
+		float cur_distance		 = clip_distance(cur, plane);
+		int cur_inside			 = cur_distance >= 0.0f;
+		if (cur_inside != prev_inside && out_count < GFX_SOFTWARE_MAX_CLIP_VERTICES) {
+			float t		 = prev_distance / (prev_distance - cur_distance);
+			out[out_count++] = vertex_lerp(prev, cur, t);
+		}
+		if (cur_inside && out_count < GFX_SOFTWARE_MAX_CLIP_VERTICES) {
+			out[out_count++] = *cur;
+		}
+		prev	      = cur;
+		prev_distance = cur_distance;
+		prev_inside   = cur_inside;
+	}
+	return out_count;
+}
+
+static u32 clip_triangle(gfx_software_vertex_t *out, const gfx_software_vertex_t *vertices)
+{
+	gfx_software_vertex_t a[GFX_SOFTWARE_MAX_CLIP_VERTICES] = {vertices[0], vertices[1], vertices[2]};
+	gfx_software_vertex_t b[GFX_SOFTWARE_MAX_CLIP_VERTICES] = {0};
+	gfx_software_vertex_t *src				= a;
+	gfx_software_vertex_t *dst				= b;
+	u32 count						= 3;
+	for (u32 plane = 0; plane < 6 && count != 0; plane++) {
+		count			   = clip_polygon_plane(dst, src, count, plane);
+		gfx_software_vertex_t *tmp = src;
+		src			   = dst;
+		dst			   = tmp;
+	}
+	for (u32 i = 0; i < count; i++) {
+		out[i] = src[i];
+	}
+	return count;
+}
+
+static void vertex_to_screen(gfx_software_vertex_t *out, const gfx_software_vertex_t *vertex, const gfx_software_t *render)
+{
+	float inv_w = vertex->w != 0.0f ? 1.0f / vertex->w : 0.0f;
+	float x	    = vertex->x * inv_w;
+	float y	    = vertex->y * inv_w;
+	float z	    = vertex->z * inv_w;
+	*out	    = (gfx_software_vertex_t){
+		       .x = (float)render->viewport_x + (x + 1.0f) * 0.5f * (float)render->viewport_width,
+		       .y = (float)render->viewport_y + (1.0f - y) * 0.5f * (float)render->viewport_height,
+		       .z = (z + 1.0f) * 0.5f,
+		       .w = 1.0f,
+		       .r = vertex->r,
+		       .g = vertex->g,
+		       .b = vertex->b,
+		       .a = vertex->a,
+	       };
+}
+
+static void raster_triangle(gfx_software_t *render, const gfx_frame_t *frame, const gfx_software_vertex_t *src_vertices)
 {
 	gfx_software_vertex_t vertices[3];
 	for (u32 i = 0; i < 3; i++) {
@@ -773,6 +851,16 @@ static void draw_triangle(gfx_software_t *render, const gfx_frame_t *frame, cons
 			};
 			draw_pixel(render, x, y, color);
 		}
+	}
+}
+
+static void draw_triangle(gfx_software_t *render, const gfx_frame_t *frame, const gfx_software_vertex_t *src_vertices)
+{
+	gfx_software_vertex_t clipped[GFX_SOFTWARE_MAX_CLIP_VERTICES] = {0};
+	u32 count						      = clip_triangle(clipped, src_vertices);
+	for (u32 i = 1; i + 1 < count; i++) {
+		gfx_software_vertex_t triangle[3] = {clipped[0], clipped[i], clipped[i + 1]};
+		raster_triangle(render, frame, triangle);
 	}
 }
 

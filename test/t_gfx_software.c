@@ -361,6 +361,104 @@ cleanup:
 	return ret;
 }
 
+static u32 t_gfx_software_count_lit_pixels(const u8 *pixels, size_t size)
+{
+	u32 count = 0;
+	for (size_t i = 0; i + 3 < size; i += 4) {
+		if (pixels[i] != 0 || pixels[i + 1] != 0 || pixels[i + 2] != 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static int t_gfx_software_draw_clip_vertices(const t_gfx_software_vertex_3d_t vertices[3], u32 *lit_pixels)
+{
+	static const char *source = "vs_in 0 VertexIn {\n"
+				    "\tvec3f position : POSITION;\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "vs_out VertexOut {\n"
+				    "\tvec4f position : POSITION;\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "fs_in FragmentIn {\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "fs_out FragmentOut {\n"
+				    "\tvec4f color : COLOR0;\n"
+				    "}\n"
+				    "VertexOut vertex(VertexIn input) {\n"
+				    "\tVertexOut output;\n"
+				    "\toutput.position = vec4f(input.position.x, input.position.y, input.position.z, 1.0f);\n"
+				    "\toutput.color = input.color;\n"
+				    "\treturn output;\n"
+				    "}\n"
+				    "FragmentOut fragment(FragmentIn input) {\n"
+				    "\tFragmentOut output;\n"
+				    "\toutput.color = input.color;\n"
+				    "\treturn output;\n"
+				    "}\n";
+
+	u8 pixels[256]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_image_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	int ret			      = 1;
+	if (lit_pixels == NULL || t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 8, 8, 32)) {
+		return 1;
+	}
+
+	gfx_shader_compiler_t compiler = {0};
+	gfx_shader_t shader	       = {0};
+	gfx_pipeline_t pipeline	       = {0};
+	gfx_buffer_t vertex_buffer     = {0};
+	if (gfx_shader_compiler_init(&compiler, ALLOC_STD) == NULL ||
+	    gfx_shader_init(&shader,
+			    &gfx,
+			    &(gfx_shader_config_t){
+				    .compiler = &compiler,
+				    .source   = strv_cstr(source),
+				    .stage    = GFX_SHADER_STAGE_VERTEX,
+			    }) == NULL ||
+	    gfx_pipeline_init(&pipeline,
+			      &gfx,
+			      &(gfx_pipeline_config_t){
+				      .render_pass	 = &render_pass,
+				      .vs		 = shader,
+				      .fs		 = shader,
+				      .input_layout	 = t_gfx_software_layout_3d,
+				      .input_layout_size = sizeof(t_gfx_software_layout_3d),
+			      }) == NULL ||
+	    gfx_buffer_init(&vertex_buffer,
+			    &gfx,
+			    &(gfx_buffer_config_t){
+				    .type  = GFX_BUFFER_VERTEX,
+				    .usage = GFX_BUFFER_USAGE_STATIC,
+				    .size  = sizeof(t_gfx_software_vertex_3d_t) * 3,
+				    .data  = vertices,
+			    }) == NULL) {
+		goto cleanup;
+	}
+
+	gfx_frame_t frame = {0};
+	if (gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){0}) || gfx_pipeline_bind(&frame, &pipeline) ||
+	    gfx_buffer_bind(&frame, &vertex_buffer) || gfx_draw(&frame, 3, 0) || gfx_end(&frame)) {
+		goto cleanup;
+	}
+	*lit_pixels = t_gfx_software_count_lit_pixels(pixels, sizeof(pixels));
+	ret	    = 0;
+
+cleanup:
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_shader_compiler_free(&compiler);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	return ret;
+}
+
 TEST(gfx_software_driver_is_registered)
 {
 	START;
@@ -1542,6 +1640,38 @@ TEST(gfx_software_surface_pass_begin_and_draw_clips)
 	END;
 }
 
+TEST(gfx_software_draw_clips_triangle_behind_near_plane)
+{
+	START;
+
+	const t_gfx_software_vertex_3d_t vertices[3] = {
+		{.x = -0.8f, .y = -0.8f, .z = -2.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.8f, .y = -0.8f, .z = -2.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -0.8f, .y = 0.8f, .z = -2.0f, .r = 1.0f, .a = 1.0f},
+	};
+	u32 lit_pixels = 0;
+	EXPECT_EQ(t_gfx_software_draw_clip_vertices(vertices, &lit_pixels), 0);
+	EXPECT_EQ(lit_pixels, 0);
+
+	END;
+}
+
+TEST(gfx_software_draw_clips_triangle_crossing_near_plane)
+{
+	START;
+
+	const t_gfx_software_vertex_3d_t vertices[3] = {
+		{.x = -0.8f, .y = -0.8f, .z = -2.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 0.8f, .y = -0.8f, .z = 0.0f, .r = 1.0f, .a = 1.0f},
+		{.x = -0.8f, .y = 0.8f, .z = 0.0f, .r = 1.0f, .a = 1.0f},
+	};
+	u32 lit_pixels = 0;
+	EXPECT_EQ(t_gfx_software_draw_clip_vertices(vertices, &lit_pixels), 0);
+	EXPECT_NE(lit_pixels, 0);
+
+	END;
+}
+
 TEST(gfx_software_surface_pass_begin_reports_lazy_image_init_failure)
 {
 	START;
@@ -1990,6 +2120,8 @@ STEST(gfx_software)
 	RUN(gfx_software_pipeline_layout_failures);
 	RUN(gfx_software_draw_indexed_rejects_invalid_target);
 	RUN(gfx_software_surface_pass_begin_and_draw_clips);
+	RUN(gfx_software_draw_clips_triangle_behind_near_plane);
+	RUN(gfx_software_draw_clips_triangle_crossing_near_plane);
 	RUN(gfx_software_surface_pass_begin_reports_lazy_image_init_failure);
 	RUN(gfx_software_depth_test_keeps_nearer_triangle);
 	RUN(gfx_software_depth_buffer_resizes_and_clears_when_disabled);

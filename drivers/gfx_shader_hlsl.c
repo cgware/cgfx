@@ -180,6 +180,16 @@ static int gfx_shader_emit_hlsl_buffers(buf_t *text, const gfx_shader_ir_t *ir)
 	return 0;
 }
 
+static int gfx_shader_hlsl_is_position_output(const gfx_shader_ir_t *ir, strv_t lhs)
+{
+	if (!gfx_shader_strv_prefix(lhs, STRV("output."))) {
+		return 0;
+	}
+	strv_t name			  = STRVN(lhs.data + STRV("output.").len, lhs.len - STRV("output.").len);
+	const gfx_shader_member_t *member = gfx_shader_struct_member(&ir->vs_out, name);
+	return member != NULL && strv_eq(member->semantic, STRV("POSITION"));
+}
+
 static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_ir_t *ir, const gfx_shader_function_ir_t *fn,
 					  const gfx_shader_statement_ir_t *stmt, gfx_shader_stage_t stage)
 {
@@ -210,6 +220,12 @@ static int gfx_shader_emit_hlsl_statement(buf_t *text, const gfx_shader_ir_t *ir
 		if (stage == GFX_SHADER_STAGE_FRAGMENT && strv_eq(stmt->lhs, STRV("output.color"))) {
 			return gfx_shader_text_put(text, STRV("    output_color = ")) ||
 			       gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"));
+		}
+		if (stage == GFX_SHADER_STAGE_VERTEX && gfx_shader_hlsl_is_position_output(ir, stmt->lhs)) {
+			return gfx_shader_text_putf(text, "    %.*s %.*s ", stmt->lhs.len, stmt->lhs.data, stmt->op.len, stmt->op.data) ||
+			       gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) ||
+			       gfx_shader_text_put(text,
+						   STRV(";\n    output.position.z = (output.position.z + output.position.w) * 0.5f;\n"));
 		}
 		if (gfx_shader_text_putf(text, "    %.*s %.*s ", stmt->lhs.len, stmt->lhs.data, stmt->op.len, stmt->op.data) ||
 		    gfx_shader_emit_hlsl_expr(text, ir, fn, stmt, stmt->expr_root) || gfx_shader_text_put(text, STRV(";\n"))) {
