@@ -63,6 +63,7 @@ typedef struct gfx_d3d11_pipeline_s {
 	ID3D11PixelShader *pixel_shader;
 	UINT stride;
 	ID3D11DepthStencilState *depth_state;
+	ID3D11RasterizerState *raster_state;
 } gfx_d3d11_pipeline_t;
 
 static void gfx_d3d11_swapchain_free(gfx_swapchain_t *swapchain);
@@ -1168,6 +1169,10 @@ static void gfx_d3d11_pipeline_free(gfx_pipeline_t *pipeline)
 		d3d11_release(d3d_pipeline->depth_state);
 		d3d_pipeline->depth_state = NULL;
 	}
+	if (d3d_pipeline->raster_state != NULL) {
+		d3d11_release(d3d_pipeline->raster_state);
+		d3d_pipeline->raster_state = NULL;
+	}
 	alloc_free(&pipeline->gfx->alloc, d3d_pipeline, sizeof(gfx_d3d11_pipeline_t));
 	pipeline->data = NULL;
 }
@@ -1183,7 +1188,8 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	gfx_d3d11_t *d3d11 = pipeline->gfx->data;
 
 	ID3D11DeviceVTable *device = *(ID3D11DeviceVTable **)d3d11->device;
-	if (device->CreateInputLayout == NULL || device->CreateVertexShader == NULL || device->CreatePixelShader == NULL) {
+	if (device->CreateInputLayout == NULL || device->CreateVertexShader == NULL || device->CreatePixelShader == NULL ||
+	    device->CreateRasterizerState == NULL) {
 		return 1;
 	}
 
@@ -1268,6 +1274,21 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 
 	d3d_pipeline->vertex_shader = vs->shader.vertex;
 	d3d_pipeline->pixel_shader  = fs->shader.pixel;
+
+	D3D11_RASTERIZER_DESC raster = {
+		.FillMode	       = D3D11_FILL_SOLID,
+		.CullMode	       = config->raster.cull == GFX_CULL_NONE	 ? D3D11_CULL_NONE
+					 : config->raster.cull == GFX_CULL_FRONT ? D3D11_CULL_FRONT
+										 : D3D11_CULL_BACK,
+		.FrontCounterClockwise = config->raster.front_face == GFX_WINDING_COUNTER_CLOCKWISE,
+		.DepthClipEnable       = 1,
+	};
+	if (!hresult_ok(device->CreateRasterizerState(d3d11->device, &raster, &d3d_pipeline->raster_state)) ||
+	    d3d_pipeline->raster_state == NULL) {
+		gfx_d3d11_pipeline_free(pipeline);
+		return 1;
+	}
+
 	if (config->render_pass->depth_format != GFX_FORMAT_NONE) {
 		if (device->CreateDepthStencilState == NULL) {
 			gfx_d3d11_pipeline_free(pipeline);
@@ -1311,13 +1332,15 @@ static int gfx_d3d11_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pip
 	gfx_d3d11_t *d3d11		   = pipeline->gfx->data;
 	gfx_d3d11_pipeline_t *d3d_pipeline = pipeline->data;
 	ID3D11DeviceContextVTable *context = *(ID3D11DeviceContextVTable **)d3d11->context;
-	if (context->IASetInputLayout == NULL || context->VSSetShader == NULL || context->PSSetShader == NULL) {
+	if (context->IASetInputLayout == NULL || context->VSSetShader == NULL || context->PSSetShader == NULL ||
+	    context->RSSetState == NULL) {
 		return 1;
 	}
 
 	context->IASetInputLayout(d3d11->context, d3d_pipeline->input_layout);
 	context->VSSetShader(d3d11->context, d3d_pipeline->vertex_shader, NULL, 0);
 	context->PSSetShader(d3d11->context, d3d_pipeline->pixel_shader, NULL, 0);
+	context->RSSetState(d3d11->context, d3d_pipeline->raster_state);
 	if (d3d_pipeline->depth_state != NULL) {
 		if (context->OMSetDepthStencilState == NULL) {
 			return 1;

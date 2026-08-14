@@ -107,12 +107,23 @@ typedef enum glClearMask_e {
 } glClearMask_t;
 
 typedef enum glCapability_e {
+	GL_CULL_FACE  = 0x0B44,
 	GL_DEPTH_TEST = 0x0B71,
 } glCapability_t;
 
 typedef enum glCompareFunc_e {
 	GL_LESS = 0x0201,
 } glCompareFunc_t;
+
+typedef enum glWinding_e {
+	GL_CW  = 0x0900,
+	GL_CCW = 0x0901,
+} glWinding_t;
+
+typedef enum glCullFace_e {
+	GL_FRONT = 0x0404,
+	GL_BACK	 = 0x0405,
+} glCullFace_t;
 
 typedef enum glFramebufferStatus_e {
 	GL_FRAMEBUFFER_COMPLETE = 0x8CD5,
@@ -434,6 +445,18 @@ typedef void (*PFN_glDisable)(GLenum cap);
  * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glDepthFunc.xhtml
  */
 typedef void (*PFN_glDepthFunc)(GLenum func);
+
+/**
+ * @brief Define front- and back-facing polygons
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glFrontFace.xhtml
+ */
+typedef void (*PFN_glFrontFace)(GLenum mode);
+
+/**
+ * @brief Specify whether front- or back-facing facets can be culled
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCullFace.xhtml
+ */
+typedef void (*PFN_glCullFace)(GLenum mode);
 
 /**
  * @brief Set the viewport

@@ -2622,9 +2622,11 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	VkPipelineRasterizationStateCreateInfo raster = {
 		.sType	     = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
 		.polygonMode = VK_POLYGON_MODE_FILL,
-		.cullMode    = VK_CULL_MODE_NONE,
-		.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-		.lineWidth   = 1.0f,
+		.cullMode    = config->raster.cull == GFX_CULL_NONE    ? VK_CULL_MODE_NONE
+			       : config->raster.cull == GFX_CULL_FRONT ? VK_CULL_MODE_FRONT_BIT
+								       : VK_CULL_MODE_BACK_BIT,
+		.frontFace = config->raster.front_face == GFX_WINDING_CLOCKWISE ? VK_FRONT_FACE_CLOCKWISE : VK_FRONT_FACE_COUNTER_CLOCKWISE,
+		.lineWidth = 1.0f,
 	};
 	VkPipelineMultisampleStateCreateInfo multisample = {
 		.sType		      = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,

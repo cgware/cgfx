@@ -27,6 +27,22 @@ typedef struct gfx_depth_state_s {
 	gfx_compare_op_t compare;
 } gfx_depth_state_t;
 
+typedef enum gfx_winding_e {
+	GFX_WINDING_COUNTER_CLOCKWISE,
+	GFX_WINDING_CLOCKWISE,
+} gfx_winding_t;
+
+typedef enum gfx_cull_mode_e {
+	GFX_CULL_NONE,
+	GFX_CULL_FRONT,
+	GFX_CULL_BACK,
+} gfx_cull_mode_t;
+
+typedef struct gfx_raster_state_s {
+	gfx_winding_t front_face;
+	gfx_cull_mode_t cull;
+} gfx_raster_state_t;
+
 typedef struct gfx_pipeline_config_s {
 	const gfx_render_pass_t *render_pass;
 	gfx_shader_t vs;
@@ -34,12 +50,14 @@ typedef struct gfx_pipeline_config_s {
 	const gfx_layout_t *input_layout;
 	size_t input_layout_size;
 	gfx_depth_state_t depth;
+	gfx_raster_state_t raster;
 } gfx_pipeline_config_t;
 
 typedef struct gfx_pipeline_s {
 	gfx_t *gfx;
 	const gfx_render_pass_t *render_pass;
 	gfx_depth_state_t depth;
+	gfx_raster_state_t raster;
 	void *data;
 } gfx_pipeline_t;
 

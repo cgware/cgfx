@@ -53,6 +53,8 @@ typedef struct gfx_opengl_s {
 	PFN_glEnable Enable;
 	PFN_glDisable Disable;
 	PFN_glDepthFunc DepthFunc;
+	PFN_glFrontFace FrontFace;
+	PFN_glCullFace CullFace;
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_render_pass_s {
@@ -209,6 +211,8 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, Enable);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, Disable);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, DepthFunc);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, FrontFace);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, CullFace);
 
 	return 0;
 }
@@ -1162,6 +1166,19 @@ static int gfx_opengl_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pi
 	}
 
 	opengl->UseProgram(gl_pipeline->program);
+	if (opengl->Enable == NULL || opengl->FrontFace == NULL || (pipeline->raster.cull == GFX_CULL_NONE && opengl->Disable == NULL) ||
+	    (pipeline->raster.cull != GFX_CULL_NONE && opengl->CullFace == NULL)) {
+		return 1;
+	}
+
+	opengl->FrontFace(pipeline->raster.front_face == GFX_WINDING_CLOCKWISE ? GL_CW : GL_CCW);
+	if (pipeline->raster.cull == GFX_CULL_NONE) {
+		opengl->Disable(GL_CULL_FACE);
+	} else {
+		opengl->Enable(GL_CULL_FACE);
+		opengl->CullFace(pipeline->raster.cull == GFX_CULL_FRONT ? GL_FRONT : GL_BACK);
+	}
+
 	if (pipeline->render_pass->depth_format != GFX_FORMAT_NONE) {
 		if (pipeline->depth.test) {
 			if (opengl->Enable == NULL || opengl->DepthFunc == NULL) {

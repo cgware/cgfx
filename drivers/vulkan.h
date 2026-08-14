@@ -1364,12 +1364,15 @@ typedef enum VkPolygonMode_e {
 
 typedef enum VkCullModeFlagBits_e {
 	VK_CULL_MODE_NONE		= 0,
+	VK_CULL_MODE_FRONT_BIT		= 0x00000001,
+	VK_CULL_MODE_BACK_BIT		= 0x00000002,
 	VK_CULL_MODE_FLAG_BITS_MAX_ENUM = 0x7FFFFFFF
 } VkCullModeFlagBits;
 typedef VkFlags VkCullModeFlags;
 
 typedef enum VkFrontFace_e {
 	VK_FRONT_FACE_COUNTER_CLOCKWISE = 0,
+	VK_FRONT_FACE_CLOCKWISE		= 1,
 	VK_FRONT_FACE_MAX_ENUM		= 0x7FFFFFFF
 } VkFrontFace;
 

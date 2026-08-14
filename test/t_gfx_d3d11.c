@@ -28,6 +28,7 @@ typedef struct t_d3d11_context_s t_d3d11_context_t;
 typedef struct t_d3d11_depth_stencil_state_s t_d3d11_depth_stencil_state_t;
 typedef struct t_d3d11_input_layout_s t_d3d11_input_layout_t;
 typedef struct t_d3d11_pixel_shader_s t_d3d11_pixel_shader_t;
+typedef struct t_d3d11_rasterizer_state_s t_d3d11_rasterizer_state_t;
 typedef struct t_d3d11_view_s t_d3d11_view_t;
 typedef struct t_d3d11_texture_s t_d3d11_texture_t;
 typedef struct t_d3d11_vertex_shader_s t_d3d11_vertex_shader_t;
@@ -66,6 +67,10 @@ struct t_d3d11_pixel_shader_s {
 	ID3D11PixelShaderVTable *vtbl;
 };
 
+struct t_d3d11_rasterizer_state_s {
+	ID3D11PixelShaderVTable *vtbl;
+};
+
 struct t_d3d11_view_s {
 	ID3D11RenderTargetViewVTable *vtbl;
 };
@@ -91,11 +96,13 @@ static int t_release_buffer_calls;
 static int t_release_input_layout_calls;
 static int t_release_pixel_shader_calls;
 static int t_release_depth_stencil_state_calls;
+static int t_release_rasterizer_state_calls;
 static int t_release_vertex_shader_calls;
 static int t_release_blob_calls;
 static int t_create_render_target_view_calls;
 static int t_create_depth_stencil_view_calls;
 static int t_create_depth_stencil_state_calls;
+static int t_create_rasterizer_state_calls;
 static int t_create_buffer_calls;
 static int t_create_texture_2d_calls;
 static int t_create_input_layout_calls;
@@ -108,6 +115,7 @@ static int t_clear_render_target_view_calls;
 static int t_clear_depth_stencil_view_calls;
 static int t_om_set_render_targets_calls;
 static int t_om_set_depth_stencil_state_calls;
+static int t_rs_set_state_calls;
 static int t_ia_set_input_layout_calls;
 static int t_ia_set_vertex_buffers_calls;
 static int t_ia_set_index_buffer_calls;
@@ -144,6 +152,10 @@ static UINT t_create_texture_cpu_access_flags;
 static int t_depth_enable;
 static UINT t_depth_write_mask;
 static UINT t_depth_func;
+static UINT t_raster_fill_mode;
+static UINT t_raster_cull_mode;
+static int t_raster_front_counter_clockwise;
+static int t_raster_depth_clip_enable;
 static UINT t_clear_depth_flags;
 static float t_clear_depth_value;
 static UINT t_copy_resource_dst_is_texture;
@@ -207,6 +219,7 @@ static HRESULT t_create_vertex_shader_ret;
 static HRESULT t_create_pixel_shader_ret;
 static HRESULT t_create_depth_stencil_view_ret;
 static HRESULT t_create_depth_stencil_state_ret;
+static HRESULT t_create_rasterizer_state_ret;
 static HRESULT t_get_buffer_ret;
 static HRESULT t_create_render_target_view_ret;
 static HRESULT t_resize_buffers_ret;
@@ -221,6 +234,7 @@ static t_d3d11_context_t t_context;
 static t_d3d11_input_layout_t t_input_layout;
 static t_d3d11_pixel_shader_t t_pixel_shader;
 static t_d3d11_depth_stencil_state_t t_depth_stencil_state;
+static t_d3d11_rasterizer_state_t t_rasterizer_state;
 static t_d3d11_view_t t_view;
 static t_d3d11_view_t t_depth_view;
 static t_d3d11_texture_t t_texture;
@@ -284,6 +298,7 @@ typedef struct t_gfx_d3d11_pipeline_data_s {
 	t_d3d11_pixel_shader_t *pixel_shader;
 	UINT stride;
 	t_d3d11_depth_stencil_state_t *depth_state;
+	t_d3d11_rasterizer_state_t *raster_state;
 } t_gfx_d3d11_pipeline_data_t;
 
 static gfx_pipeline_config_t t_gfx_d3d11_pipeline_config(gfx_shader_t vs, gfx_shader_t fs)
@@ -382,6 +397,13 @@ static ULONG t_depth_stencil_state_release(ID3D11PixelShader *self)
 	return 0;
 }
 
+static ULONG t_rasterizer_state_release(ID3D11PixelShader *self)
+{
+	(void)self;
+	t_release_rasterizer_state_calls++;
+	return 0;
+}
+
 static ULONG t_vertex_shader_release(ID3D11VertexShader *self)
 {
 	(void)self;
@@ -449,6 +471,18 @@ static HRESULT t_CreateDepthStencilState(ID3D11Device *self, const D3D11_DEPTH_S
 	t_depth_func	   = desc->DepthFunc;
 	*state		   = (ID3D11DepthStencilState *)&t_depth_stencil_state;
 	return t_create_depth_stencil_state_ret;
+}
+
+static HRESULT t_CreateRasterizerState(ID3D11Device *self, const D3D11_RASTERIZER_DESC *desc, ID3D11RasterizerState **state)
+{
+	(void)self;
+	t_create_rasterizer_state_calls++;
+	t_raster_fill_mode		 = desc->FillMode;
+	t_raster_cull_mode		 = desc->CullMode;
+	t_raster_front_counter_clockwise = desc->FrontCounterClockwise;
+	t_raster_depth_clip_enable	 = desc->DepthClipEnable;
+	*state				 = (ID3D11RasterizerState *)&t_rasterizer_state;
+	return t_create_rasterizer_state_ret;
 }
 
 static HRESULT t_CreateTexture2D(ID3D11Device *self, const D3D11_TEXTURE2D_DESC *desc, const void *initial_data, ID3D11Texture2D **texture)
@@ -520,6 +554,13 @@ static void t_OMSetDepthStencilState(ID3D11DeviceContext *self, ID3D11DepthStenc
 	(void)state;
 	(void)stencil_ref;
 	t_om_set_depth_stencil_state_calls++;
+}
+
+static void t_RSSetState(ID3D11DeviceContext *self, ID3D11RasterizerState *state)
+{
+	(void)self;
+	(void)state;
+	t_rs_set_state_calls++;
 }
 
 static void t_IASetInputLayout(ID3D11DeviceContext *self, ID3D11InputLayout *input_layout)
@@ -803,6 +844,7 @@ static ID3D11DeviceVTable t_device_vtbl = {
 	.CreateVertexShader	 = t_CreateVertexShader,
 	.CreatePixelShader	 = t_CreatePixelShader,
 	.CreateDepthStencilState = t_CreateDepthStencilState,
+	.CreateRasterizerState	 = t_CreateRasterizerState,
 };
 
 static ID3D11DeviceContextVTable t_context_vtbl = {
@@ -821,6 +863,7 @@ static ID3D11DeviceContextVTable t_context_vtbl = {
 	.IASetPrimitiveTopology = t_IASetPrimitiveTopology,
 	.OMSetRenderTargets	= t_OMSetRenderTargets,
 	.OMSetDepthStencilState = t_OMSetDepthStencilState,
+	.RSSetState		= t_RSSetState,
 	.RSSetViewports		= t_RSSetViewports,
 	.CopyResource		= t_CopyResource,
 	.UpdateSubresource	= t_UpdateSubresource,
@@ -838,6 +881,10 @@ static ID3D11PixelShaderVTable t_pixel_shader_vtbl = {
 
 static ID3D11PixelShaderVTable t_depth_stencil_state_vtbl = {
 	.Release = t_depth_stencil_state_release,
+};
+
+static ID3D11PixelShaderVTable t_rasterizer_state_vtbl = {
+	.Release = t_rasterizer_state_release,
 };
 
 static ID3D11RenderTargetViewVTable t_view_vtbl = {
@@ -939,6 +986,10 @@ static void t_gfx_d3d11_reset(void)
 	t_depth_enable			    = 0;
 	t_depth_write_mask		    = 0;
 	t_depth_func			    = 0;
+	t_raster_fill_mode		    = 0;
+	t_raster_cull_mode		    = 0;
+	t_raster_front_counter_clockwise    = 0;
+	t_raster_depth_clip_enable	    = 0;
 	t_clear_depth_flags		    = 0;
 	t_clear_depth_value		    = 0.0f;
 	t_copy_resource_dst_is_texture	    = 0;
@@ -987,6 +1038,7 @@ static void t_gfx_d3d11_reset(void)
 	t_create_pixel_shader_ret	    = S_OK;
 	t_create_depth_stencil_view_ret	    = S_OK;
 	t_create_depth_stencil_state_ret    = S_OK;
+	t_create_rasterizer_state_ret	    = S_OK;
 	t_get_buffer_ret		    = S_OK;
 	t_create_render_target_view_ret	    = S_OK;
 	t_resize_buffers_ret		    = S_OK;
@@ -1004,6 +1056,7 @@ static void t_gfx_d3d11_reset(void)
 	t_input_layout.vtbl		    = &t_input_layout_vtbl;
 	t_pixel_shader.vtbl		    = &t_pixel_shader_vtbl;
 	t_depth_stencil_state.vtbl	    = &t_depth_stencil_state_vtbl;
+	t_rasterizer_state.vtbl		    = &t_rasterizer_state_vtbl;
 	t_view.vtbl			    = &t_view_vtbl;
 	t_depth_view.vtbl		    = &t_view_vtbl;
 	t_texture.vtbl			    = &t_texture_vtbl;
@@ -4969,6 +5022,50 @@ TEST(gfx_d3d11_pipeline_depth_state)
 	END;
 }
 
+TEST(gfx_d3d11_pipeline_raster_state)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_d3d11_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_pipeline_t pipeline	      = {0};
+	gfx_frame_t frame	      = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_d3d11_shader(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &(gfx_render_pass_config_t){.color_format = GFX_FORMAT_RGBA8}), &render_pass);
+	t_gfx_d3d11_active_render_pass	  = &render_pass;
+	gfx_pipeline_config_t config	  = t_gfx_d3d11_pipeline_config(vs, fs);
+	config.raster			  = (gfx_raster_state_t){.front_face = GFX_WINDING_CLOCKWISE, .cull = GFX_CULL_FRONT};
+	int create_rasterizer_state_calls = t_create_rasterizer_state_calls;
+	EXPECT_PTR(gfx_pipeline_init(&pipeline, &gfx, &config), &pipeline);
+	EXPECT_EQ(t_create_rasterizer_state_calls, create_rasterizer_state_calls + 1);
+	EXPECT_EQ(t_raster_fill_mode, D3D11_FILL_SOLID);
+	EXPECT_EQ(t_raster_cull_mode, D3D11_CULL_FRONT);
+	EXPECT_EQ(t_raster_front_counter_clockwise, 0);
+	EXPECT_EQ(t_raster_depth_clip_enable, 1);
+
+	gfx.frame	       = &frame;
+	int rs_set_state_calls = t_rs_set_state_calls;
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_rs_set_state_calls, rs_set_state_calls + 1);
+	gfx.frame = NULL;
+
+	int release_rasterizer_state_calls = t_release_rasterizer_state_calls;
+	gfx_pipeline_free(&pipeline);
+	EXPECT_EQ(t_release_rasterizer_state_calls, release_rasterizer_state_calls + 1);
+	t_gfx_d3d11_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_d3d11_pipeline_depth_state_failures)
 {
 	START;
@@ -5002,11 +5099,17 @@ TEST(gfx_d3d11_pipeline_depth_state_failures)
 	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
 	t_create_depth_stencil_state_ret = S_OK;
 
+	t_create_rasterizer_state_ret = E_FAIL;
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	EXPECT_EQ(t_release_input_layout_calls, 3);
+	t_create_rasterizer_state_ret = S_OK;
+
 	t_gfx_d3d11_pipeline_data_t driver_pipeline = {
 		.input_layout  = &t_input_layout,
 		.vertex_shader = &t_vertex_shader,
 		.pixel_shader  = &t_pixel_shader,
 		.depth_state   = &t_depth_stencil_state,
+		.raster_state  = &t_rasterizer_state,
 	};
 	gfx_pipeline_t direct_pipeline	      = {.gfx = &gfx, .data = &driver_pipeline};
 	gfx_frame_t frame		      = {.gfx = &gfx};
@@ -5346,6 +5449,7 @@ STEST(gfx_d3d11)
 	RUN(gfx_d3d11_buffer_bind_null_frame);
 	RUN(gfx_d3d11_pipeline_bind_binds_shaders);
 	RUN(gfx_d3d11_pipeline_depth_state);
+	RUN(gfx_d3d11_pipeline_raster_state);
 	RUN(gfx_d3d11_pipeline_depth_state_failures);
 	RUN(gfx_d3d11_buffer_bind_binds_vertex_buffer);
 	RUN(gfx_d3d11_buffer_bind_binds_index_buffer);

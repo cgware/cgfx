@@ -372,6 +372,57 @@ static u32 t_gfx_software_count_lit_pixels(const u8 *pixels, size_t size)
 	return count;
 }
 
+static int t_gfx_software_draw_culled_vertices(const gfx_vertex_2d_t vertices[3], u32 *lit_pixels)
+{
+	u8 pixels[64]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_image_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	int ret			      = 1;
+	if (vertices == NULL || lit_pixels == NULL || t_gfx_software_scene(&gfx, &target, &render_pass, &framebuffer, pixels, 4, 4, 16)) {
+		return 1;
+	}
+
+	gfx_shader_t shader	   = {0};
+	gfx_pipeline_t pipeline	   = {0};
+	gfx_buffer_t vertex_buffer = {0};
+	if (gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("software")}) == NULL ||
+	    gfx_pipeline_init(&pipeline,
+			      &gfx,
+			      &(gfx_pipeline_config_t){
+				      .render_pass = &render_pass,
+				      .vs	   = shader,
+				      .fs	   = shader,
+				      .raster	   = {.front_face = GFX_WINDING_COUNTER_CLOCKWISE, .cull = GFX_CULL_BACK},
+			      }) == NULL ||
+	    gfx_buffer_init(&vertex_buffer,
+			    &gfx,
+			    &(gfx_buffer_config_t){
+				    .type  = GFX_BUFFER_VERTEX,
+				    .usage = GFX_BUFFER_USAGE_STATIC,
+				    .size  = sizeof(gfx_vertex_2d_t) * 3,
+				    .data  = vertices,
+			    }) == NULL) {
+		goto cleanup;
+	}
+
+	gfx_frame_t frame = {0};
+	if (gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear = {0.0f, 0.0f, 0.0f, 0.0f}}) ||
+	    gfx_pipeline_bind(&frame, &pipeline) || gfx_buffer_bind(&frame, &vertex_buffer) || gfx_draw(&frame, 3, 0) || gfx_end(&frame)) {
+		goto cleanup;
+	}
+	*lit_pixels = t_gfx_software_count_lit_pixels(pixels, sizeof(pixels));
+	ret	    = 0;
+
+cleanup:
+	gfx_buffer_free(&vertex_buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	return ret;
+}
+
 static int t_gfx_software_draw_clip_vertices(const t_gfx_software_vertex_3d_t vertices[3], u32 *lit_pixels)
 {
 	static const char *source = "vs_in 0 VertexIn {\n"
@@ -755,6 +806,31 @@ TEST(gfx_software_draw_triangle)
 	gfx_pipeline_free(&pipeline);
 	gfx_shader_free(&shader);
 	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
+	END;
+}
+
+TEST(gfx_software_draw_culls_backfaces)
+{
+	START;
+
+	gfx_vertex_2d_t front[] = {
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = -1.0f, .g = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .b = 1.0f, .a = 1.0f},
+	};
+	gfx_vertex_2d_t back[] = {
+		front[0],
+		front[2],
+		front[1],
+	};
+	u32 front_pixels = 0;
+	u32 back_pixels	 = 1;
+
+	EXPECT_EQ(t_gfx_software_draw_culled_vertices(front, &front_pixels), 0);
+	EXPECT_NE(front_pixels, 0);
+	EXPECT_EQ(t_gfx_software_draw_culled_vertices(back, &back_pixels), 0);
+	EXPECT_EQ(back_pixels, 0);
+
 	END;
 }
 
@@ -2103,6 +2179,7 @@ STEST(gfx_software)
 	RUN(gfx_software_swapchain_resize_rejects_invalid_direct);
 	RUN(gfx_software_swapchain_free_rejects_missing_image_storage_direct);
 	RUN(gfx_software_draw_triangle);
+	RUN(gfx_software_draw_culls_backfaces);
 	RUN(gfx_software_draw_indexed_triangle);
 	RUN(gfx_software_draw_shader_pipeline_vec3_uniform);
 	RUN(gfx_software_shader_pipeline_uniform_failures);

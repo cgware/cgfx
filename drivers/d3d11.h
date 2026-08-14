@@ -327,6 +327,40 @@ typedef void *ID3D11DepthStencilState;
 typedef HRESULT (*PFN_CreateDepthStencilState)(ID3D11Device *This, const D3D11_DEPTH_STENCIL_DESC *pDepthStencilDesc,
 					       ID3D11DepthStencilState **ppDepthStencilState);
 
+typedef enum D3D11_FILL_MODE_e {
+	D3D11_FILL_SOLID = 3,
+} D3D11_FILL_MODE_t;
+typedef UINT D3D11_FILL_MODE;
+
+typedef enum D3D11_CULL_MODE_e {
+	D3D11_CULL_NONE	 = 1,
+	D3D11_CULL_FRONT = 2,
+	D3D11_CULL_BACK	 = 3,
+} D3D11_CULL_MODE_t;
+typedef UINT D3D11_CULL_MODE;
+
+typedef struct D3D11_RASTERIZER_DESC_s {
+	D3D11_FILL_MODE FillMode;
+	D3D11_CULL_MODE CullMode;
+	int FrontCounterClockwise;
+	int DepthBias;
+	float DepthBiasClamp;
+	float SlopeScaledDepthBias;
+	int DepthClipEnable;
+	int ScissorEnable;
+	int MultisampleEnable;
+	int AntialiasedLineEnable;
+} D3D11_RASTERIZER_DESC;
+
+typedef void *ID3D11RasterizerState;
+
+/**
+ * @brief Create a rasterizer state object that tells the rasterizer stage how to behave.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createrasterizerstate
+ */
+typedef HRESULT (*PFN_CreateRasterizerState)(ID3D11Device *This, const D3D11_RASTERIZER_DESC *pRasterizerDesc,
+					     ID3D11RasterizerState **ppRasterizerState);
+
 typedef enum DXGI_FORMAT_e {
 	DXGI_FORMAT_UNKNOWN	       = 0,
 	DXGI_FORMAT_R32G32B32A32_FLOAT = 2,
@@ -415,6 +449,7 @@ typedef struct ID3D11DeviceVTable_s {
 	void (*CreateClassLinkage)(void);
 	void (*CreateBlendState)(void);
 	PFN_CreateDepthStencilState CreateDepthStencilState;
+	PFN_CreateRasterizerState CreateRasterizerState;
 } ID3D11DeviceVTable;
 
 /**
@@ -535,6 +570,12 @@ typedef void (*PFN_OMSetRenderTargets)(ID3D11DeviceContext *This, UINT NumViews,
  */
 typedef void (*PFN_OMSetDepthStencilState)(ID3D11DeviceContext *This, ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef);
 
+/**
+ * @brief Set the rasterizer state for the rasterizer stage of the pipeline.
+ * @see https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-rssetstate
+ */
+typedef void (*PFN_RSSetState)(ID3D11DeviceContext *This, ID3D11RasterizerState *pRasterizerState);
+
 typedef struct D3D11_VIEWPORT_s {
 	float TopLeftX;
 	float TopLeftY;
@@ -625,7 +666,7 @@ typedef struct ID3D11DeviceContextVTable_s {
 	void (*unused_40)(void);
 	void (*unused_41)(void);
 	void (*unused_42)(void);
-	void (*unused_43)(void);
+	PFN_RSSetState RSSetState;
 	PFN_RSSetViewports RSSetViewports;
 	void (*unused_45)(void);
 	void (*unused_46)(void);

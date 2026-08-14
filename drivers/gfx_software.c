@@ -690,6 +690,16 @@ static int point_inside(float w0, float w1, float w2, float area)
 	return w0 <= 0.0f && w1 <= 0.0f && w2 <= 0.0f;
 }
 
+static int triangle_culled(const gfx_pipeline_t *pipeline, float area)
+{
+	if (pipeline->raster.cull == GFX_CULL_NONE) {
+		return 0;
+	}
+
+	int front = pipeline->raster.front_face == GFX_WINDING_CLOCKWISE ? area < 0.0f : area > 0.0f;
+	return (pipeline->raster.cull == GFX_CULL_FRONT && front) || (pipeline->raster.cull == GFX_CULL_BACK && !front);
+}
+
 static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 {
 	u8 *row	  = (u8 *)render->image.data + (size_t)y * render->image.stride;
@@ -802,6 +812,9 @@ static void raster_triangle(gfx_software_t *render, const gfx_frame_t *frame, co
 
 	float area = edge(&vertices[0], &vertices[1], vertices[2].x, vertices[2].y);
 	if (area == 0.0f) {
+		return;
+	}
+	if (triangle_culled(frame->pipeline, area)) {
 		return;
 	}
 

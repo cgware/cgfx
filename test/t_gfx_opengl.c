@@ -13,6 +13,8 @@ static int t_gl_clear_depth_calls;
 static int t_gl_enable_calls;
 static int t_gl_disable_calls;
 static int t_gl_depth_func_calls;
+static int t_gl_front_face_calls;
+static int t_gl_cull_face_calls;
 static int t_gl_gen_framebuffers_calls;
 static int t_gl_delete_framebuffers_calls;
 static int t_gl_bind_framebuffer_calls;
@@ -60,6 +62,8 @@ static float t_gl_a;
 static unsigned int t_gl_mask;
 static unsigned int t_gl_cap;
 static unsigned int t_gl_depth_func;
+static unsigned int t_gl_front_face;
+static unsigned int t_gl_cull_face;
 static unsigned int t_gl_framebuffer;
 static unsigned int t_gl_texture;
 static unsigned int t_gl_framebuffer_status;
@@ -207,6 +211,8 @@ typedef struct t_gfx_opengl_data_s {
 	PFN_glEnable Enable;
 	PFN_glDisable Disable;
 	PFN_glDepthFunc DepthFunc;
+	PFN_glFrontFace FrontFace;
+	PFN_glCullFace CullFace;
 } t_gfx_opengl_data_t;
 
 typedef struct t_gfx_opengl_target_data_s {
@@ -304,6 +310,18 @@ static void t_glDepthFunc(unsigned int func)
 {
 	t_gl_depth_func_calls++;
 	t_gl_depth_func = func;
+}
+
+static void t_glFrontFace(unsigned int mode)
+{
+	t_gl_front_face_calls++;
+	t_gl_front_face = mode;
+}
+
+static void t_glCullFace(unsigned int mode)
+{
+	t_gl_cull_face_calls++;
+	t_gl_cull_face = mode;
 }
 
 static void t_glGenFramebuffers(int count, unsigned int *framebuffers)
@@ -710,6 +728,12 @@ static void *t_gfx_opengl_surface_symbol(strv_t name)
 	if (strv_eq(name, STRV("glDepthFunc"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDepthFunc);
 	}
+	if (strv_eq(name, STRV("glFrontFace"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFrontFace);
+	}
+	if (strv_eq(name, STRV("glCullFace"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCullFace);
+	}
 	if (strv_eq(name, STRV("glEnableVertexAttribArray"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnableVertexAttribArray);
 	}
@@ -786,6 +810,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_enable_calls		       = 0;
 	t_gl_disable_calls		       = 0;
 	t_gl_depth_func_calls		       = 0;
+	t_gl_front_face_calls		       = 0;
+	t_gl_cull_face_calls		       = 0;
 	t_gl_gen_framebuffers_calls	       = 0;
 	t_gl_delete_framebuffers_calls	       = 0;
 	t_gl_bind_framebuffer_calls	       = 0;
@@ -832,6 +858,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_mask			       = 0;
 	t_gl_cap			       = 0;
 	t_gl_depth_func			       = 0;
+	t_gl_front_face			       = 0;
+	t_gl_cull_face			       = 0;
 	t_gl_framebuffer		       = 0;
 	t_gl_texture			       = 0;
 	t_gl_framebuffer_status		       = 0x8CD5;
@@ -931,6 +959,8 @@ static void t_gfx_opengl_gl_symbols(proc_t *proc, strv_t lib)
 	proc_setdlsym(proc, lib, STRV("glEnable"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnable));
 	proc_setdlsym(proc, lib, STRV("glDisable"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDisable));
 	proc_setdlsym(proc, lib, STRV("glDepthFunc"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDepthFunc));
+	proc_setdlsym(proc, lib, STRV("glFrontFace"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFrontFace));
+	proc_setdlsym(proc, lib, STRV("glCullFace"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCullFace));
 	proc_setdlsym(
 		proc, lib, STRV("glEnableVertexAttribArray"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnableVertexAttribArray));
 	proc_setdlsym(
@@ -2758,8 +2788,48 @@ TEST(gfx_opengl_pipeline_bind_sets_depth_state)
 
 	pipeline.depth.test = 0;
 	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
-	EXPECT_EQ(t_gl_disable_calls, 1);
+	EXPECT_EQ(t_gl_disable_calls, 3);
 	EXPECT_EQ(t_gl_cap, GL_DEPTH_TEST);
+
+	gfx.frame = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_bind_sets_cull_state)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass		     = {.gfx = &gfx, .data = &render_pass};
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+	gfx_pipeline_t pipeline			     = {
+				     .gfx	  = &gfx,
+				     .render_pass = &render_pass,
+				     .raster	  = {.front_face = GFX_WINDING_CLOCKWISE, .cull = GFX_CULL_BACK},
+				     .data	  = &driver_pipeline,
+	     };
+	gfx_frame_t frame = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	gfx.frame	  = &frame;
+
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_gl_front_face_calls, 1);
+	EXPECT_EQ(t_gl_front_face, GL_CW);
+	EXPECT_EQ(t_gl_enable_calls, 1);
+	EXPECT_EQ(t_gl_cap, GL_CULL_FACE);
+	EXPECT_EQ(t_gl_cull_face_calls, 1);
+	EXPECT_EQ(t_gl_cull_face, GL_BACK);
+
+	pipeline.raster.cull = GFX_CULL_FRONT;
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_gl_cull_face_calls, 2);
+	EXPECT_EQ(t_gl_cull_face, GL_FRONT);
+
+	((t_gfx_opengl_data_t *)gfx.data)->CullFace = NULL;
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 
 	gfx.frame = NULL;
 	gfx_free(&gfx);
@@ -2792,6 +2862,7 @@ TEST(gfx_opengl_pipeline_bind_depth_missing_callbacks)
 	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 	((t_gfx_opengl_data_t *)gfx.data)->DepthFunc = t_glDepthFunc;
 	pipeline.depth.test			     = 0;
+	pipeline.raster.cull			     = GFX_CULL_BACK;
 	((t_gfx_opengl_data_t *)gfx.data)->Disable   = NULL;
 	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 
@@ -4430,6 +4501,7 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_pipeline_bind_uses_program);
 	RUN(gfx_opengl_pipeline_bind_make_current_failure);
 	RUN(gfx_opengl_pipeline_bind_sets_depth_state);
+	RUN(gfx_opengl_pipeline_bind_sets_cull_state);
 	RUN(gfx_opengl_pipeline_bind_depth_missing_callbacks);
 	RUN(gfx_opengl_buffer_bind_sets_attributes);
 	RUN(gfx_opengl_buffer_bind_make_current_failure);
