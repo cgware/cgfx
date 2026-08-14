@@ -5287,7 +5287,7 @@ TEST(gfx_vulkan_swapchain_init_mailbox_falls_back_to_vsync_present_mode)
 	END;
 }
 
-TEST(gfx_vulkan_swapchain_init_invalid_present_mode_falls_back_to_vsync)
+TEST(gfx_vulkan_swapchain_init_rejects_invalid_present_mode)
 {
 	START;
 
@@ -5296,11 +5296,9 @@ TEST(gfx_vulkan_swapchain_init_invalid_present_mode_falls_back_to_vsync)
 	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
 	gfx_swapchain_t swapchain = {0};
 
-	EXPECT_PTR(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, (gfx_present_mode_t)99), &swapchain);
-	EXPECT_EQ(t_vk_swapchain_create.presentMode, VK_PRESENT_MODE_FIFO_KHR);
-	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_NULL(t_gfx_vulkan_init_swapchain(&gfx, &swapchain, (gfx_present_mode_t)99));
+	EXPECT_EQ(t_vk_create_swapchain_calls, 0);
 
-	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -7881,7 +7879,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_swapchain_init_uses_mailbox_present_mode);
 	RUN(gfx_vulkan_swapchain_init_falls_back_to_vsync_present_mode);
 	RUN(gfx_vulkan_swapchain_init_mailbox_falls_back_to_vsync_present_mode);
-	RUN(gfx_vulkan_swapchain_init_invalid_present_mode_falls_back_to_vsync);
+	RUN(gfx_vulkan_swapchain_init_rejects_invalid_present_mode);
 	RUN(gfx_vulkan_swapchain_init_limits_present_modes);
 	RUN(gfx_vulkan_swapchain_init_present_mode_count_failure);
 	RUN(gfx_vulkan_swapchain_init_present_mode_list_failure);

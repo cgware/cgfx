@@ -58,6 +58,7 @@ int gfx_swapchain_info(const gfx_swapchain_t *swapchain, gfx_swapchain_info_t *i
 int gfx_swapchain_images(gfx_swapchain_t *swapchain, gfx_image_t **images, u32 capacity, u32 *count);
 int gfx_swapchain_acquire(gfx_swapchain_t *swapchain, gfx_swapchain_image_t *image);
 int gfx_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height);
+int gfx_swapchain_set_present_mode(gfx_swapchain_t *swapchain, gfx_present_mode_t present_mode);
 int gfx_swapchain_present(gfx_swapchain_t *swapchain, const gfx_swapchain_image_t *image);
 
 #endif

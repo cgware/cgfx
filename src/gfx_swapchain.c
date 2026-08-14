@@ -49,12 +49,27 @@ static int gfx_swapchain_images_refresh(gfx_swapchain_t *swapchain, u32 count)
 	return 0;
 }
 
+static int gfx_present_mode_valid(gfx_present_mode_t present_mode)
+{
+	return present_mode == GFX_PRESENT_MODE_DEFAULT || present_mode == GFX_PRESENT_MODE_VSYNC ||
+	       present_mode == GFX_PRESENT_MODE_IMMEDIATE || present_mode == GFX_PRESENT_MODE_MAILBOX;
+}
+
+static gfx_present_mode_t gfx_swapchain_default_actual_present_mode(const gfx_swapchain_t *swapchain, gfx_present_mode_t present_mode)
+{
+	if (swapchain != NULL && swapchain->surface != NULL &&
+	    (swapchain->surface->api == GFX_API_NONE || swapchain->surface->api == GFX_API_SOFTWARE)) {
+		return GFX_PRESENT_MODE_IMMEDIATE;
+	}
+	return present_mode;
+}
+
 gfx_swapchain_t *gfx_swapchain_init(gfx_swapchain_t *swapchain, gfx_t *gfx, const gfx_swapchain_config_t *config)
 {
 	if (swapchain == NULL || gfx == NULL || gfx->drv == NULL || config == NULL || config->format == GFX_FORMAT_NONE ||
 	    config->surface == NULL || config->surface->api != gfx->drv->api || config->width == 0 || config->height == 0 ||
 	    config->images == NULL || config->image_capacity == 0 || config->min_image_count == 0 ||
-	    config->min_image_count > config->image_capacity ||
+	    config->min_image_count > config->image_capacity || !gfx_present_mode_valid(config->present_mode) ||
 	    (config->max_image_count != 0 &&
 	     (config->max_image_count < config->min_image_count || config->max_image_count > config->image_capacity))) {
 		return NULL;
@@ -207,6 +222,49 @@ int gfx_swapchain_resize(gfx_swapchain_t *swapchain, u16 width, u16 height)
 	if (gfx_swapchain_images_refresh(swapchain, swapchain->image_count)) {
 		return 1;
 	}
+	return 0;
+}
+
+int gfx_swapchain_set_present_mode(gfx_swapchain_t *swapchain, gfx_present_mode_t present_mode)
+{
+	if (swapchain == NULL || swapchain->gfx == NULL || swapchain->gfx->frame != NULL || swapchain->surface == NULL ||
+	    !gfx_present_mode_valid(present_mode)) {
+		return 1;
+	}
+	if (swapchain->present_mode == present_mode) {
+		return 0;
+	}
+
+	gfx_present_mode_t old_present_mode	   = swapchain->present_mode;
+	gfx_present_mode_t old_actual_present_mode = swapchain->actual_present_mode;
+	gfx_format_t old_format			   = swapchain->format;
+	u16 old_width				   = swapchain->width;
+	u16 old_height				   = swapchain->height;
+
+	gfx_present_mode_t actual = gfx_swapchain_default_actual_present_mode(swapchain, present_mode);
+	if (swapchain->surface->ops != NULL && swapchain->surface->ops->present_mode != NULL &&
+	    swapchain->surface->ops->present_mode(swapchain->surface, present_mode, &actual)) {
+		return 1;
+	}
+
+	swapchain->present_mode	       = present_mode;
+	swapchain->actual_present_mode = actual;
+	if ((swapchain->surface->ops == NULL || swapchain->surface->ops->present_mode == NULL) && swapchain->gfx->drv != NULL &&
+	    swapchain->gfx->drv->swapchain_resize != NULL) {
+		if (swapchain->gfx->drv->swapchain_resize(swapchain, swapchain->width, swapchain->height)) {
+			swapchain->present_mode	       = old_present_mode;
+			swapchain->actual_present_mode = old_actual_present_mode;
+			swapchain->format	       = old_format;
+			swapchain->width	       = old_width;
+			swapchain->height	       = old_height;
+			return 1;
+		}
+		swapchain->generation++;
+		if (gfx_swapchain_images_refresh(swapchain, swapchain->image_count)) {
+			return 1;
+		}
+	}
+	swapchain->acquired = 0;
 	return 0;
 }
 

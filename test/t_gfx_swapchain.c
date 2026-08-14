@@ -14,6 +14,8 @@ static int t_gfx_swapchain_resize_ret;
 static int t_gfx_swapchain_present_ret;
 static int t_gfx_swapchain_refresh_ret;
 static int t_gfx_swapchain_acquire_ret;
+static int t_gfx_swapchain_present_mode_calls;
+static int t_gfx_swapchain_present_mode_ret;
 static u32 t_gfx_swapchain_init_image_count;
 static u32 t_gfx_swapchain_acquire_index;
 static int t_gfx_swapchain_acquire_null_image;
@@ -22,6 +24,8 @@ static gfx_swapchain_t *t_gfx_swapchain;
 static const gfx_swapchain_config_t *t_gfx_swapchain_config;
 static u16 t_gfx_swapchain_width;
 static u16 t_gfx_swapchain_height;
+static gfx_present_mode_t t_gfx_swapchain_requested_present_mode;
+static gfx_present_mode_t t_gfx_swapchain_actual_present_mode;
 
 static int t_gfx_swapchain_init(gfx_swapchain_t *swapchain, const gfx_swapchain_config_t *config)
 {
@@ -79,6 +83,19 @@ static int t_gfx_swapchain_present(gfx_swapchain_t *swapchain)
 	return t_gfx_swapchain_present_ret;
 }
 
+static int t_gfx_surface_present_mode(gfx_surface_t *surface, gfx_present_mode_t requested, gfx_present_mode_t *actual)
+{
+	(void)surface;
+
+	t_gfx_swapchain_present_mode_calls++;
+	t_gfx_swapchain_requested_present_mode = requested;
+	if (t_gfx_swapchain_present_mode_ret) {
+		return t_gfx_swapchain_present_mode_ret;
+	}
+	*actual = t_gfx_swapchain_actual_present_mode;
+	return 0;
+}
+
 static gfx_driver_t t_gfx_swapchain_driver = {
 	.name		   = "test-swapchain",
 	.api		   = GFX_API_SOFTWARE,
@@ -103,6 +120,8 @@ static void t_gfx_swapchain_reset(void)
 	t_gfx_swapchain_present_ret		      = 0;
 	t_gfx_swapchain_refresh_ret		      = 0;
 	t_gfx_swapchain_acquire_ret		      = 0;
+	t_gfx_swapchain_present_mode_calls	      = 0;
+	t_gfx_swapchain_present_mode_ret	      = 0;
 	t_gfx_swapchain_init_image_count	      = 0;
 	t_gfx_swapchain_acquire_index		      = 0;
 	t_gfx_swapchain_acquire_null_image	      = 0;
@@ -111,6 +130,8 @@ static void t_gfx_swapchain_reset(void)
 	t_gfx_swapchain_config			      = NULL;
 	t_gfx_swapchain_width			      = 0;
 	t_gfx_swapchain_height			      = 0;
+	t_gfx_swapchain_requested_present_mode	      = GFX_PRESENT_MODE_DEFAULT;
+	t_gfx_swapchain_actual_present_mode	      = GFX_PRESENT_MODE_DEFAULT;
 }
 
 TEST(gfx_swapchain_init_rejects_invalid_args)
@@ -564,6 +585,202 @@ TEST(gfx_swapchain_resize_success_and_failure)
 	END;
 }
 
+TEST(gfx_swapchain_set_present_mode_rejects_invalid_args)
+{
+	START;
+
+	gfx_surface_t surface = {.api = GFX_API_SOFTWARE};
+	gfx_frame_t frame     = {0};
+	gfx_t gfx	      = {.drv = &t_gfx_swapchain_driver};
+	gfx_image_t images[1] = {0};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(NULL, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&(gfx_swapchain_t){0}, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&(gfx_swapchain_t){.gfx = &(gfx_t){.frame = &frame}, .surface = &surface},
+						 GFX_PRESENT_MODE_VSYNC),
+		  1);
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&(gfx_swapchain_t){.gfx = &gfx}, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&(gfx_swapchain_t){.gfx = &gfx, .surface = &surface}, (gfx_present_mode_t)99), 1);
+
+	gfx_swapchain_config_t swapchain_config = {
+		.format		 = GFX_FORMAT_RGBA8,
+		.surface	 = &surface,
+		.width		 = 1,
+		.height		 = 1,
+		.images		 = images,
+		.min_image_count = 1,
+		.image_capacity	 = 1,
+		.present_mode	 = (gfx_present_mode_t)99,
+	};
+	EXPECT_NULL(gfx_swapchain_init(&(gfx_swapchain_t){0}, &gfx, &swapchain_config));
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_unchanged_is_noop)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	gfx_t gfx		  = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE, .ops = &(gfx_surface_ops_t){.present_mode = t_gfx_surface_present_mode}};
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.present_mode	     = GFX_PRESENT_MODE_VSYNC,
+		.actual_present_mode = GFX_PRESENT_MODE_VSYNC,
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 0);
+	EXPECT_EQ(t_gfx_swapchain_present_mode_calls, 0);
+	EXPECT_EQ(t_gfx_swapchain_resize_calls, 0);
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_uses_surface_present_mode)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	t_gfx_swapchain_actual_present_mode = GFX_PRESENT_MODE_VSYNC;
+	gfx_t gfx			    = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE, .ops = &(gfx_surface_ops_t){.present_mode = t_gfx_surface_present_mode}};
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.present_mode	     = GFX_PRESENT_MODE_IMMEDIATE,
+		.actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE,
+		.acquired	     = 1,
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 0);
+	EXPECT_EQ(t_gfx_swapchain_present_mode_calls, 1);
+	EXPECT_EQ(t_gfx_swapchain_requested_present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_EQ(t_gfx_swapchain_resize_calls, 0);
+	EXPECT_EQ(swapchain.present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_EQ(swapchain.acquired, 0);
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_returns_surface_failure)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	t_gfx_swapchain_present_mode_ret = 1;
+	gfx_t gfx			 = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	  = {.api = GFX_API_SOFTWARE, .ops = &(gfx_surface_ops_t){.present_mode = t_gfx_surface_present_mode}};
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.present_mode	     = GFX_PRESENT_MODE_IMMEDIATE,
+		.actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE,
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(t_gfx_swapchain_present_mode_calls, 1);
+	EXPECT_EQ(swapchain.present_mode, GFX_PRESENT_MODE_IMMEDIATE);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_IMMEDIATE);
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_resizes_without_surface_callback)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	gfx_t gfx		  = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	  = {.api = GFX_API_OPENGL};
+	gfx_image_t images[2]	  = {0};
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.format		     = GFX_FORMAT_RGBA8,
+		.width		     = 2,
+		.height		     = 3,
+		.image_count	     = 1,
+		.present_mode	     = GFX_PRESENT_MODE_IMMEDIATE,
+		.actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE,
+		.generation	     = 4,
+		.images		     = images,
+		.image_capacity	     = sizeof(images) / sizeof(images[0]),
+		.acquired	     = 1,
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 0);
+	EXPECT_EQ(t_gfx_swapchain_resize_calls, 1);
+	EXPECT_EQ(t_gfx_swapchain_width, 2);
+	EXPECT_EQ(t_gfx_swapchain_height, 3);
+	EXPECT_EQ(swapchain.present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_VSYNC);
+	EXPECT_EQ(swapchain.generation, 5);
+	EXPECT_EQ(swapchain.acquired, 0);
+	EXPECT_EQ(images[0].generation, swapchain.generation);
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_rolls_back_resize_failure)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	t_gfx_swapchain_resize_ret = 1;
+	gfx_t gfx		   = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	   = {.api = GFX_API_OPENGL};
+
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.format		     = GFX_FORMAT_RGBA8,
+		.width		     = 2,
+		.height		     = 3,
+		.present_mode	     = GFX_PRESENT_MODE_IMMEDIATE,
+		.actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE,
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(t_gfx_swapchain_resize_calls, 1);
+	EXPECT_EQ(swapchain.present_mode, GFX_PRESENT_MODE_IMMEDIATE);
+	EXPECT_EQ(swapchain.actual_present_mode, GFX_PRESENT_MODE_IMMEDIATE);
+	EXPECT_EQ(swapchain.format, GFX_FORMAT_RGBA8);
+	EXPECT_EQ(swapchain.width, 2);
+	EXPECT_EQ(swapchain.height, 3);
+
+	END;
+}
+
+TEST(gfx_swapchain_set_present_mode_reports_refresh_failure)
+{
+	START;
+
+	t_gfx_swapchain_reset();
+	gfx_t gfx		  = {.drv = &t_gfx_swapchain_driver};
+	gfx_surface_t surface	  = {.api = GFX_API_OPENGL};
+	gfx_image_t images[1]	  = {0};
+	gfx_swapchain_t swapchain = {
+		.gfx		     = &gfx,
+		.surface	     = &surface,
+		.format		     = GFX_FORMAT_RGBA8,
+		.width		     = 2,
+		.height		     = 3,
+		.image_count	     = 2,
+		.present_mode	     = GFX_PRESENT_MODE_IMMEDIATE,
+		.actual_present_mode = GFX_PRESENT_MODE_IMMEDIATE,
+		.images		     = images,
+		.image_capacity	     = sizeof(images) / sizeof(images[0]),
+	};
+
+	EXPECT_EQ(gfx_swapchain_set_present_mode(&swapchain, GFX_PRESENT_MODE_VSYNC), 1);
+	EXPECT_EQ(t_gfx_swapchain_resize_calls, 1);
+
+	END;
+}
+
 TEST(gfx_swapchain_present_rejects_invalid_args)
 {
 	START;
@@ -742,6 +959,13 @@ STEST(gfx_swapchain)
 	RUN(gfx_swapchain_info_and_images);
 	RUN(gfx_swapchain_resize_rejects_invalid_args);
 	RUN(gfx_swapchain_resize_success_and_failure);
+	RUN(gfx_swapchain_set_present_mode_rejects_invalid_args);
+	RUN(gfx_swapchain_set_present_mode_unchanged_is_noop);
+	RUN(gfx_swapchain_set_present_mode_uses_surface_present_mode);
+	RUN(gfx_swapchain_set_present_mode_returns_surface_failure);
+	RUN(gfx_swapchain_set_present_mode_resizes_without_surface_callback);
+	RUN(gfx_swapchain_set_present_mode_rolls_back_resize_failure);
+	RUN(gfx_swapchain_set_present_mode_reports_refresh_failure);
 	RUN(gfx_swapchain_acquire_rejects_invalid_args);
 	RUN(gfx_swapchain_acquire_refresh_and_driver_failures);
 	RUN(gfx_swapchain_acquire_without_driver_returns_first_image);

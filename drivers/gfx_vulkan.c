@@ -1024,8 +1024,6 @@ static VkPresentModeKHR gfx_vulkan_present_mode_choose(const VkPresentModeKHR *m
 	case GFX_PRESENT_MODE_DEFAULT:
 	case GFX_PRESENT_MODE_VSYNC:
 		break;
-	default:
-		break;
 	}
 
 	*actual = GFX_PRESENT_MODE_VSYNC;
