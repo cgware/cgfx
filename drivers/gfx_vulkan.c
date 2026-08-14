@@ -47,11 +47,13 @@ typedef struct gfx_vulkan_s {
 	gfx_vulkan_frame_t frame;
 	int surface_enabled;
 	int swapchain_enabled;
+	int fill_mode_non_solid;
 	PFN_vkGetInstanceProcAddr GetInstanceProcAddr;
 	PFN_vkGetDeviceProcAddr GetDeviceProcAddr;
 	PFN_vkDestroyInstance DestroyInstance;
 	PFN_vkEnumeratePhysicalDevices EnumeratePhysicalDevices;
 	PFN_vkGetPhysicalDeviceQueueFamilyProperties GetPhysicalDeviceQueueFamilyProperties;
+	PFN_vkGetPhysicalDeviceFeatures GetPhysicalDeviceFeatures;
 	PFN_vkGetPhysicalDeviceMemoryProperties GetPhysicalDeviceMemoryProperties;
 	PFN_vkGetPhysicalDeviceFormatProperties GetPhysicalDeviceFormatProperties;
 	PFN_vkGetPhysicalDeviceSurfaceSupportKHR GetPhysicalDeviceSurfaceSupportKHR;
@@ -513,12 +515,16 @@ static int gfx_vulkan_create_device(gfx_t *gfx, const gfx_plan_t *plan)
 		owned_extensions[plan_extension_count] = swapchain_extension;
 		device_extensions		       = owned_extensions;
 	}
+	VkPhysicalDeviceFeatures features = {
+		.fillModeNonSolid = vulkan->fill_mode_non_solid,
+	};
 	VkDeviceCreateInfo create = {
 		.sType			 = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
 		.queueCreateInfoCount	 = 1,
 		.pQueueCreateInfos	 = &queue,
 		.enabledExtensionCount	 = device_extension_count,
 		.ppEnabledExtensionNames = device_extensions,
+		.pEnabledFeatures	 = &features,
 	};
 	int create_failed = !vk_ok(vulkan->CreateDevice(vulkan->physical_device, &create, NULL, &vulkan->device));
 	if (owned_extensions != NULL) {
@@ -657,9 +663,9 @@ static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 	}
 
 	if (LOAD_VK_INST(vulkan, DestroyInstance) || LOAD_VK_INST(vulkan, EnumeratePhysicalDevices) ||
-	    LOAD_VK_INST(vulkan, GetPhysicalDeviceQueueFamilyProperties) || LOAD_VK_INST(vulkan, GetPhysicalDeviceMemoryProperties) ||
-	    LOAD_VK_INST(vulkan, GetPhysicalDeviceFormatProperties) || LOAD_VK_INST(vulkan, CreateDevice) ||
-	    LOAD_VK_INST(vulkan, DestroyDevice) || LOAD_VK_INST(vulkan, GetDeviceProcAddr)) {
+	    LOAD_VK_INST(vulkan, GetPhysicalDeviceQueueFamilyProperties) || LOAD_VK_INST(vulkan, GetPhysicalDeviceFeatures) ||
+	    LOAD_VK_INST(vulkan, GetPhysicalDeviceMemoryProperties) || LOAD_VK_INST(vulkan, GetPhysicalDeviceFormatProperties) ||
+	    LOAD_VK_INST(vulkan, CreateDevice) || LOAD_VK_INST(vulkan, DestroyDevice) || LOAD_VK_INST(vulkan, GetDeviceProcAddr)) {
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 	if (vulkan->surface_enabled &&
@@ -668,7 +674,13 @@ static int gfx_vulkan_init(gfx_t *gfx, const gfx_config_t *config)
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
-	if (gfx_vulkan_pick_device(vulkan) || gfx_vulkan_create_device(gfx, config->plan)) {
+	if (gfx_vulkan_pick_device(vulkan)) {
+		return gfx_vulkan_init_free(gfx, vulkan);
+	}
+	VkPhysicalDeviceFeatures features = {0};
+	vulkan->GetPhysicalDeviceFeatures(vulkan->physical_device, &features);
+	vulkan->fill_mode_non_solid = features.fillModeNonSolid != 0;
+	if (gfx_vulkan_create_device(gfx, config->plan)) {
 		return gfx_vulkan_init_free(gfx, vulkan);
 	}
 
@@ -2460,6 +2472,10 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 
 	gfx_vulkan_t *vulkan			 = pipeline->gfx->data;
 	gfx_vulkan_render_pass_t *vk_render_pass = config->render_pass->data;
+	if (config->raster.fill == GFX_FILL_WIREFRAME && !vulkan->fill_mode_non_solid) {
+		log_error("cgfx", "gfx_vulkan", NULL, "Vulkan wireframe pipeline requires fillModeNonSolid support");
+		return 1;
+	}
 
 	gfx_vulkan_pipeline_t *vk_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_vulkan_pipeline_t));
 	if (vk_pipeline == NULL) {
@@ -2619,7 +2635,7 @@ static int gfx_vulkan_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	};
 	VkPipelineRasterizationStateCreateInfo raster = {
 		.sType	     = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-		.polygonMode = VK_POLYGON_MODE_FILL,
+		.polygonMode = config->raster.fill == GFX_FILL_WIREFRAME ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL,
 		.cullMode    = config->raster.cull == GFX_CULL_NONE    ? VK_CULL_MODE_NONE
 			       : config->raster.cull == GFX_CULL_FRONT ? VK_CULL_MODE_FRONT_BIT
 								       : VK_CULL_MODE_BACK_BIT,

@@ -834,6 +834,97 @@ TEST(gfx_software_draw_culls_backfaces)
 	END;
 }
 
+TEST(gfx_software_draw_wireframe_triangle)
+{
+	START;
+
+	u8 pixels[64]		      = {0};
+	gfx_t gfx		      = {0};
+	gfx_image_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	gfx_driver_t *drv	      = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+	EXPECT_PTR(gfx_image_init_memory(&target,
+					 &gfx,
+					 &(gfx_image_memory_config_t){
+						 .format = GFX_FORMAT_RGBA8,
+						 .data	 = pixels,
+						 .width	 = 4,
+						 .height = 4,
+						 .stride = 16,
+					 }),
+		   &target);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.depth_format = GFX_FORMAT_D32_FLOAT,
+						.load	      = GFX_LOAD_CLEAR,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	gfx_shader_t shader = {0};
+	EXPECT_PTR(gfx_shader_init(&shader, &gfx, &(gfx_shader_config_t){.source = STRV("software")}), &shader);
+	gfx_pipeline_t pipeline = {0};
+	EXPECT_PTR(gfx_pipeline_init(&pipeline,
+				     &gfx,
+				     &(gfx_pipeline_config_t){
+					     .render_pass = &render_pass,
+					     .vs	  = shader,
+					     .fs	  = shader,
+					     .depth	  = {.test = 1, .write = 1, .compare = GFX_COMPARE_LESS},
+					     .raster	  = {.front_face = GFX_WINDING_COUNTER_CLOCKWISE, .fill = GFX_FILL_WIREFRAME},
+				     }),
+		   &pipeline);
+	gfx_buffer_t buffer	   = {0};
+	gfx_vertex_2d_t vertices[] = {
+		{.x = -1.0f, .y = -1.0f, .r = 1.0f, .a = 1.0f},
+		{.x = 1.0f, .y = -1.0f, .g = 1.0f, .a = 1.0f},
+		{.x = -1.0f, .y = 1.0f, .b = 1.0f, .a = 1.0f},
+	};
+	EXPECT_PTR(gfx_buffer_init(&buffer,
+				   &gfx,
+				   &(gfx_buffer_config_t){
+					   .type  = GFX_BUFFER_VERTEX,
+					   .usage = GFX_BUFFER_USAGE_STATIC,
+					   .size  = sizeof(vertices),
+					   .data  = vertices,
+				   }),
+		   &buffer);
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer,
+					     &frame,
+					     &(gfx_pass_config_t){
+						     .clear	  = {0.0f, 0.0f, 0.0f, 1.0f},
+						     .clear_depth = 1.0f,
+						     .viewport	  = {.width = 5, .height = 5},
+					     }),
+		  0);
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+
+	u8 readback[64] = {0};
+	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = readback, .stride = 16}), 0);
+	EXPECT_NE(readback[3], 0);
+
+	gfx_buffer_free(&buffer);
+	gfx_pipeline_free(&pipeline);
+	gfx_shader_free(&shader);
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_draw_indexed_triangle)
 {
 	START;
@@ -2180,6 +2271,7 @@ STEST(gfx_software)
 	RUN(gfx_software_swapchain_free_rejects_missing_image_storage_direct);
 	RUN(gfx_software_draw_triangle);
 	RUN(gfx_software_draw_culls_backfaces);
+	RUN(gfx_software_draw_wireframe_triangle);
 	RUN(gfx_software_draw_indexed_triangle);
 	RUN(gfx_software_draw_shader_pipeline_vec3_uniform);
 	RUN(gfx_software_shader_pipeline_uniform_failures);

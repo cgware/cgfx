@@ -460,6 +460,13 @@ typedef struct VkPhysicalDeviceFeatures_s {
 	VkBool32 inheritedQueries;
 } VkPhysicalDeviceFeatures;
 
+/**
+ * @brief Reports capabilities of a physical device
+ * @param[in] physicalDevice created by PFN_vkEnumeratePhysicalDevices()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkGetPhysicalDeviceFeatures.html
+ */
+typedef void (*PFN_vkGetPhysicalDeviceFeatures)(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures *pFeatures);
+
 typedef struct VkDeviceCreateInfo_s {
 	VkStructureType sType;
 	const void *pNext;
@@ -1359,6 +1366,7 @@ typedef VkFlags VkPipelineRasterizationStateCreateFlags;
 
 typedef enum VkPolygonMode_e {
 	VK_POLYGON_MODE_FILL	 = 0,
+	VK_POLYGON_MODE_LINE	 = 1,
 	VK_POLYGON_MODE_MAX_ENUM = 0x7FFFFFFF
 } VkPolygonMode;
 

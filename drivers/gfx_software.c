@@ -710,6 +710,65 @@ static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 	pixel[3]  = color[3];
 }
 
+static float float_abs_local(float value)
+{
+	return value < 0.0f ? -value : value;
+}
+
+static int line_steps(const gfx_software_vertex_t *a, const gfx_software_vertex_t *b)
+{
+	float dx = float_abs_local(b->x - a->x);
+	float dy = float_abs_local(b->y - a->y);
+	float d	 = dx > dy ? dx : dy;
+	return d < 1.0f ? 1 : (int)d;
+}
+
+static int pixel_in_viewport(const gfx_software_t *render, int x, int y)
+{
+	u32 x1 = (u32)render->viewport_x + render->viewport_width;
+	u32 y1 = (u32)render->viewport_y + render->viewport_height;
+	if (x1 > render->image.width) {
+		x1 = render->image.width;
+	}
+	if (y1 > render->image.height) {
+		y1 = render->image.height;
+	}
+	return x >= render->viewport_x && y >= render->viewport_y && x < (int)x1 && y < (int)y1;
+}
+
+static void raster_line(gfx_software_t *render, const gfx_frame_t *frame, const gfx_software_vertex_t *a, const gfx_software_vertex_t *b)
+{
+	int depth_test	= frame->pipeline->depth.test && frame->render_pass->depth_format != GFX_FORMAT_NONE && render->depth != NULL;
+	int depth_write = frame->pipeline->depth.write && frame->render_pass->depth_format != GFX_FORMAT_NONE && render->depth != NULL;
+	int steps	= line_steps(a, b);
+	for (int i = 0; i <= steps; i++) {
+		float t = (float)i / (float)steps;
+		int x	= (int)(a->x + (b->x - a->x) * t);
+		int y	= (int)(a->y + (b->y - a->y) * t);
+		if (!pixel_in_viewport(render, x, y)) {
+			continue;
+		}
+
+		float z = a->z + (b->z - a->z) * t;
+		if (depth_test || depth_write) {
+			size_t index = (size_t)y * render->image.width + (u16)x;
+			if (depth_test && z >= render->depth[index]) {
+				continue;
+			}
+			if (depth_write) {
+				render->depth[index] = z;
+			}
+		}
+		u8 color[4] = {
+			color_u8(a->r + (b->r - a->r) * t),
+			color_u8(a->g + (b->g - a->g) * t),
+			color_u8(a->b + (b->b - a->b) * t),
+			color_u8(a->a + (b->a - a->a) * t),
+		};
+		draw_pixel(render, (u16)x, (u16)y, color);
+	}
+}
+
 static float clip_distance(const gfx_software_vertex_t *vertex, u32 plane)
 {
 	switch (plane) {
@@ -815,6 +874,12 @@ static void raster_triangle(gfx_software_t *render, const gfx_frame_t *frame, co
 		return;
 	}
 	if (triangle_culled(frame->pipeline, area)) {
+		return;
+	}
+	if (frame->pipeline->raster.fill == GFX_FILL_WIREFRAME) {
+		raster_line(render, frame, &vertices[0], &vertices[1]);
+		raster_line(render, frame, &vertices[1], &vertices[2]);
+		raster_line(render, frame, &vertices[2], &vertices[0]);
 		return;
 	}
 

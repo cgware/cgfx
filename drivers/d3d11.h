@@ -328,7 +328,8 @@ typedef HRESULT (*PFN_CreateDepthStencilState)(ID3D11Device *This, const D3D11_D
 					       ID3D11DepthStencilState **ppDepthStencilState);
 
 typedef enum D3D11_FILL_MODE_e {
-	D3D11_FILL_SOLID = 3,
+	D3D11_FILL_WIREFRAME = 2,
+	D3D11_FILL_SOLID     = 3,
 } D3D11_FILL_MODE_t;
 typedef UINT D3D11_FILL_MODE;
 

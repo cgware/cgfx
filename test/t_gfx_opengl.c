@@ -15,6 +15,7 @@ static int t_gl_disable_calls;
 static int t_gl_depth_func_calls;
 static int t_gl_front_face_calls;
 static int t_gl_cull_face_calls;
+static int t_gl_polygon_mode_calls;
 static int t_gl_gen_framebuffers_calls;
 static int t_gl_delete_framebuffers_calls;
 static int t_gl_bind_framebuffer_calls;
@@ -64,6 +65,8 @@ static unsigned int t_gl_cap;
 static unsigned int t_gl_depth_func;
 static unsigned int t_gl_front_face;
 static unsigned int t_gl_cull_face;
+static unsigned int t_gl_polygon_face;
+static unsigned int t_gl_polygon_mode;
 static unsigned int t_gl_framebuffer;
 static unsigned int t_gl_texture;
 static unsigned int t_gl_framebuffer_status;
@@ -213,6 +216,7 @@ typedef struct t_gfx_opengl_data_s {
 	PFN_glDepthFunc DepthFunc;
 	PFN_glFrontFace FrontFace;
 	PFN_glCullFace CullFace;
+	PFN_glPolygonMode PolygonMode;
 } t_gfx_opengl_data_t;
 
 typedef struct t_gfx_opengl_target_data_s {
@@ -322,6 +326,13 @@ static void t_glCullFace(unsigned int mode)
 {
 	t_gl_cull_face_calls++;
 	t_gl_cull_face = mode;
+}
+
+static void t_glPolygonMode(unsigned int face, unsigned int mode)
+{
+	t_gl_polygon_mode_calls++;
+	t_gl_polygon_face = face;
+	t_gl_polygon_mode = mode;
 }
 
 static void t_glGenFramebuffers(int count, unsigned int *framebuffers)
@@ -734,6 +745,9 @@ static void *t_gfx_opengl_surface_symbol(strv_t name)
 	if (strv_eq(name, STRV("glCullFace"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCullFace);
 	}
+	if (strv_eq(name, STRV("glPolygonMode"))) {
+		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glPolygonMode);
+	}
 	if (strv_eq(name, STRV("glEnableVertexAttribArray"))) {
 		return t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnableVertexAttribArray);
 	}
@@ -812,6 +826,7 @@ static void t_gfx_opengl_reset(void)
 	t_gl_depth_func_calls		       = 0;
 	t_gl_front_face_calls		       = 0;
 	t_gl_cull_face_calls		       = 0;
+	t_gl_polygon_mode_calls		       = 0;
 	t_gl_gen_framebuffers_calls	       = 0;
 	t_gl_delete_framebuffers_calls	       = 0;
 	t_gl_bind_framebuffer_calls	       = 0;
@@ -860,6 +875,8 @@ static void t_gfx_opengl_reset(void)
 	t_gl_depth_func			       = 0;
 	t_gl_front_face			       = 0;
 	t_gl_cull_face			       = 0;
+	t_gl_polygon_face		       = 0;
+	t_gl_polygon_mode		       = 0;
 	t_gl_framebuffer		       = 0;
 	t_gl_texture			       = 0;
 	t_gl_framebuffer_status		       = 0x8CD5;
@@ -961,6 +978,7 @@ static void t_gfx_opengl_gl_symbols(proc_t *proc, strv_t lib)
 	proc_setdlsym(proc, lib, STRV("glDepthFunc"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glDepthFunc));
 	proc_setdlsym(proc, lib, STRV("glFrontFace"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glFrontFace));
 	proc_setdlsym(proc, lib, STRV("glCullFace"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glCullFace));
+	proc_setdlsym(proc, lib, STRV("glPolygonMode"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glPolygonMode));
 	proc_setdlsym(
 		proc, lib, STRV("glEnableVertexAttribArray"), t_gfx_opengl_symbol((t_gfx_opengl_symbol_t)t_glEnableVertexAttribArray));
 	proc_setdlsym(
@@ -2684,6 +2702,45 @@ TEST(gfx_opengl_pipeline_init_unsupported_input_layout)
 	END;
 }
 
+TEST(gfx_opengl_pipeline_init_wireframe_requires_polygon_mode)
+{
+	START;
+
+	proc_t proc = {0};
+	gfx_t gfx   = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_shader_t vs		      = {0};
+	gfx_shader_t fs		      = {0};
+	gfx_render_pass_t render_pass = {0};
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &vs, GFX_SHADER_STAGE_VERTEX), 0);
+	EXPECT_EQ(t_gfx_opengl_shader_stage(&gfx, &fs, GFX_SHADER_STAGE_FRAGMENT), 0);
+	EXPECT_PTR(gfx_render_pass_init(&render_pass,
+					&gfx,
+					&(gfx_render_pass_config_t){
+						.color_format = GFX_FORMAT_RGBA8,
+						.load	      = GFX_LOAD_LOAD,
+						.store	      = GFX_STORE_STORE,
+					}),
+		   &render_pass);
+	t_gfx_opengl_active_render_pass		       = &render_pass;
+	gfx_pipeline_t pipeline			       = {0};
+	gfx_pipeline_config_t config		       = t_gfx_opengl_pipeline_config(vs, fs);
+	config.raster.fill			       = GFX_FILL_WIREFRAME;
+	((t_gfx_opengl_data_t *)gfx.data)->PolygonMode = NULL;
+
+	log_set_quiet(0, 1);
+	EXPECT_NULL(gfx_pipeline_init(&pipeline, &gfx, &config));
+	log_set_quiet(0, 0);
+
+	t_gfx_opengl_active_render_pass = NULL;
+	gfx_render_pass_free(&render_pass);
+	gfx_shader_free(&fs);
+	gfx_shader_free(&vs);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_opengl_end_null_frame)
 {
 	START;
@@ -2829,6 +2886,45 @@ TEST(gfx_opengl_pipeline_bind_sets_cull_state)
 	EXPECT_EQ(t_gl_cull_face, GL_FRONT);
 
 	((t_gfx_opengl_data_t *)gfx.data)->CullFace = NULL;
+	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
+
+	gfx.frame = NULL;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_opengl_pipeline_bind_sets_fill_mode)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_opengl_init_gfx(&gfx, &proc), 0);
+	gfx_render_pass_t render_pass		     = {.gfx = &gfx, .data = &render_pass};
+	t_gfx_opengl_pipeline_data_t driver_pipeline = {.program = 99};
+
+	gfx_pipeline_t pipeline = {
+		.gfx	     = &gfx,
+		.render_pass = &render_pass,
+		.raster	     = {.front_face = GFX_WINDING_COUNTER_CLOCKWISE, .fill = GFX_FILL_WIREFRAME},
+		.data	     = &driver_pipeline,
+	};
+	gfx_frame_t frame = {.gfx = &gfx, .render_pass = &render_pass, .active = 1};
+	gfx.frame	  = &frame;
+
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_gl_polygon_mode_calls, 1);
+	EXPECT_EQ(t_gl_polygon_face, GL_FRONT_AND_BACK);
+	EXPECT_EQ(t_gl_polygon_mode, GL_LINE);
+
+	pipeline.raster.fill = GFX_FILL_SOLID;
+	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
+	EXPECT_EQ(t_gl_polygon_mode_calls, 2);
+	EXPECT_EQ(t_gl_polygon_mode, GL_FILL);
+
+	pipeline.raster.fill			       = GFX_FILL_WIREFRAME;
+	((t_gfx_opengl_data_t *)gfx.data)->PolygonMode = NULL;
 	EXPECT_EQ(gfx.drv->pipeline_bind(&frame, &pipeline), 1);
 
 	gfx.frame = NULL;
@@ -4496,12 +4592,14 @@ STEST(gfx_opengl)
 	RUN(gfx_opengl_pipeline_init_rejects_large_layout_stride_direct);
 	RUN(gfx_opengl_pipeline_init_link_failure_without_info_log);
 	RUN(gfx_opengl_pipeline_init_unsupported_input_layout);
+	RUN(gfx_opengl_pipeline_init_wireframe_requires_polygon_mode);
 	RUN(gfx_opengl_pipeline_init_binds_uniform_blocks);
 	RUN(gfx_opengl_end_null_frame);
 	RUN(gfx_opengl_pipeline_bind_uses_program);
 	RUN(gfx_opengl_pipeline_bind_make_current_failure);
 	RUN(gfx_opengl_pipeline_bind_sets_depth_state);
 	RUN(gfx_opengl_pipeline_bind_sets_cull_state);
+	RUN(gfx_opengl_pipeline_bind_sets_fill_mode);
 	RUN(gfx_opengl_pipeline_bind_depth_missing_callbacks);
 	RUN(gfx_opengl_buffer_bind_sets_attributes);
 	RUN(gfx_opengl_buffer_bind_make_current_failure);

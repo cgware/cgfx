@@ -1276,7 +1276,7 @@ static int gfx_d3d11_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline_
 	d3d_pipeline->pixel_shader  = fs->shader.pixel;
 
 	D3D11_RASTERIZER_DESC raster = {
-		.FillMode	       = D3D11_FILL_SOLID,
+		.FillMode	       = config->raster.fill == GFX_FILL_WIREFRAME ? D3D11_FILL_WIREFRAME : D3D11_FILL_SOLID,
 		.CullMode	       = config->raster.cull == GFX_CULL_NONE	 ? D3D11_CULL_NONE
 					 : config->raster.cull == GFX_CULL_FRONT ? D3D11_CULL_FRONT
 										 : D3D11_CULL_BACK,

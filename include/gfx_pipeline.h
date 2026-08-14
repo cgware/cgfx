@@ -38,9 +38,15 @@ typedef enum gfx_cull_mode_e {
 	GFX_CULL_BACK,
 } gfx_cull_mode_t;
 
+typedef enum gfx_fill_mode_e {
+	GFX_FILL_SOLID,
+	GFX_FILL_WIREFRAME,
+} gfx_fill_mode_t;
+
 typedef struct gfx_raster_state_s {
 	gfx_winding_t front_face;
 	gfx_cull_mode_t cull;
+	gfx_fill_mode_t fill;
 } gfx_raster_state_t;
 
 typedef struct gfx_pipeline_config_s {

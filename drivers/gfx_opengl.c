@@ -55,6 +55,7 @@ typedef struct gfx_opengl_s {
 	PFN_glDepthFunc DepthFunc;
 	PFN_glFrontFace FrontFace;
 	PFN_glCullFace CullFace;
+	PFN_glPolygonMode PolygonMode;
 } gfx_opengl_t;
 
 typedef struct gfx_opengl_render_pass_s {
@@ -213,6 +214,7 @@ static int gfx_opengl_load_symbols(gfx_t *gfx, gfx_surface_t *surface)
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, DepthFunc);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, FrontFace);
 	LOAD_GL_OPTIONAL(gfx, opengl, surface, CullFace);
+	LOAD_GL_OPTIONAL(gfx, opengl, surface, PolygonMode);
 
 	return 0;
 }
@@ -1090,6 +1092,9 @@ static int gfx_opengl_pipeline_init(gfx_pipeline_t *pipeline, const gfx_pipeline
 	if (gfx_opengl_make_current(opengl, "pipeline initialization")) {
 		return 1;
 	}
+	if (config->raster.fill == GFX_FILL_WIREFRAME && opengl->PolygonMode == NULL) {
+		return 1;
+	}
 
 	gfx_opengl_pipeline_t *gl_pipeline = alloc_alloc(&pipeline->gfx->alloc, sizeof(gfx_opengl_pipeline_t));
 	if (gl_pipeline == NULL) {
@@ -1166,12 +1171,17 @@ static int gfx_opengl_pipeline_bind(gfx_frame_t *frame, const gfx_pipeline_t *pi
 	}
 
 	opengl->UseProgram(gl_pipeline->program);
-	if (opengl->Enable == NULL || opengl->FrontFace == NULL || (pipeline->raster.cull == GFX_CULL_NONE && opengl->Disable == NULL) ||
+	if (opengl->Enable == NULL || opengl->FrontFace == NULL ||
+	    (pipeline->raster.fill == GFX_FILL_WIREFRAME && opengl->PolygonMode == NULL) ||
+	    (pipeline->raster.cull == GFX_CULL_NONE && opengl->Disable == NULL) ||
 	    (pipeline->raster.cull != GFX_CULL_NONE && opengl->CullFace == NULL)) {
 		return 1;
 	}
 
 	opengl->FrontFace(pipeline->raster.front_face == GFX_WINDING_CLOCKWISE ? GL_CW : GL_CCW);
+	if (opengl->PolygonMode != NULL) {
+		opengl->PolygonMode(GL_FRONT_AND_BACK, pipeline->raster.fill == GFX_FILL_WIREFRAME ? GL_LINE : GL_FILL);
+	}
 	if (pipeline->raster.cull == GFX_CULL_NONE) {
 		opengl->Disable(GL_CULL_FACE);
 	} else {

@@ -5,7 +5,8 @@
 static int gfx_raster_state_valid(gfx_raster_state_t raster)
 {
 	return (raster.front_face == GFX_WINDING_COUNTER_CLOCKWISE || raster.front_face == GFX_WINDING_CLOCKWISE) &&
-	       (raster.cull == GFX_CULL_NONE || raster.cull == GFX_CULL_FRONT || raster.cull == GFX_CULL_BACK);
+	       (raster.cull == GFX_CULL_NONE || raster.cull == GFX_CULL_FRONT || raster.cull == GFX_CULL_BACK) &&
+	       (raster.fill == GFX_FILL_SOLID || raster.fill == GFX_FILL_WIREFRAME);
 }
 
 gfx_pipeline_t *gfx_pipeline_init(gfx_pipeline_t *pipeline, gfx_t *gfx, const gfx_pipeline_config_t *config)

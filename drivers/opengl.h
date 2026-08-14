@@ -121,9 +121,15 @@ typedef enum glWinding_e {
 } glWinding_t;
 
 typedef enum glCullFace_e {
-	GL_FRONT = 0x0404,
-	GL_BACK	 = 0x0405,
+	GL_FRONT	  = 0x0404,
+	GL_BACK		  = 0x0405,
+	GL_FRONT_AND_BACK = 0x0408,
 } glCullFace_t;
+
+typedef enum glPolygonMode_e {
+	GL_LINE = 0x1B01,
+	GL_FILL = 0x1B02,
+} glPolygonMode_t;
 
 typedef enum glFramebufferStatus_e {
 	GL_FRAMEBUFFER_COMPLETE = 0x8CD5,
@@ -457,6 +463,12 @@ typedef void (*PFN_glFrontFace)(GLenum mode);
  * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glCullFace.xhtml
  */
 typedef void (*PFN_glCullFace)(GLenum mode);
+
+/**
+ * @brief Select a polygon rasterization mode
+ * @see https://registry.khronos.org/OpenGL-Refpages/gl4/html/glPolygonMode.xhtml
+ */
+typedef void (*PFN_glPolygonMode)(GLenum face, GLenum mode);
 
 /**
  * @brief Set the viewport

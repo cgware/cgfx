@@ -93,6 +93,7 @@ static int t_vk_physical_device_count;
 static int t_vk_queue_count;
 static VkFlags t_vk_optimal_features;
 static VkFlags t_vk_memory_flags;
+static VkBool32 t_vk_fill_mode_non_solid;
 static u32 t_vk_memory_type_bits;
 static VkDeviceSize t_vk_row_pitch;
 static u8 t_vk_memory[256];
@@ -383,6 +384,14 @@ static void t_vkGetPhysicalDeviceMemoryProperties(VkPhysicalDevice device, VkPhy
 	*props				    = (VkPhysicalDeviceMemoryProperties){0};
 	props->memoryTypeCount		    = 1;
 	props->memoryTypes[0].propertyFlags = t_vk_memory_flags;
+}
+
+static void t_vkGetPhysicalDeviceFeatures(VkPhysicalDevice device, VkPhysicalDeviceFeatures *features)
+{
+	(void)device;
+	*features = (VkPhysicalDeviceFeatures){
+		.fillModeNonSolid = t_vk_fill_mode_non_solid,
+	};
 }
 
 static void t_vkGetPhysicalDeviceFormatProperties(VkPhysicalDevice device, u32 format, VkFormatProperties *props)
@@ -1249,6 +1258,7 @@ static void t_vkReset(void)
 	t_vk_queue_count			   = 1;
 	t_vk_optimal_features			   = VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 	t_vk_memory_flags			   = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	t_vk_fill_mode_non_solid		   = 1;
 	t_vk_memory_type_bits			   = 1;
 	t_vk_row_pitch				   = 8;
 	t_vk_destroyed_image			   = 0;
@@ -1613,6 +1623,9 @@ static void *t_vkGetInstanceProcAddr(VkInstance instance, const char *name)
 	}
 	if (t_strcmp(name, "vkGetPhysicalDeviceMemoryProperties") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetPhysicalDeviceMemoryProperties);
+	}
+	if (t_strcmp(name, "vkGetPhysicalDeviceFeatures") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetPhysicalDeviceFeatures);
 	}
 	if (t_strcmp(name, "vkGetPhysicalDeviceFormatProperties") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkGetPhysicalDeviceFormatProperties);
@@ -7557,6 +7570,45 @@ TEST(gfx_vulkan_pipeline_init_creates_descriptors_direct)
 	END;
 }
 
+TEST(gfx_vulkan_pipeline_init_rejects_wireframe_without_feature_direct)
+{
+	START;
+
+	t_vkReset();
+	t_vk_fill_mode_non_solid = 0;
+	proc_t proc		 = {0};
+	proc_init(&proc, 0, 1, ALLOC_STD);
+	t_gfx_vulkan_symbols(&proc);
+	gfx_t gfx = {0};
+	EXPECT_PTR(gfx_init(&gfx, t_gfx_vulkan_driver(), &(gfx_config_t){0}, &proc, ALLOC_STD), &gfx);
+	t_gfx_vulkan_shader_data_t vs_data	  = {.module = 1};
+	t_gfx_vulkan_shader_data_t fs_data	  = {.module = 2};
+	t_gfx_vulkan_render_pass_data_t pass_data = {.render_pass = 3};
+	gfx_shader_t vs				  = {.gfx = &gfx, .data = &vs_data};
+	gfx_shader_t fs				  = {.gfx = &gfx, .data = &fs_data};
+	gfx_render_pass_t render_pass		  = {.gfx = &gfx, .data = &pass_data};
+	gfx_pipeline_t pipeline			  = {.gfx = &gfx};
+
+	gfx_pipeline_config_t pipeline_config = {
+		.render_pass	   = &render_pass,
+		.vs		   = vs,
+		.fs		   = fs,
+		.input_layout	   = t_gfx_vulkan_input_layout,
+		.input_layout_size = sizeof(t_gfx_vulkan_input_layout),
+		.raster		   = {.fill = GFX_FILL_WIREFRAME},
+	};
+
+	log_set_quiet(0, 1);
+	EXPECT_EQ(gfx.drv->pipeline_init(&pipeline, &pipeline_config), 1);
+	log_set_quiet(0, 0);
+	EXPECT_NULL(pipeline.data);
+	EXPECT_EQ(t_vk_create_graphics_pipelines_calls, 0);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct)
 {
 	START;
@@ -7956,6 +8008,7 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_pipeline_init_descriptor_pool_failure_direct);
 	RUN(gfx_vulkan_pipeline_init_descriptor_set_alloc_failure_direct);
 	RUN(gfx_vulkan_pipeline_init_creates_descriptors_direct);
+	RUN(gfx_vulkan_pipeline_init_rejects_wireframe_without_feature_direct);
 	RUN(gfx_vulkan_pipeline_init_attribute_alloc_failure_direct);
 	RUN(gfx_vulkan_pipeline_init_rejects_too_many_layout_elements_direct);
 	RUN(gfx_vulkan_pipeline_init_unsupported_layout_direct);
