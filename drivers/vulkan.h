@@ -29,6 +29,7 @@ typedef enum VkStructureType_e {
 	VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO			    = 5,
 	VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE			    = 6,
 	VK_STRUCTURE_TYPE_FENCE_CREATE_INFO			    = 8,
+	VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO			    = 9,
 	VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO			    = 12,
 	VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO			    = 14,
 	VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO		    = 15,
@@ -1945,6 +1946,31 @@ typedef void (*PFN_vkCmdDrawIndexed)(VkCommandBuffer commandBuffer, u32 indexCou
  */
 
 typedef u64 VkSemaphore;
+
+typedef VkFlags VkSemaphoreCreateFlags;
+
+typedef struct VkSemaphoreCreateInfo_s {
+	VkStructureType sType;
+	const void *pNext;
+	VkSemaphoreCreateFlags flags;
+} VkSemaphoreCreateInfo;
+
+/**
+ * @brief Create a new queue semaphore object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[out] pSemaphore must be freed using PFN_vkDestroySemaphore()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkCreateSemaphore.html
+ */
+typedef VkResult (*PFN_vkCreateSemaphore)(VkDevice device, const VkSemaphoreCreateInfo *pCreateInfo,
+					  const VkAllocationCallbacks *pAllocator, VkSemaphore *pSemaphore);
+
+/**
+ * @brief Destroy a semaphore object
+ * @param[in] device created by PFN_vkCreateDevice()
+ * @param[in] semaphore created by PFN_vkCreateSemaphore()
+ * @see https://docs.vulkan.org/refpages/latest/refpages/source/vkDestroySemaphore.html
+ */
+typedef void (*PFN_vkDestroySemaphore)(VkDevice device, VkSemaphore semaphore, const VkAllocationCallbacks *pAllocator);
 
 /**
  * @}

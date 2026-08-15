@@ -45,6 +45,8 @@ static int t_vk_allocate_command_buffers_calls;
 static int t_vk_free_command_buffers_calls;
 static int t_vk_create_fence_calls;
 static int t_vk_destroy_fence_calls;
+static int t_vk_create_semaphore_calls;
+static int t_vk_destroy_semaphore_calls;
 static int t_vk_create_xlib_surface_calls;
 static int t_vk_get_surface_support_calls;
 static int t_vk_get_surface_capabilities_calls;
@@ -162,6 +164,7 @@ static int t_vk_get_device_queue_null;
 static int t_vk_create_command_pool_ret;
 static int t_vk_allocate_command_buffers_ret;
 static int t_vk_create_fence_ret;
+static int t_vk_create_semaphore_ret;
 static int t_vk_create_image_ret;
 static int t_vk_allocate_memory_ret;
 static int t_vk_allocate_memory_fail_at;
@@ -182,6 +185,8 @@ static int t_vk_flush_mapped_memory_ranges_ret;
 static int t_vk_invalidate_mapped_memory_ranges_ret;
 static int t_vk_reset_fences_ret;
 static int t_vk_wait_for_fences_ret;
+static VkFence t_vk_wait_for_fences_fence;
+static VkFence t_vk_wait_for_fences_fail_fence;
 static int t_vk_reset_command_buffer_ret;
 static int t_vk_begin_command_buffer_ret;
 static int t_vk_end_command_buffer_ret;
@@ -237,14 +242,17 @@ typedef struct t_gfx_vulkan_memory_target_data_s {
 typedef struct t_gfx_vulkan_swapchain_image_data_s {
 	VkImage image;
 	VkImageView view;
-	u32 layout;
+	VkImageLayout layout;
+	VkFence in_flight;
 } t_gfx_vulkan_swapchain_image_data_t;
 
 typedef struct t_gfx_vulkan_swapchain_data_s {
 	VkSwapchainKHR swapchain;
 	u32 image_count;
 	u32 image_index;
+	u32 present_frame;
 	int acquired;
+	int present_pending;
 } t_gfx_vulkan_swapchain_data_t;
 
 typedef struct t_gfx_vulkan_render_pass_data_s {
@@ -252,11 +260,50 @@ typedef struct t_gfx_vulkan_render_pass_data_s {
 	int depth;
 } t_gfx_vulkan_render_pass_data_t;
 
+typedef struct t_gfx_vulkan_frame_sync_s {
+	VkCommandBuffer command_buffer;
+	VkFence fence;
+	VkSemaphore image_available;
+	VkSemaphore render_finished;
+} t_gfx_vulkan_frame_sync_t;
+
+typedef struct t_gfx_vulkan_frame_s {
+	VkImage image;
+	VkImage depth_image;
+	VkImageView *view;
+	VkFramebuffer *framebuffer;
+	VkImageLayout *depth_layout;
+	u32 image_index;
+	VkImageLayout old_layout;
+	VkImageLayout final_layout;
+	int active;
+	int surface;
+} t_gfx_vulkan_frame_t;
+
 typedef struct t_gfx_vulkan_data_head_s {
 	void *lib;
 	gfx_image_t *image;
 	gfx_swapchain_t *swapchain;
 } t_gfx_vulkan_data_head_t;
+
+typedef struct t_gfx_vulkan_data_s {
+	void *lib;
+	gfx_image_t *image;
+	gfx_swapchain_t *swapchain;
+	VkInstance instance;
+	VkPhysicalDevice physical_device;
+	VkDevice device;
+	VkQueue queue;
+	u32 queue_family;
+	VkCommandPool command_pool;
+	t_gfx_vulkan_frame_sync_t frames[2];
+	u32 frame_index;
+	u32 active_frame;
+	int frame_sync_active;
+	VkClearValue clear_color;
+	float clear_depth;
+	t_gfx_vulkan_frame_t frame;
+} t_gfx_vulkan_data_t;
 
 typedef struct t_gfx_vulkan_framebuffer_data_s {
 	VkFramebuffer framebuffer;
@@ -474,9 +521,12 @@ static void t_vkDestroyCommandPool(VkDevice device, VkCommandPool pool, const vo
 static int t_vkAllocateCommandBuffers(VkDevice device, const void *alloc_info, VkCommandBuffer *buffer)
 {
 	(void)device;
-	(void)alloc_info;
 	t_vk_allocate_command_buffers_calls++;
-	*buffer = 5;
+	const VkCommandBufferAllocateInfo *info = alloc_info;
+	u32 count				= info != NULL ? info->commandBufferCount : 1;
+	for (u32 i = 0; i < count; i++) {
+		buffer[i] = 5 + i;
+	}
 	return t_vk_allocate_command_buffers_ret;
 }
 
@@ -507,6 +557,24 @@ static void t_vkDestroyFence(VkDevice device, VkFence fence, const void *alloc)
 	t_vk_destroy_fence_calls++;
 }
 
+static int t_vkCreateSemaphore(VkDevice device, const void *create, const void *alloc, VkSemaphore *semaphore)
+{
+	(void)device;
+	(void)create;
+	(void)alloc;
+	t_vk_create_semaphore_calls++;
+	*semaphore = 20 + t_vk_create_semaphore_calls;
+	return t_vk_create_semaphore_ret;
+}
+
+static void t_vkDestroySemaphore(VkDevice device, VkSemaphore semaphore, const void *alloc)
+{
+	(void)device;
+	(void)semaphore;
+	(void)alloc;
+	t_vk_destroy_semaphore_calls++;
+}
+
 static int t_vkResetFences(VkDevice device, u32 count, const VkFence *fences)
 {
 	(void)device;
@@ -520,10 +588,13 @@ static int t_vkWaitForFences(VkDevice device, u32 count, const VkFence *fences, 
 {
 	(void)device;
 	(void)count;
-	(void)fences;
 	(void)all;
 	(void)timeout;
 	t_vk_wait_for_fences_calls++;
+	t_vk_wait_for_fences_fence = count > 0 ? fences[0] : 0;
+	if (count > 0 && t_vk_wait_for_fences_fail_fence != 0 && fences[0] == t_vk_wait_for_fences_fail_fence) {
+		return 1;
+	}
 	return t_vk_wait_for_fences_ret;
 }
 
@@ -1209,6 +1280,8 @@ static void t_vkReset(void)
 	t_vk_free_command_buffers_calls		   = 0;
 	t_vk_create_fence_calls			   = 0;
 	t_vk_destroy_fence_calls		   = 0;
+	t_vk_create_semaphore_calls		   = 0;
+	t_vk_destroy_semaphore_calls		   = 0;
 	t_vk_create_xlib_surface_calls		   = 0;
 	t_vk_get_surface_support_calls		   = 0;
 	t_vk_get_surface_capabilities_calls	   = 0;
@@ -1303,6 +1376,7 @@ static void t_vkReset(void)
 	t_vk_create_command_pool_ret		   = VK_SUCCESS;
 	t_vk_allocate_command_buffers_ret	   = VK_SUCCESS;
 	t_vk_create_fence_ret			   = VK_SUCCESS;
+	t_vk_create_semaphore_ret		   = VK_SUCCESS;
 	t_vk_create_image_ret			   = VK_SUCCESS;
 	t_vk_create_buffer_ret			   = VK_SUCCESS;
 	t_vk_allocate_memory_ret		   = VK_SUCCESS;
@@ -1323,6 +1397,8 @@ static void t_vkReset(void)
 	t_vk_invalidate_mapped_memory_ranges_ret   = VK_SUCCESS;
 	t_vk_reset_fences_ret			   = VK_SUCCESS;
 	t_vk_wait_for_fences_ret		   = VK_SUCCESS;
+	t_vk_wait_for_fences_fence		   = 0;
+	t_vk_wait_for_fences_fail_fence		   = 0;
 	t_vk_reset_command_buffer_ret		   = VK_SUCCESS;
 	t_vk_begin_command_buffer_ret		   = VK_SUCCESS;
 	t_vk_end_command_buffer_ret		   = VK_SUCCESS;
@@ -1428,6 +1504,12 @@ static void *t_vkGetDeviceProcAddr(VkDevice device, const char *name)
 	}
 	if (t_strcmp(name, "vkWaitForFences") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkWaitForFences);
+	}
+	if (t_strcmp(name, "vkCreateSemaphore") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateSemaphore);
+	}
+	if (t_strcmp(name, "vkDestroySemaphore") == 0) {
+		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkDestroySemaphore);
 	}
 	if (t_strcmp(name, "vkCreateImage") == 0) {
 		return t_gfx_vulkan_symbol((t_gfx_vulkan_symbol_t)t_vkCreateImage);
@@ -4172,7 +4254,8 @@ TEST(gfx_vulkan_surface_pass_begin_reset_fences_failure)
 	t_vk_reset_fences_ret = 1;
 	gfx_frame_t frame     = {0};
 
-	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 1);
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 1);
 
 	gfx_framebuffer_free(&framebuffer);
 	gfx_render_pass_free(&render_pass);
@@ -4390,6 +4473,48 @@ TEST(gfx_vulkan_surface_pass_begin_acquire_invalid_index)
 	END;
 }
 
+TEST(gfx_vulkan_memory_pass_begin_missing_frame_sync_resource)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	t_gfx_vulkan_data_t *vulkan	 = gfx.data;
+	VkCommandBuffer command_buffer	 = vulkan->frames[0].command_buffer;
+	vulkan->frames[0].command_buffer = 0;
+	gfx_frame_t frame		 = {0};
+
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 1);
+
+	vulkan->frames[0].command_buffer = command_buffer;
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_end_command_failure)
 {
 	START;
@@ -4459,6 +4584,89 @@ TEST(gfx_vulkan_end_submit_failure)
 	gfx_frame_t frame = {0};
 	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
 	t_vk_queue_submit_ret = 1;
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_submit_missing_frame_sync_resource)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
+	t_gfx_vulkan_data_t *vulkan		   = gfx.data;
+	VkFence fence				   = vulkan->frames[vulkan->active_frame].fence;
+	vulkan->frames[vulkan->active_frame].fence = 0;
+
+	EXPECT_EQ(gfx_end(&frame), 1);
+
+	vulkan->frames[vulkan->active_frame].fence = fence;
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_end_submit_wait_failure)
+{
+	START;
+
+	u8 pixels[8] = {0};
+	gfx_t gfx    = {0};
+	proc_t proc  = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_RGBA8,
+		.data	= pixels,
+		.width	= 2,
+		.height = 1,
+		.stride = 8,
+	};
+	EXPECT_PTR(t_gfx_vulkan_image_init_image_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 2, .height = 1}}), 0);
+	t_vk_wait_for_fences_ret = 1;
 
 	EXPECT_EQ(gfx_end(&frame), 1);
 
@@ -4886,6 +5094,11 @@ TEST(gfx_vulkan_swapchain_acquire_rejects_invalid_index_or_image_data_direct)
 	EXPECT_EQ(gfx.drv->swapchain_acquire(&swapchain, &image), 1);
 
 	swapchain_data.acquired	      = 1;
+	swapchain_data.image_index    = 0;
+	t_vk_acquire_next_image_index = 0;
+	EXPECT_EQ(gfx.drv->swapchain_acquire(&swapchain, &image), 1);
+
+	swapchain_data.acquired	      = 1;
 	swapchain_data.image_index    = 1;
 	t_vk_acquire_next_image_index = 0;
 	EXPECT_EQ(gfx.drv->swapchain_acquire(&swapchain, &image), 1);
@@ -4932,6 +5145,75 @@ TEST(gfx_vulkan_swapchain_acquire_rejects_missing_public_swapchain_data_direct)
 	END;
 }
 
+TEST(gfx_vulkan_swapchain_acquire_rejects_missing_image_available_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_swapchain_data_t swapchain_data   = {.swapchain = 9, .image_count = 1};
+	t_gfx_vulkan_swapchain_image_data_t image_data = {.image = 10};
+	gfx_image_t images[1]			       = {{.driver_data = &image_data}};
+
+	gfx_swapchain_t swapchain = {
+		.gfx		= &gfx,
+		.format		= GFX_FORMAT_RGBA8,
+		.surface	= &t_gfx_vulkan_surface,
+		.images		= images,
+		.width		= 640,
+		.height		= 480,
+		.image_count	= 1,
+		.image_capacity = sizeof(images) / sizeof(images[0]),
+		.data		= &swapchain_data,
+	};
+	t_gfx_vulkan_data_t *vulkan	  = gfx.data;
+	VkSemaphore image_available	  = vulkan->frames[0].image_available;
+	vulkan->frames[0].image_available = 0;
+	gfx_swapchain_image_t image	  = {0};
+
+	EXPECT_EQ(gfx.drv->swapchain_acquire(&swapchain, &image), 1);
+
+	vulkan->frames[0].image_available = image_available;
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_acquire_rejects_in_flight_fence_wait_failure_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_swapchain_data_t swapchain_data   = {.swapchain = 9, .image_count = 1};
+	t_gfx_vulkan_swapchain_image_data_t image_data = {.image = 10, .in_flight = 77};
+	gfx_image_t images[1]			       = {{.driver_data = &image_data}};
+
+	gfx_swapchain_t swapchain = {
+		.gfx		= &gfx,
+		.format		= GFX_FORMAT_RGBA8,
+		.surface	= &t_gfx_vulkan_surface,
+		.images		= images,
+		.width		= 640,
+		.height		= 480,
+		.image_count	= 1,
+		.image_capacity = sizeof(images) / sizeof(images[0]),
+		.data		= &swapchain_data,
+	};
+	t_vk_acquire_next_image_index	= 0;
+	t_vk_wait_for_fences_fail_fence = image_data.in_flight;
+	gfx_swapchain_image_t image	= {0};
+
+	EXPECT_EQ(gfx.drv->swapchain_acquire(&swapchain, &image), 1);
+	EXPECT_EQ(t_vk_wait_for_fences_fence, image_data.in_flight);
+
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
 TEST(gfx_vulkan_swapchain_present_requires_backend_acquire_direct)
 {
 	START;
@@ -4953,6 +5235,41 @@ TEST(gfx_vulkan_swapchain_present_requires_backend_acquire_direct)
 
 	EXPECT_EQ(gfx.drv->swapchain_present(&swapchain), 1);
 
+	gfx_free(&gfx);
+	proc_free(&proc);
+	END;
+}
+
+TEST(gfx_vulkan_swapchain_present_rejects_missing_render_finished_direct)
+{
+	START;
+
+	gfx_t gfx   = {0};
+	proc_t proc = {0};
+	EXPECT_EQ(t_gfx_vulkan_init_surface_gfx(&gfx, &proc), 0);
+	t_gfx_vulkan_swapchain_data_t swapchain_data = {
+		.swapchain	 = 9,
+		.image_count	 = 1,
+		.present_frame	 = 0,
+		.acquired	 = 1,
+		.present_pending = 1,
+	};
+	gfx_swapchain_t swapchain = {
+		.gfx	     = &gfx,
+		.format	     = GFX_FORMAT_RGBA8,
+		.surface     = &t_gfx_vulkan_surface,
+		.width	     = 640,
+		.height	     = 480,
+		.image_count = 1,
+		.data	     = &swapchain_data,
+	};
+	t_gfx_vulkan_data_t *vulkan	  = gfx.data;
+	VkSemaphore render_finished	  = vulkan->frames[0].render_finished;
+	vulkan->frames[0].render_finished = 0;
+
+	EXPECT_EQ(gfx.drv->swapchain_present(&swapchain), 1);
+
+	vulkan->frames[0].render_finished = render_finished;
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -6044,11 +6361,26 @@ TEST(gfx_vulkan_swapchain_present_recreates_on_out_of_date)
 	gfx_swapchain_t swapchain = {0};
 	gfx_image_t target	  = {0};
 	EXPECT_PTR(t_gfx_vulkan_init_swapchain_target(&gfx, &swapchain, &target, 640, 480), &target);
-	((t_gfx_vulkan_swapchain_data_t *)target.driver_data)->acquired = 1;
-	t_vk_queue_present_ret						= VK_ERROR_OUT_OF_DATE_KHR;
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_swapchain_image_t image = {0};
+	EXPECT_EQ(gfx_swapchain_acquire(&swapchain, &image), 0);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	t_vk_queue_present_ret = VK_ERROR_OUT_OF_DATE_KHR;
 
-	EXPECT_EQ(t_gfx_vulkan_swapchain_present(&swapchain), 0);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain, &image), 0);
 
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
 	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
@@ -6066,11 +6398,26 @@ TEST(gfx_vulkan_swapchain_present_queue_failure)
 	gfx_swapchain_t swapchain = {0};
 	gfx_image_t target	  = {0};
 	EXPECT_PTR(t_gfx_vulkan_init_swapchain_target(&gfx, &swapchain, &target, 640, 480), &target);
-	((t_gfx_vulkan_swapchain_data_t *)target.driver_data)->acquired = 1;
-	t_vk_queue_present_ret						= 1;
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = target.format,
+		.load	      = GFX_LOAD_LOAD,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+	gfx_swapchain_image_t image = {0};
+	EXPECT_EQ(gfx_swapchain_acquire(&swapchain, &image), 0);
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.viewport = {.width = 640, .height = 480}}), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	t_vk_queue_present_ret = 1;
 
-	EXPECT_EQ(t_gfx_vulkan_swapchain_present(&swapchain), 1);
+	EXPECT_EQ(gfx_swapchain_present(&swapchain, &image), 1);
 
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
 	gfx_image_free(&target);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
@@ -7898,8 +8245,11 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_surface_pass_begin_acquire_out_of_date_failure);
 	RUN(gfx_vulkan_surface_pass_begin_acquire_exhausted);
 	RUN(gfx_vulkan_surface_pass_begin_acquire_invalid_index);
+	RUN(gfx_vulkan_memory_pass_begin_missing_frame_sync_resource);
 	RUN(gfx_vulkan_end_command_failure);
 	RUN(gfx_vulkan_end_submit_failure);
+	RUN(gfx_vulkan_end_submit_missing_frame_sync_resource);
+	RUN(gfx_vulkan_end_submit_wait_failure);
 	RUN(gfx_vulkan_end_finish_missing_target_data);
 	RUN(gfx_vulkan_end_memory_requires_readback_buffer_direct);
 	RUN(gfx_vulkan_draw_create_image_view_failure);
@@ -7915,7 +8265,10 @@ STEST(gfx_vulkan)
 	RUN(gfx_vulkan_swapchain_acquire_bound_target_failure_direct);
 	RUN(gfx_vulkan_swapchain_acquire_rejects_invalid_index_or_image_data_direct);
 	RUN(gfx_vulkan_swapchain_acquire_rejects_missing_public_swapchain_data_direct);
+	RUN(gfx_vulkan_swapchain_acquire_rejects_missing_image_available_direct);
+	RUN(gfx_vulkan_swapchain_acquire_rejects_in_flight_fence_wait_failure_direct);
 	RUN(gfx_vulkan_swapchain_present_requires_backend_acquire_direct);
+	RUN(gfx_vulkan_swapchain_present_rejects_missing_render_finished_direct);
 	RUN(gfx_vulkan_render_pass_init_rejects_unknown_format);
 	RUN(gfx_vulkan_render_pass_init_alloc_failure);
 	RUN(gfx_vulkan_render_pass_init_create_failure);
