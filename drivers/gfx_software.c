@@ -47,6 +47,13 @@ typedef struct gfx_software_surface_target_s {
 	gfx_surface_memory_t memory;
 } gfx_software_surface_target_t;
 
+typedef struct gfx_software_color_layout_s {
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 a;
+} gfx_software_color_layout_t;
+
 typedef struct gfx_software_vertex_s {
 	float x;
 	float y;
@@ -85,9 +92,22 @@ static u8 color_u8(float value)
 	return (u8)(value * 255.0f + 0.5f);
 }
 
+static int gfx_software_format_valid(gfx_format_t format)
+{
+	return format == GFX_FORMAT_RGBA8_UNORM || format == GFX_FORMAT_BGRA8_UNORM;
+}
+
+static gfx_software_color_layout_t gfx_software_color_layout(gfx_format_t format)
+{
+	if (format == GFX_FORMAT_BGRA8_UNORM) {
+		return (gfx_software_color_layout_t){.r = 2, .g = 1, .b = 0, .a = 3};
+	}
+	return (gfx_software_color_layout_t){.r = 0, .g = 1, .b = 2, .a = 3};
+}
+
 static int memory_image_valid(const gfx_image_t *image)
 {
-	if (image == NULL || image->format != GFX_FORMAT_RGBA8 || image->data == NULL || image->width == 0 || image->height == 0) {
+	if (image == NULL || !gfx_software_format_valid(image->format) || image->data == NULL || image->width == 0 || image->height == 0) {
 		return 0;
 	}
 
@@ -96,7 +116,7 @@ static int memory_image_valid(const gfx_image_t *image)
 
 static int surface_image_valid(const gfx_image_t *image)
 {
-	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_SURFACE && image->format == GFX_FORMAT_RGBA8 &&
+	return image != NULL && image->origin == GFX_IMAGE_ORIGIN_SURFACE && gfx_software_format_valid(image->format) &&
 	       image->swapchain != NULL && image->swapchain->surface != NULL && image->swapchain->surface->api == GFX_API_SOFTWARE &&
 	       image->swapchain->surface->ops != NULL && image->swapchain->surface->ops->memory != NULL && image->width != 0 &&
 	       image->height != 0;
@@ -592,20 +612,21 @@ static int gfx_software_swapchain_present(gfx_swapchain_t *swapchain)
 
 static void gfx_software_clear(gfx_software_t *render, gfx_color_t color)
 {
-	u8 clear[4] = {
-		color_u8(color.r),
-		color_u8(color.g),
-		color_u8(color.b),
-		color_u8(color.a),
-	};
+	gfx_software_color_layout_t layout = gfx_software_color_layout(render->image.format);
+	u8 clear[4]			   = {
+		       color_u8(color.r),
+		       color_u8(color.g),
+		       color_u8(color.b),
+		       color_u8(color.a),
+	       };
 	for (u16 y = 0; y < render->image.height; y++) {
 		u8 *row = (u8 *)render->image.data + (size_t)y * render->image.stride;
 		for (u16 x = 0; x < render->image.width; x++) {
-			u8 *pixel = row + (size_t)x * 4;
-			pixel[0]  = clear[0];
-			pixel[1]  = clear[1];
-			pixel[2]  = clear[2];
-			pixel[3]  = clear[3];
+			u8 *pixel	= row + (size_t)x * 4;
+			pixel[layout.r] = clear[0];
+			pixel[layout.g] = clear[1];
+			pixel[layout.b] = clear[2];
+			pixel[layout.a] = clear[3];
 		}
 	}
 }
@@ -702,12 +723,13 @@ static int triangle_culled(const gfx_pipeline_t *pipeline, float area)
 
 static void draw_pixel(gfx_software_t *render, u16 x, u16 y, const u8 color[4])
 {
-	u8 *row	  = (u8 *)render->image.data + (size_t)y * render->image.stride;
-	u8 *pixel = row + (size_t)x * 4;
-	pixel[0]  = color[0];
-	pixel[1]  = color[1];
-	pixel[2]  = color[2];
-	pixel[3]  = color[3];
+	gfx_software_color_layout_t layout = gfx_software_color_layout(render->image.format);
+	u8 *row				   = (u8 *)render->image.data + (size_t)y * render->image.stride;
+	u8 *pixel			   = row + (size_t)x * 4;
+	pixel[layout.r]			   = color[0];
+	pixel[layout.g]			   = color[1];
+	pixel[layout.b]			   = color[2];
+	pixel[layout.a]			   = color[3];
 }
 
 static float float_abs_local(float value)

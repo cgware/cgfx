@@ -587,6 +587,53 @@ TEST(gfx_software_memory_pass_clears_target)
 	END;
 }
 
+TEST(gfx_software_bgra_memory_pass_clears_target)
+{
+	START;
+
+	u8 pixels[16]	  = {0};
+	gfx_t gfx	  = {0};
+	gfx_driver_t *drv = t_gfx_software_driver();
+	EXPECT_NOT_NULL(drv);
+	EXPECT_PTR(gfx_init(&gfx, drv, &(gfx_config_t){0}, NULL, ALLOC_STD), &gfx);
+
+	gfx_image_t target			       = {0};
+	gfx_image_memory_config_t memory_target_config = {
+		.format = GFX_FORMAT_BGRA8_UNORM,
+		.data	= pixels,
+		.width	= 2,
+		.height = 2,
+		.stride = 8,
+	};
+	EXPECT_PTR(gfx_image_init_memory(&target, &gfx, &memory_target_config), &target);
+	gfx_render_pass_t render_pass		    = {0};
+	gfx_render_pass_config_t render_pass_config = {
+		.color_format = GFX_FORMAT_BGRA8_UNORM,
+		.load	      = GFX_LOAD_CLEAR,
+		.store	      = GFX_STORE_STORE,
+	};
+	EXPECT_PTR(gfx_render_pass_init(&render_pass, &gfx, &render_pass_config), &render_pass);
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_PTR(gfx_framebuffer_init(&framebuffer, &target, &render_pass), &framebuffer);
+
+	gfx_frame_t frame	      = {0};
+	gfx_pass_config_t pass_config = {
+		.clear = {1.0f, 0.0f, 0.25f, 1.0f},
+	};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config), 0);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(pixels[0], 64);
+	EXPECT_EQ(pixels[1], 0);
+	EXPECT_EQ(pixels[2], 255);
+	EXPECT_EQ(pixels[3], 255);
+
+	gfx_framebuffer_free(&framebuffer);
+	gfx_render_pass_free(&render_pass);
+	gfx_image_free(&target);
+	gfx_free(&gfx);
+	END;
+}
+
 TEST(gfx_software_memory_pass_load_does_not_clear)
 {
 	START;
@@ -659,6 +706,35 @@ TEST(gfx_software_surface_target_lifecycle)
 	EXPECT_NULL(target.driver_data);
 	gfx_swapchain_free(&swapchain);
 	gfx_free(&gfx);
+	END;
+}
+
+TEST(gfx_software_surface_target_accepts_native_bgra_memory)
+{
+	START;
+
+	u8 pixels[64] = {0};
+	t_gfx_software_reset_surface(pixels, 2, 2, 8);
+	t_gfx_software_memory.format  = GFX_FORMAT_BGRA8_UNORM;
+	gfx_surface_t surface	      = {.api = GFX_API_SOFTWARE, .ops = &t_gfx_software_surface_ops};
+	gfx_t gfx		      = {0};
+	gfx_swapchain_t swapchain     = {0};
+	gfx_image_t target	      = {0};
+	gfx_render_pass_t render_pass = {0};
+	gfx_framebuffer_t framebuffer = {0};
+	EXPECT_EQ(t_gfx_software_surface_scene(&gfx, &swapchain, &target, &render_pass, &framebuffer, &surface), 0);
+
+	gfx_frame_t frame = {0};
+	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &(gfx_pass_config_t){.clear = {0.0f, 1.0f, 0.25f, 1.0f}}), 0);
+	EXPECT_EQ(t_gfx_software_memory_calls, 1);
+	EXPECT_EQ(gfx_end(&frame), 0);
+	EXPECT_EQ(pixels[0], 64);
+	EXPECT_EQ(pixels[1], 255);
+	EXPECT_EQ(pixels[2], 0);
+	EXPECT_EQ(pixels[3], 255);
+
+	gfx_swapchain_free(&swapchain);
+	t_gfx_software_scene_free(&gfx, &target, &render_pass, &framebuffer);
 	END;
 }
 
@@ -2264,8 +2340,10 @@ STEST(gfx_software)
 	RUN(gfx_software_driver_is_registered);
 	RUN(gfx_software_init_failures);
 	RUN(gfx_software_memory_pass_clears_target);
+	RUN(gfx_software_bgra_memory_pass_clears_target);
 	RUN(gfx_software_memory_pass_load_does_not_clear);
 	RUN(gfx_software_surface_target_lifecycle);
+	RUN(gfx_software_surface_target_accepts_native_bgra_memory);
 	RUN(gfx_software_surface_target_failures);
 	RUN(gfx_software_swapchain_resize_rejects_invalid_direct);
 	RUN(gfx_software_swapchain_free_rejects_missing_image_storage_direct);
