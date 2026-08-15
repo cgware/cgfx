@@ -8,7 +8,8 @@
 typedef void (*t_gfx_vulkan_symbol_t)(void);
 
 enum {
-	T_GFX_VULKAN_MAX_DESCRIPTOR_SETS = 64,
+	T_GFX_VULKAN_MAX_UNIFORM_BINDINGS = 16,
+	T_GFX_VULKAN_MAX_DESCRIPTOR_SETS  = 64,
 };
 
 static int t_vk_create_instance_calls;
@@ -234,6 +235,7 @@ typedef struct t_gfx_vulkan_memory_target_data_s {
 		VkDeviceMemory memory;
 		VkDeviceSize size;
 		VkDeviceSize memory_size;
+		void *mapped;
 		int memory_coherent;
 	} readback;
 	VkImageView image_view;
@@ -296,7 +298,7 @@ typedef struct t_gfx_vulkan_data_s {
 	VkQueue queue;
 	u32 queue_family;
 	VkCommandPool command_pool;
-	t_gfx_vulkan_frame_sync_t frames[2];
+	t_gfx_vulkan_frame_sync_t frames[3];
 	u32 frame_index;
 	u32 active_frame;
 	int frame_sync_active;
@@ -320,6 +322,7 @@ typedef struct t_gfx_vulkan_buffer_data_s {
 	VkDeviceMemory memory;
 	VkDeviceSize size;
 	VkDeviceSize memory_size;
+	void *mapped;
 	int memory_coherent;
 	gfx_buffer_type_t type;
 } t_gfx_vulkan_buffer_data_t;
@@ -328,10 +331,16 @@ typedef struct t_gfx_vulkan_shader_data_s {
 	VkShaderModule module;
 } t_gfx_vulkan_shader_data_t;
 
+typedef struct t_gfx_vulkan_descriptor_binding_s {
+	VkBuffer buffer;
+	VkDeviceSize range;
+} t_gfx_vulkan_descriptor_binding_t;
+
 typedef struct t_gfx_vulkan_pipeline_data_s {
 	VkDescriptorSetLayout descriptor_set_layout;
 	VkDescriptorPool descriptor_pool;
-	VkDescriptorSet descriptor_sets[T_GFX_VULKAN_MAX_DESCRIPTOR_SETS];
+	VkDescriptorSet descriptor_sets[3];
+	t_gfx_vulkan_descriptor_binding_t descriptor_bindings[3][T_GFX_VULKAN_MAX_UNIFORM_BINDINGS];
 	u32 descriptor_set_index;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline pipeline;
@@ -3030,6 +3039,15 @@ TEST(gfx_vulkan_buffer_init_rejects_invalid_direct)
 	EXPECT_EQ(gfx.drv->buffer_init(&buffer, &(gfx_buffer_config_t){.type = GFX_BUFFER_UNKNOWN, .usage = GFX_BUFFER_USAGE_DYNAMIC}), 1);
 	log_set_quiet(0, 0);
 	EXPECT_NULL(buffer.data);
+	gfx_vertex_2d_t vertex = {0};
+	EXPECT_EQ(gfx.drv->buffer_init(&buffer,
+				       &(gfx_buffer_config_t){
+					       .type  = GFX_BUFFER_VERTEX,
+					       .usage = GFX_BUFFER_USAGE_DYNAMIC,
+					       .data  = &vertex,
+				       }),
+		  1);
+	EXPECT_NULL(buffer.data);
 
 	gfx_free(&gfx);
 	proc_free(&proc);
@@ -3134,11 +3152,12 @@ TEST(gfx_vulkan_buffer_init_static_uploads_data)
 	EXPECT_EQ(t_vk_create_buffer_calls, 1);
 	EXPECT_EQ(t_vk_buffer_size, sizeof(vertices));
 	EXPECT_EQ(t_vk_map_memory_calls, 1);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 0);
+
+	gfx_buffer_free(&buffer);
 	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
 	EXPECT_EQ(t_vk_vertex_first_x, 1);
 	EXPECT_EQ(t_vk_vertex_last_y, 2);
-
-	gfx_buffer_free(&buffer);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3427,6 +3446,11 @@ TEST(gfx_vulkan_bind_resources_updates_descriptor)
 	EXPECT_EQ(t_vk_bound_descriptor_layout, 33);
 	EXPECT_EQ(t_vk_bound_descriptor_set, 44);
 
+	EXPECT_EQ(gfx.drv->bind_resources(&frame, bindings, 1), 0);
+	EXPECT_EQ(t_vk_update_descriptor_sets_calls, 1);
+	EXPECT_EQ(t_vk_bind_descriptor_sets_calls, 2);
+	EXPECT_EQ(t_vk_bound_descriptor_set, 44);
+
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3560,9 +3584,10 @@ TEST(gfx_vulkan_buffer_set_data_flush_failure)
 	t_vk_flush_mapped_memory_ranges_ret = 1;
 
 	EXPECT_EQ(gfx_buffer_set_data(&buffer, vertices, sizeof(vertices)), 1);
-	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 0);
 
 	gfx_buffer_free(&buffer);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
 	gfx_free(&gfx);
 	proc_free(&proc);
 	END;
@@ -3633,8 +3658,10 @@ TEST(gfx_vulkan_buffer_set_data_rejects_empty_storage_direct)
 	proc_t proc = {0};
 	EXPECT_EQ(t_gfx_vulkan_init_gfx(&gfx, &proc), 0);
 	t_gfx_vulkan_buffer_data_t driver_buffer = {
-		.size = sizeof(gfx_vertex_2d_t),
-		.type = GFX_BUFFER_VERTEX,
+		.memory	     = 8,
+		.size	     = sizeof(gfx_vertex_2d_t),
+		.memory_size = sizeof(gfx_vertex_2d_t),
+		.type	     = GFX_BUFFER_VERTEX,
 	};
 	gfx_vertex_2d_t vertex = {0};
 
@@ -3866,6 +3893,7 @@ TEST(gfx_vulkan_memory_target_render_flow)
 	EXPECT_EQ(gfx_framebuffer_pass_begin(&framebuffer, &frame, &pass_config), 0);
 	EXPECT_EQ(gfx_pipeline_bind(&frame, &pipeline), 0);
 	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
+	EXPECT_EQ(gfx_buffer_bind(&frame, &buffer), 0);
 	EXPECT_EQ(gfx_draw(&frame, 3, 0), 0);
 	EXPECT_EQ(gfx_end(&frame), 0);
 	EXPECT_EQ(gfx_image_read(&target, &(gfx_memory_readback_config_t){.data = pixels, .stride = 8}), 0);
@@ -3881,9 +3909,10 @@ TEST(gfx_vulkan_memory_target_render_flow)
 	EXPECT_EQ(t_vk_queue_submit_calls, 1);
 	EXPECT_EQ(t_vk_invalidate_mapped_memory_ranges_calls, 0);
 	EXPECT_EQ(t_vk_map_memory_calls, 2);
-	EXPECT_EQ(t_vk_unmap_memory_calls, 2);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 1);
 
 	gfx_buffer_free(&buffer);
+	EXPECT_EQ(t_vk_unmap_memory_calls, 2);
 	gfx_pipeline_free(&pipeline);
 	gfx_shader_free(&fs);
 	gfx_shader_free(&vs);
@@ -7907,9 +7936,9 @@ TEST(gfx_vulkan_pipeline_init_creates_descriptors_direct)
 	EXPECT_EQ(t_vk_descriptor_binding_count, 16);
 	EXPECT_EQ(t_vk_create_descriptor_pool_calls, 1);
 	EXPECT_EQ(t_vk_descriptor_pool_size_count, 1);
-	EXPECT_EQ(t_vk_descriptor_pool_descriptor_count, 1024);
+	EXPECT_EQ(t_vk_descriptor_pool_descriptor_count, 48);
 	EXPECT_EQ(t_vk_allocate_descriptor_sets_calls, 1);
-	EXPECT_EQ(t_vk_descriptor_set_count, 64);
+	EXPECT_EQ(t_vk_descriptor_set_count, 3);
 
 	gfx.drv->pipeline_free(&pipeline);
 	gfx_free(&gfx);
